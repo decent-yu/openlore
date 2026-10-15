@@ -8,7 +8,7 @@
 
 对当前这些公开技术网站，标准订阅与直接 HTTP 获取更适合建立可重复验证的基线。AI 负责理解主题、判断文章相关性和生成摘要；采集路径由配置明确指定。AI 浏览器与多平台 skill 留作后续复杂来源的候选。
 
-首期来源方向已确认，具体能力边界以 [feature 总览](../../feature/index.md) 及其关联接入设计为准；整体技术选型仍待编码验证，尚未实现四项功能。
+首期来源方向已确认，具体能力边界以 [feature 总览](../../feature/index.md) 及其关联接入设计为准；整体技术选型已确定，待编码验证，尚未实现四项功能。
 
 ## 信息源选择
 
@@ -43,7 +43,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 
 ## 技术取舍
 
-建议单进程工具起步：Python + [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析订阅，HTTP 客户端请求页面，[Trafilatura](https://trafilatura.readthedocs.io/en/latest/) 提取正文，SQLite 保存条目与状态，再接一个模型和文件同步能力。两个采集能力独立成目录，通过[统一采集接口](../../../design/collection-adapters.md)接入；按组输出的文件包通过[GitHub 同步接口](../../../design/processing-and-delivery.md)新增或更新目标仓库文件。
+实施基线以[架构选型](../../../架构/技术选型.md)为准：Node.js 主服务负责 HTTP 获取、编排和 SQLite 状态，Python 子进程通过 feedparser 解析订阅、Trafilatura 提取正文，前端采用 React + shadcn/ui。两个采集能力独立成目录，通过[统一采集接口](../../../design/collection-adapters.md)接入；按组输出的文件包通过[GitHub 同步接口](../../../design/processing-and-delivery.md)新增或更新目标仓库文件。
 
 - 先检查 Feed 内容是全文还是摘要；需要时再补抓，保留原始链接和最终链接。
 - RSS/Atom 中的 ID 用于源内识别；重定向后的规范 URL 用于合并重复导入。内容 hash 用于识别已存在文章是否改变。
@@ -51,7 +51,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 - 模型只基于取得的内容判断和总结，输出结构化结果；抓取失败、正文缺失或模型失败单独记录并可重试。
 - 群推送与 Git 分别保存状态；一端失败只补做该端。发送结果不明时单独标记，不承诺没有幂等支持的渠道绝对零重复。
 
-库与结构属于建议，产品行为不绑定特定语言。重点是同一套流程能可靠处理两个入口，而不是首版就覆盖更多平台。
+语言与工程边界已在架构选型中确定，产品行为通过统一协议约束。重点是同一套流程能可靠处理两个入口，而不是首版就覆盖更多平台。
 
 ## 跑通的验收标准
 

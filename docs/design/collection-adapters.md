@@ -99,27 +99,32 @@
 以下是编码时的目录约定，当前不创建空实现：
 
 ```text
-src/openlore/
-├── collection/
-│   ├── contracts.py          # 统一请求、条目、结果、错误
-│   ├── registry.py           # 能力清单与工厂注册
-│   └── service.py            # 编排、补抓、持久化和状态推进
+packages/contracts/           # 请求、条目、结果、错误与跨语言 schema
+apps/server/src/
+├── modules/collection/
+│   ├── registry.ts           # 能力清单与工厂注册
+│   └── service.ts            # 编排、补抓、持久化和状态推进
 └── infrastructure/
     ├── http/                 # 共享超时、限流与请求基础设施
+    ├── python/               # 子进程调用、超时与协议校验
     └── collectors/
-        ├── web_feed/         # feedparser，RSS + Atom 共用
-        │   ├── adapter.py
-        │   ├── mapping.py
+        ├── web_feed/         # Node 适配器，调用 Python feedparser
+        │   ├── adapter.ts
+        │   ├── mapping.ts
         │   ├── tests/
         │   └── README.md
-        └── web_page/         # HTTP + Trafilatura，目录结构同上
+        └── web_page/         # Node 适配器，调用 Python Trafilatura
+workers/python/src/openlore_collectors/
+├── __main__.py               # 单次 JSON 请求/响应入口
+├── web_feed/                 # RSS + Atom 解析
+└── web_page/                 # 正文与元信息提取
 ```
 
-每项能力注册 `id`、支持操作、目标类型、配置 schema 和工厂。注册冲突启动失败；未知参数在调用前报错。新能力增加自己的目录与注册项，满足统一契约即可接入；特定厂商 SDK 不进入 contracts 或业务编排层。本期采用 Python，整体运行与目录见[本地服务设计](local-service-and-ai.md)；接口语义不绑定第三方库。
+每项能力注册 `id`、支持操作、目标类型、配置 schema 和工厂。注册冲突启动失败；未知参数在调用前报错。新能力增加自己的目录与注册项，满足统一契约即可接入；特定厂商 SDK 不进入 contracts 或业务编排层。Node 负责业务编排、网络与落库，Python 负责解析；子进程协议、预算与环境管理见[架构选型](../架构/技术选型.md)。
 
 ## 本期复用与检查
 
-- `web_feed`：共享 HTTP 层获取字节与缓存头，交给 [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析；参考 [304 行为](https://feedparser.readthedocs.io/en/latest/http-etag/) 和 [bozo 解析异常](https://feedparser.readthedocs.io/en/latest/bozo/)。
-- `web_page`：共享 HTTP 层处理跳转，使用 [Trafilatura](https://trafilatura.readthedocs.io/en/latest/) 提取正文/元信息，再映射为 ContentItem。
+- `web_feed`：Node 共享 HTTP 层获取字节与缓存头，304 由 Node 处理；Python 将已有材料交给 [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析，返回 [bozo 解析异常](https://feedparser.readthedocs.io/en/latest/bozo/) 等信息，由 Node 决定是否推进状态。
+- `web_page`：Node 共享 HTTP 层处理跳转，Python 使用 [Trafilatura](https://trafilatura.readthedocs.io/en/latest/) 提取已有 HTML 的正文/元信息，再由 Node 映射为 ContentItem。Python 不自行联网或写业务数据库。
 - 契约验证覆盖 RSS/Atom、缺 ID/日期、摘要、畸形 XML、304、分批续读、重放、重定向、超时与正文缺失；用 Cloudflare 与 Simon 验证真实来源，网页补抓使用固定样本。
 - 后续能力与阶段统一维护在 [feature 02 接入清单](../product/feature/02-content-collection.md)，不在这里重复建一套清单。

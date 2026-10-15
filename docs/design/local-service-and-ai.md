@@ -4,10 +4,10 @@
 
 ## 本期技术与运行形态
 
-- Python 3.12+，FastAPI 提供本地 API 与页面；页面采用 Jinja2 + HTMX，静态资源随应用分发。单用户本机运行，不做多人登录或远程部署。
+- Node.js + Fastify 提供本地 API，托管 React + shadcn/ui 静态页面；Python 子进程复用采集解析库。版本与语言边界统一见[技术选型](../架构/技术选型.md)。单用户本机运行，不做多人登录或远程部署。
 - 一个服务进程维护调度、后台任务和页面，SQLite 开启 WAL 保存业务状态与持久队列；文件放在 `~/.openlore/`，可用 `OPENLORE_DATA_DIR` 改位置。
-- 服务默认监听 `127.0.0.1:8767`，单个 Uvicorn worker。每 30 秒检查到期任务；HTTP 抓取并发默认 4，同一来源串行，AI 子进程并发默认 1，仓库按 repo/branch 串行。
-- 启动入口设计为 `openlore serve`；`openlore doctor` 检查目录、数据库、CLI 与连接；`openlore service install/start/stop` 管理本机常驻运行。macOS 使用当前用户 launchd，Linux 使用 systemd --user，均不使用 root。
+- 服务默认监听 `127.0.0.1:8767`，单个 Node 主服务进程。每 30 秒检查到期任务；HTTP 抓取并发默认 4，同一来源串行，Python 解析并发默认 2，AI 子进程并发默认 1，仓库按 repo/branch 串行。
+- 启动入口设计为 `openlore serve`；`openlore doctor` 检查目录、数据库、Python 环境、解析协议、CLI 与连接；`openlore service install/start/stop` 管理本机常驻运行。macOS 使用当前用户 launchd，Linux 使用 systemd --user，均不使用 root。
 - 默认关闭开机启动，用户在初次设置完成后开启。关闭浏览器不停止服务；电脑休眠时无法采集，唤醒后补跑一次当前计划并处理积压，不重放所有错过的时间点。
 - 容器不是首期默认部署方式，避免本机 CLI 登录在容器中不可见。使用同一系统用户及设置时检测到的可执行文件绝对路径，不依赖后台服务继承交互 shell 的 PATH。
 
@@ -88,7 +88,7 @@ Codex/Gemini 自己管理其登录；OpenLore 不读取或输出其认证文件�
 
 ## Codex CLI 接入
 
-本机已检查 `codex-cli 0.162.0` 的 `exec --help`，支持 JSONL 事件、输出 schema、最终结果文件及非交互调用。以下为目标调用形态，实际由 subprocess 参数数组执行，prompt 经 stdin 传入，不拼接 shell 字符串：
+本机已检查 `codex-cli 0.162.0` 的 `exec --help`，支持 JSONL 事件、输出 schema、最终结果文件及非交互调用。以下为目标调用形态，实际由 Node child_process.spawn 参数数组执行，prompt 经 stdin 传入，不拼接 shell 字符串：
 
 ```text
 codex --no-daemon -a never exec
@@ -133,18 +133,19 @@ gemini -p <task_instruction> --output-format json
 ## 独立目录
 
 ```text
-src/openlore/
-├── web/                         # 页面、API、SSE、请求校验
-├── settings/                    # 仓库/通知/AI 连接与凭据引用
-├── scheduler/                   # 到期计划与去重调度
-├── jobs/                        # SQLite 队列、租约、恢复与取消
-├── collection/                  # 统一采集协议和编排
-├── processing/                  # 分组筛选、AI 任务、文件渲染
-├── research/                    # 问题规划、引用扩展和证据核验
-├── delivery/                    # 文件包、路由与同步状态
+apps/server/src/
+├── http/                        # API、SSE、请求校验与静态页面托管
+├── modules/settings/            # 仓库/通知/AI 连接与凭据引用
+├── modules/scheduler/           # 到期计划与去重调度
+├── modules/jobs/                # SQLite 队列、租约、恢复与取消
+├── modules/collection/          # 统一采集协议和编排
+├── modules/processing/          # 分组筛选、AI 任务、文件渲染
+├── modules/research/            # 问题规划、引用扩展和证据核验
+├── modules/delivery/            # 文件包、路由与同步状态
 └── infrastructure/
-    ├── collectors/web_feed/
-    ├── collectors/web_page/
+    ├── collectors/web_feed/     # Node 适配器，调用 Python 解析
+    ├── collectors/web_page/     # Node 适配器，调用 Python 提取
+    ├── python/                  # 子进程协议与生命周期
     ├── ai/codex_cli/
     ├── ai/gemini_cli/
     ├── repositories/github/
@@ -153,4 +154,4 @@ src/openlore/
     └── secrets/local_file/
 ```
 
-同一种能力的新供应商增加目录和注册项，不修改处理/交付业务协议。初期只有单机持久队列；现有协议仍允许以后把 worker 独立部署。
+前端位于 `apps/web/`，Python 解析位于 `workers/python/`，共享契约位于 `packages/contracts/`。同一种能力的新供应商增加目录和注册项，不修改处理/交付业务协议。初期只有单机持久队列；现有协议仍允许以后把 worker 独立部署。
