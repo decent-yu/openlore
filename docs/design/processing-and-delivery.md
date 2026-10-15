@@ -1,100 +1,81 @@
-# 内容处理与文件同步设计
+# 按组处理、文件包与仓库同步接口
 
-对应：[内容处理](../product/feature/03-content-processing.md)、[推送与 Git 沉淀](../product/feature/04-delivery-and-git-archive.md)。状态：本期接口与实现方向，尚未编码。
+行为以 [03](../product/feature/03-content-processing.md)、[04](../product/feature/04-delivery-and-git-archive.md) 为准；运行环境与 AIAdapter 见[本地服务设计](local-service-and-ai.md)。此文是统一数据与事务约定。
 
-## 处理接口
+## 配置连接与运行快照
 
-`process(ProcessingRequest) -> ProcessingResult`，输入引用已持久化的 ContentItem，不重新定义采集结构。
+- RepositoryConnection：`id, revision, owner, repo, default_branch, credential_ref, state`；NotificationConnection：`id, revision, url_secret_ref, protocol=generic_json, state`。
+- GroupRoute：`repository_connection_id, base_path, notification_connection_id?`；组内不保存仓库地址和 Token。
+- RunSnapshot：组配置/规则修订、选中来源、来源关键词、AIProfile 修订、解析完成的仓库 owner/repo/branch/path、通知引用、截止时间、预算。
+- 凭据值运行时从秘密存储读取，快照仅保存引用。撤销凭据始终优先于快照；配置改变不让旧任务改投新目标。
+- `/docs/agent-leaning` 规范化为 `docs/agent-leaning`；拒绝空根路径、路径穿越、符号链接跳出和 repo/branch 内跨组重叠目录。
 
-| 输入字段 | 类型与含义 |
+## 稳定身份与处理接口
+
+Article 使用持久化 ID，URL别名与多个 SourceItem 指向该 ID。内容 hash 只代表修订；标题变化不更换文件目录。跨来源合并不是文本语义聚类，首期按确认 URL 归并，无法确认则保留独立条目。
+
+`process(ProcessingRequest) -> ProcessingResult`：
+
+| 请求字段 | 语义 |
 | --- | --- |
-| `run_id/group_id` | string，本次运行与采集组 |
-| `group_revision` | string，本次使用的不可变组配置修订 |
-| `items` | `{article_id, revision, content_ref, source_ids}[]`，稳定文章、内容版本与来源关联 |
-| `focus/source_keywords/preferences` | 关注描述、按来源区分的关键词、筛选偏好 |
-| `model_ref/prompt_revision/rules_revision` | 模型配置引用与处理版本 |
-| `language` | 输出语言，首期中文 |
+| run_id/group_id/group_revision | 当前运行与冻结的组规则 |
+| items | `{article_id, revision, content_ref, source_ids}[]` |
+| focus/preferences/source_rules | 组关注描述、偏好及逐来源关键词/排除词/匹配模式 |
+| ai_profile_ref/prompt_revision | 可复用 AI 执行配置与提示词版本 |
+| budget | candidates_limit、selected_limit、deadline |
 
-| 输出字段 | 类型与含义 |
+| 结果字段 | 语义 |
 | --- | --- |
-| `status` | `success/partial/failed` |
-| `decisions` | `{article_id, outcome, reason}[]`；outcome 为 `selected/excluded/pending` |
-| `entries` | 本组的知识条目：文章标识、摘要、关键事实、相关理由、来源、完整度 |
-| `bundle_ref/batch_id` | 已保存文件包及不可变批次标识，无可交付内容时可空 |
-| `errors` | 按文章标识关联的错误与重试条件 |
+| status | success/partial/failed |
+| decisions | article_id、revision、selected/excluded/pending/deferred、reason、matched_source_ids、scores |
+| entries | 原文引用、结构化分析、元信息与证据关联 |
+| bundle_ref/batch_id | 有有效内容时返回已保存的固定文件包；没有变化时为空 |
+| errors | 关联任务与条目、是否可重试及下一动作 |
 
-处理结果按文章版本、组配置和处理版本复用。模型输出经过结构校验，引用必须来自输入证据；失败或内容缺失返回 pending。全部排除也可成功，但不为凑数编造文章；没有文件变化时跳过交付。
+处理缓存键至少包含文章修订、组规则修订、AIProfile 修订与提示词修订。per-group 已交付记录与处理缓存分开；同一文章可被另一组首次发布。
 
-## 文件包：ArtifactBundle
+## ArtifactBundle
 
-| 字段 | 语义 |
-| --- | --- |
-| `group_id/batch_id` | 所属组和固定批次；重试沿用，不重新生成 |
-| `group_revision` | 绑定的组配置修订，避免重试时改投其他仓库或 Webhook |
-| `entries` | 本批入选文章标识与内容版本，供核对 |
-| `files` | `{path, content, sha256, media_type}[]`；path 相对组归档根目录，内容为 UTF-8 |
-| `base_manifest_ref` | 生成文件包时依据的上次已确认管理清单，可空 |
+字段：`group_id, run_id, batch_id, snapshot_ref, kind(collection|research|resync), entries, files, base_manifest_ref`。
 
-路径固定为 `articles/<article_id>.md`、`digests/<batch_id>.md`、`index.md` 与 `.openlore-manifest.json`。索引与管理清单由该组已归档条目和本批变化生成；清单不包含自身摘要值，避免自引用。最终清单记录实际管理的文件和最后成功的批次，不保存秘密。
+files 元素：`path, content, sha256, media_type, expected_remote_sha256?`。路径相对组路由，内容 UTF-8；文件包渲染后不可变。research 包包含 report 与 sources 清单，collection 包包含文章文件与简报，resync 包只复制已有成果到新路由，不重新调用 AI。
 
-单篇文件包含来源、发布时间、内容修订、摘要、关键事实和原文链接；不同组可对同一文章生成不同侧重点的文件。同一批的路径、内容和摘要值均固定，单纯重试不改生成时间或模型文本。
+- 文章：`articles/<article_id>/source.md`、`analysis.md`、`metadata.json`。
+- 简报：`digests/YYYY/MM/<local_date_time>_<run_id>.md`，时间来自运行创建时并固定。
+- 调研：`research/<research_id>-<stable_slug>/report.md`、`sources.json`；slug 在创建时固定。
+- 公共产物：`README.md`、`.openlore/manifest.json`。
 
-交付目标从文件包绑定的组配置快照解析；修改组配置对新批次生效，不在重试时悄悄更换既有批次的目的地。
+README 使用本组已归档记录加当前变更生成。manifest 保存 group_id、路由身份、最近批次、所有系统管理文件的内容摘要和实体关联；排除其自身摘要，避免递归。每个文件的 expected_remote_sha256 来自上次已确认同步结果，用于检查人工修改。
 
-## 仓库接口
+没有业务变化时不改元信息的处理时间，不生成新简报或文件包。部分成功一旦发布，失败内容后续成功使用新 run/batch；不改历史简报来伪装当时全部成功。
 
-`sync_files(RepositorySyncRequest) -> RepositorySyncResult`。
+## GitHub 同步接口
 
-| 输入字段 | 含义 |
-| --- | --- |
-| `group_id/batch_id/bundle_ref` | 本次交付身份与文件包 |
-| `repository/branch/base_path` | GitHub `owner/repo`、目标分支、组归档路径；未指定分支由仓库元信息解析并固定到本批 |
-| `credential_ref` | GitHub Token 引用，由运行环境解析 |
+`sync_files({bundle_ref, snapshot_ref, credential_ref}) -> RepositorySyncResult`。
 
-输出：`status=updated/unchanged/failed/conflict/unknown`、`commit_sha`、`commit_url`、`changed_paths` 和结构化错误。只有目标分支包含对应文件包后才认定 updated；仅创建 tree 或 commit 对象不算完成。
+结果：`status=updated/unchanged/blocked/conflict/unknown/failed, commit_sha?, commit_url?, changed_paths[], errors[]`。
 
-### GitHub 更新步骤
+1. 按 owner/repo/branch 获取租约，确认连接未撤销，读取实际 head、完整目标目录树及 manifest；API 返回截断时继续获取子树，不能将缺失列表误当作删除。
+2. 校验文件路径和归属。只有本组管理文件可更新；新文件路径已被非管理内容占用则冲突。无变化返回 unchanged。
+3. 为变化文件创建 blob/tree，使用最新 `base_tree` 保留无关内容，创建父节点为当前 head 的 commit，再以 `force=false` 更新 ref。
+4. ref 因并发前进失败时重新读树并比较；无关改动可重试最多三次，管理文件发生变化返回 conflict。
+5. ref 更新超时为 unknown，读取目标分支的 manifest.batch_id 与文件摘要核对。文件包已生效则记成功，不重复创建提交；不能确认时保持待核实。
+6. 成功后事务性更新本地已交付索引、manifest 和提交标识，再排队通知。若进程在远端成功后崩溃，恢复时通过第 5 步补齐本地状态。
 
-1. 校验仓库、可写分支和 Token，获取最新 head、tree 与目标目录管理清单。空仓库或不存在的目标分支报告需初始化，不自动猜测分支。
-2. 规范化 base_path 与文件路径，拒绝绝对路径、`..` 越界和跨组重叠管理目录。对照清单检查已有文件归属和人工修改；相同内容跳过。
-3. 以当前 tree 为 `base_tree` 创建新 tree，只更新本批管理文件；创建以当前 head 为父节点的 commit，最后以 `force=false` 更新分支引用。
-4. 若 head 发生变化，重新读取并比较。仅无关路径变化时重新基于最新 tree 提交；管理文件发生冲突则返回 conflict，不覆盖对方修改。
-5. 引用更新超时返回 unknown；先读取分支、管理清单及文件摘要值确认本批是否已落地，再决定是否重试。不可盲目追加重复提交。
+冲突操作：保留远端时将该文件标记为人工管理并从自动更新集合排除，后续渲染尊重该锁定，其他管理文件仍可更新；采用生成版前按用户已查看的远端版本再次检查；指定新路径须重新通过路径与归属校验。显式冲突决策创建新 run/batch，取消原未发布包并保留原证据；不能修改已交付文件包或对变化中的远端执行盲目强推。
 
-同一组按序生成和交付批次；失败批次恢复或明确取消前不让后续批次覆盖其索引。不同组写同一分支也需协调并发，并保留远端最新树中的其他文件。
+官方依据：[Git trees/base_tree](https://docs.github.com/en/rest/git/trees)、[Git commits](https://docs.github.com/en/rest/git/commits)、[Git references](https://docs.github.com/en/rest/git/refs)。应用所需 Contents 写权限不取代仓库分支规则。
 
-本期优先使用 GitHub Git Database API，一批多文件通过一次分支更新交付。参考：[创建 tree 与 base_tree](https://docs.github.com/en/rest/git/trees)、[创建 commit](https://docs.github.com/en/rest/git/commits)、[更新引用](https://docs.github.com/en/rest/git/refs)。官方要求相关写接口具有仓库 Contents 写权限；分支保护仍然适用。实际客户端版本在实现时锁定。
+## 通知接口
 
-## 消息接口与恢复
+`notify({event_id, snapshot_ref, summary, counts, commit_url, document_path}) -> NotificationResult`。
 
-`notify(NotificationRequest) -> NotificationResult`。
+输出：`sent/skipped/failed/unknown`、平台响应信息和错误；通用 JSON 协议按 HTTP 2xx 判定，超时保留 unknown。事件类型及 payload 以 [04](../product/feature/04-delivery-and-git-archive.md) 为准。
 
-- 输入：`group_id`、`batch_id`、Webhook 凭据引用、已确定简报、仓库提交及文章链接。
-- 输出：`status=sent/skipped/failed/unknown`、可用的消息标识、错误与重试信息。
-- 仓库确认 updated 或 unchanged 后再执行通知。每个组/批次/目标独立记录状态；仓库成功但通知失败时仅补发消息。
-- 同一批已发送则 skipped。网络超时且无法核对平台结果时为 unknown；平台没有幂等能力时不宣称严格一次投递。
-- Webhook 只是传输入口，成功判断和消息格式需按具体平台实现；首期仅落地一种确定的平台适配。
+Delivery 唯一键为 `group_id + batch_id + target_kind`；Git 与通知状态独立。通知失败不阻塞后续组采集或仓库更新，但同一事件不同时启动两个发送任务。无通知连接时记录 skipped。
 
-## 独立能力目录
+## 输入输出验证
 
-```text
-src/openlore/
-├── processing/
-│   ├── contracts.py          # 处理输入输出、知识条目、文件包
-│   ├── normalize.py          # 内容清洗与来源合并
-│   ├── service.py            # 按组编排、缓存与结果校验
-│   └── renderers/markdown/   # 文章、简报、索引模板
-├── delivery/
-│   ├── contracts.py          # 文件同步与通知接口
-│   └── service.py            # 按组交付、状态与恢复
-└── infrastructure/
-    ├── models/<provider>/   # 一个模型提供者一个目录
-    ├── github_repository/   # Token 解析接入、API、冲突处理、映射
-    └── webhook_notification/ # 首期消息平台，后续按平台独立目录
-```
+请求使用严格 schema，未知关键字段报错；模型 JSON 二次解析后验证枚举、数值范围与证据引用。文件包验证路径、摘要和相对链接；manifest 与已交付内容必须一致；快照中不得包含实际 Token/Webhook 值。
 
-凭据解析与持久存储由应用提供。基建适配器不依赖具体用户组业务；模型不直接拿 GitHub Token 操作仓库，仓库适配器只执行经过校验的文件包。
-
-## 验收重点
-
-验证两个组对同一文章的不同筛选、正文与模型失败、文件稳定路径及完整索引；再验证 GitHub 新增/更新/无变化、管理目录隔离、人工修改与并发提交、分支权限错误、提交超时确认，以及通知独立补发。真实写库和消息验证需要用户提供并配置对应目标与凭据。
+契约测试覆盖固定输入的候选与入选计数、两个组的隔离、代码/图片引用保留、长文部分失败、AI 非法 JSON、文件 9→0→更新→研究的变化、远端并发/超时和通知单独恢复。

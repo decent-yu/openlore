@@ -1,0 +1,34 @@
+{
+  "example_only": true,
+  "article_id": "a-002",
+  "group_id": "group-agent",
+  "title": "上下文证据的结构化整理",
+  "canonical_url": "https://example.com/context-evidence",
+  "author": "Example Author",
+  "published_at": "2026-10-14T00:00:00Z",
+  "content_revision": "rev-001",
+  "content_sha256": "69b40fccf58294d89f1e3604afd0b98b57951f9d99eb5ce1a23423c022e0e4ed",
+  "sources": [
+    {
+      "source_id": "fixture-source",
+      "source_item_id": "a-002"
+    }
+  ],
+  "completeness": "full",
+  "issues": [
+    "fictional_example"
+  ],
+  "group_revision": "group-rev-001",
+  "rules_revision": "rules-001",
+  "prompt_revision": "prompt-001",
+  "ai": {
+    "provider": "example",
+    "model": "not-executed"
+  },
+  "scores": {
+    "relevance": 85,
+    "quality": 80,
+    "combined": 83.5
+  },
+  "processed_at": "2026-10-15T01:00:00Z"
+}

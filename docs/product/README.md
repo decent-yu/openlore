@@ -11,7 +11,7 @@ product/
 ├── README.md                 # 本规范
 ├── product-brief.md          # 产品目标、用户与整体范围
 ├── research/                 # 技术调研与方案依据（按 NN-topic 目录组织）
-└── feature/                  # 核心功能规划与定义（按 NN-topic.md 组织）
+└── feature/                  # index 总览、NN-topic 功能定义、assets 图示、examples 样例
 ```
 
 ## 命名与组织
