@@ -1,6 +1,6 @@
 # 筛选、提炼与知识整理
 
-日期：2026-10-15。关联：[产品规划](../product-brief.md) · [调研总览与源码版本](01-open-source-overview.md)。
+日期：2026-10-15。参考：[产品规划](../../product-brief.md) · [调研总览与源码版本](01-open-source-overview.md)。
 
 ## TrendRadar：从候选内容到简报
 

@@ -1,6 +1,6 @@
 # 群推送与 Git 知识沉淀
 
-日期：2026-10-15。关联：[产品规划](../product-brief.md) · [调研总览与源码版本](01-open-source-overview.md)。
+日期：2026-10-15。参考：[产品规划](../../product-brief.md) · [调研总览与源码版本](01-open-source-overview.md)。
 
 ## TrendRadar：报告渲染与多渠道发送
 
