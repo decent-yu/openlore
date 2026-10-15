@@ -27,7 +27,7 @@
 | `options` | object / 是 | 能力专用配置，按该能力的 schema 校验 |
 | `budget` | object / 是 | `timeout_seconds` 与 `max_requests`，限制一次调用 |
 
-时间窗采用 `[since, until)`。发布日期缺失时保留条目并记录 `date_unknown`，不能伪造日期或静默判为窗外。`fetch` 的指定目标不按发布时间过滤。
+公共 Feed 轮询的 since/until 默认均为空，先保存可见元信息；组首次时间窗与候选数量在应用层按 feature 02 执行，不能过滤掉其他组需要的条目。显式能力请求的时间窗采用 `[since, until)`。发布日期缺失时保留条目并记录 `date_unknown`，不能伪造日期或静默判为窗外。`fetch` 的指定目标不按发布时间过滤。
 
 ## 输出：CollectionResult
 
@@ -84,11 +84,11 @@
   "capability_id": "web_feed",
   "operation": "discover",
   "target": {"url": "https://blog.cloudflare.com/rss/"},
-  "scope": {"since": null, "until": null, "limit": 20},
+  "scope": {"since": null, "until": null, "limit": 100},
   "state": null,
   "credential_ref": null,
   "options": {},
-  "budget": {"timeout_seconds": 30, "max_requests": 3}
+  "budget": {"timeout_seconds": 30, "max_requests": 10}
 }
 ```
 
@@ -115,7 +115,7 @@ src/openlore/
         └── web_page/         # HTTP + Trafilatura，目录结构同上
 ```
 
-每项能力注册 `id`、支持操作、目标类型、配置 schema 和工厂。注册冲突启动失败；未知参数在调用前报错。新能力增加自己的目录与注册项，满足统一契约即可接入；特定厂商 SDK 不进入 contracts 或业务编排层。Python 路径作为本期推荐结构，协议语义不依赖语言。
+每项能力注册 `id`、支持操作、目标类型、配置 schema 和工厂。注册冲突启动失败；未知参数在调用前报错。新能力增加自己的目录与注册项，满足统一契约即可接入；特定厂商 SDK 不进入 contracts 或业务编排层。本期采用 Python，整体运行与目录见[本地服务设计](local-service-and-ai.md)；接口语义不绑定第三方库。
 
 ## 本期复用与检查
 
