@@ -8,7 +8,7 @@
 
 对当前这些公开技术网站，标准订阅与直接 HTTP 获取更适合建立可重复验证的基线。AI 负责理解主题、判断文章相关性和生成摘要；采集路径由配置明确指定。AI 浏览器与多平台 skill 留作后续复杂来源的候选。
 
-首期来源方向已确认，技术选型仍为调研建议，尚未实现四项功能。
+首期来源方向已确认，具体能力边界以 [feature 总览](../../feature/index.md) 及其关联接入设计为准；整体技术选型仍待编码验证，尚未实现四项功能。
 
 ## 信息源选择
 
@@ -43,7 +43,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 
 ## 技术取舍
 
-建议单进程工具起步：Python + [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析订阅，HTTP 客户端请求页面，[Trafilatura](https://trafilatura.readthedocs.io/en/latest/) 提取正文，SQLite 保存条目与状态，再接一个模型和已有交付能力。
+建议单进程工具起步：Python + [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析订阅，HTTP 客户端请求页面，[Trafilatura](https://trafilatura.readthedocs.io/en/latest/) 提取正文，SQLite 保存条目与状态，再接一个模型和文件同步能力。两个采集能力独立成目录，通过[统一采集接口](../../../design/collection-adapters.md)接入；按组输出的文件包通过[GitHub 同步接口](../../../design/processing-and-delivery.md)新增或更新目标仓库文件。
 
 - 先检查 Feed 内容是全文还是摘要；需要时再补抓，保留原始链接和最终链接。
 - RSS/Atom 中的 ID 用于源内识别；重定向后的规范 URL 用于合并重复导入。内容 hash 用于识别已存在文章是否改变。
@@ -61,4 +61,4 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 4. 模拟一个来源超时，其余来源继续完成；恢复后可补抓失败条目，不重复处理已成功条目。
 5. 创建两个采集组，至少复用一个来源并设置不同关键词及同步目标，结果按组独立筛选。每组均按自己的 Git 仓库、路径与 Webhook 完成真实交付，修改一组不影响另一组。
 
-**首期方向收敛为两个公共信息源、可独立配置的多个采集组和四项功能闭环。**下一步明确各功能的具体行为与验收，再确定架构、模型及现有推送/Git 能力的接入方式。
+**首期方向收敛为两个公共信息源、可独立配置的多个采集组和四项功能闭环。**输入输出、能力目录与 GitHub 文件更新流程已进入功能及设计文档；模型提供者与具体 Webhook 平台在实施前确定。

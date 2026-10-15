@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1200" viewBox="0 0 1480 1200" role="img" aria-labelledby="title desc">
+<title id="title">OpenLore 功能架构与运行流程</title>
+<desc id="desc">管理员维护公共信息源，用户配置采集组。独立适配器通过统一协议获取共享内容，按组筛选并生成文件包，通过 GitHub Token 更新仓库后推送通知。各阶段持久化状态并独立恢复。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/></marker></defs>
+<style>text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif} .title{font-size:31px;font-weight:700;fill:#15263d}.sub{font-size:18px;fill:#53647c}.head{font-size:23px;font-weight:650;fill:#172b46}.body{font-size:18px;fill:#334860}.small{font-size:15px;fill:#65758b}.code{font-family:Menlo,Consolas,monospace;font-size:16px;fill:#334860}.arrow{fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)}</style>
+<rect width="1480" height="1200" fill="#f4f7fc"/>
+
+<text x="50" y="55" class="title">OpenLore · 功能架构与运行流程</text>
+<text x="50" y="86" class="sub">本期：Cloudflare + Simon Willison  /  RSS、Atom 与单篇文章  /  按组生成并同步知识文件</text>
+<rect x="50" y="125" width="650" height="185" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="50" y="143" width="5" height="34" rx="2" fill="#3579cb"/>
+<text x="72" y="167" class="head">01 · 管理员：公共信息源</text>
+<text x="72" y="207" class="body">来源说明：名称、网站、主要内容、主题与局限</text>
+<text x="72" y="238" class="body">采集设置：启用状态、入口、能力类型、处理范围</text>
+<text x="72" y="269" class="body">本期两个网站共享同一 RSS/Atom 能力</text>
+<rect x="800" y="125" width="630" height="185" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="800" y="143" width="5" height="34" rx="2" fill="#8256c5"/>
+<text x="822" y="167" class="head">01 · 用户：多个采集组</text>
+<text x="822" y="207" class="body">分组名称、关注描述、来源选择与逐来源关键词</text>
+<text x="822" y="238" class="body">每组配置 GitHub 仓库、分支、路径、凭据及 Webhook</text>
+<text x="822" y="269" class="body">同一来源可复用，各组筛选与交付独立</text>
+<path d="M700 220 H800" class="arrow"/>
+<text x="716" y="203" class="small">选来源</text>
+<path d="M375 310 V365 H200 V430" class="arrow"/>
+<path d="M1115 310 V365 H900 V430" class="arrow"/>
+<text x="1020" y="392" class="small">组配置贯穿处理与交付</text>
+<rect x="50" y="430" width="300" height="255" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="50" y="448" width="5" height="34" rx="2" fill="#3579cb"/>
+<text x="72" y="472" class="head">02 · 独立采集能力</text>
+<text x="72" y="512" class="body">RSS / Atom → web_feed</text>
+<text x="72" y="543" class="body">文章 URL → web_page</text>
+<text x="72" y="574" class="body">复用 feedparser</text>
+<text x="72" y="605" class="body">复用 Trafilatura</text>
+<text x="72" y="636" class="body">统一请求、结果与错误</text>
+<rect x="400" y="430" width="300" height="255" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="400" y="448" width="5" height="34" rx="2" fill="#21937c"/>
+<text x="422" y="472" class="head">共享内容与采集状态</text>
+<text x="422" y="512" class="body">正文 / 摘要与原始依据</text>
+<text x="422" y="543" class="body">来源、URL、日期、附件</text>
+<text x="422" y="574" class="body">内容完整度与获取方式</text>
+<text x="422" y="605" class="body">续采位置与补抓目标</text>
+<text x="422" y="636" class="body">保存后推进采集状态</text>
+<rect x="750" y="430" width="300" height="255" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="750" y="448" width="5" height="34" rx="2" fill="#8256c5"/>
+<text x="772" y="472" class="head">03 · 按采集组处理</text>
+<text x="772" y="512" class="body">清洗、去重与来源合并</text>
+<text x="772" y="543" class="body">关注描述 + 来源关键词</text>
+<text x="772" y="574" class="body">AI 筛选、摘要与事实</text>
+<text x="772" y="605" class="body">保留匹配理由和缺口</text>
+<text x="772" y="636" class="body">生成固定批次的文件包</text>
+<rect x="1100" y="430" width="330" height="255" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="1100" y="448" width="5" height="34" rx="2" fill="#8256c5"/>
+<text x="1122" y="472" class="head">03 · 处理后的文件包</text>
+<text x="1122" y="512" class="code">articles/&lt;article_id&gt;.md</text>
+<text x="1122" y="543" class="code">digests/&lt;batch_id&gt;.md</text>
+<text x="1122" y="574" class="code">index.md</text>
+<text x="1122" y="605" class="code">.openlore-manifest.json</text>
+<text x="1122" y="636" class="code">路径、内容与 SHA-256</text>
+<path d="M350 555 H400" class="arrow"/>
+<path d="M700 555 H750" class="arrow"/>
+<path d="M1050 555 H1100" class="arrow"/>
+<text x="50" y="404" class="small">来源与能力解耦</text>
+<text x="750" y="404" class="small">每个采集组独立执行</text>
+<path d="M1265 685 V743 H900 V810" class="arrow"/>
+<text x="1055" y="730" class="small">先确认仓库文件更新</text>
+<path d="M550 685 V810" class="arrow"/>
+<text x="565" y="755" class="small">运行状态持续保存</text>
+<rect x="50" y="810" width="650" height="215" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="50" y="828" width="5" height="34" rx="2" fill="#21937c"/>
+<text x="72" y="852" class="head">持久状态与失败恢复</text>
+<text x="72" y="892" class="body">共享：来源条目、内容版本、原始响应与续采状态</text>
+<text x="72" y="923" class="body">按组：筛选结果、固定文件包、仓库和通知状态</text>
+<text x="72" y="954" class="body">失败只重试对应阶段，避免重复抓取、生成与发送</text>
+<text x="72" y="985" class="body">凭据单独保存，由运行环境注入对应适配器</text>
+<rect x="750" y="810" width="300" height="215" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="750" y="828" width="5" height="34" rx="2" fill="#3579cb"/>
+<text x="772" y="852" class="head">04 · GitHub 文件同步</text>
+<text x="772" y="892" class="body">Token 授权访问目标仓库</text>
+<text x="772" y="923" class="body">按组目录新增 / 更新文件</text>
+<text x="772" y="954" class="body">批量提交，保留其他文件</text>
+<text x="772" y="985" class="body">返回提交与文件链接</text>
+<rect x="1100" y="810" width="330" height="215" rx="16" fill="white" stroke="#d8e1ed" stroke-width="1.5"/>
+<rect x="1100" y="828" width="5" height="34" rx="2" fill="#3579cb"/>
+<text x="1122" y="852" class="head">04 · 组内消息通知</text>
+<text x="1122" y="892" class="body">调用本组 Webhook</text>
+<text x="1122" y="923" class="body">发送短简报与归档链接</text>
+<text x="1122" y="954" class="body">记录真实平台响应</text>
+<text x="1122" y="985" class="body">失败可独立补发</text>
+<path d="M1050 915 H1100" class="arrow"/>
+<text x="1053" y="892" class="small">成功后</text>
+<rect x="50" y="1080" width="1380" height="78" rx="14" fill="#e9eff9"/>
+<text x="72" y="1111" class="body">扩展约定：每项独立基建能力一个目录，通过统一接口和注册表接入。</text>
+<text x="72" y="1141" class="small">后续可接 GitHub 数据、动态网页、托管采集、X、公众号及其他模型 / 通知适配器；本图为设计，尚未编码。</text>
+</svg>
