@@ -4,7 +4,7 @@
 
 ## 本期技术与运行形态
 
-- Node.js + Fastify 提供本地 API，托管 React + shadcn/ui 静态页面；Python 子进程复用采集解析库。版本与语言边界统一见[技术选型](../架构/技术选型.md)。单用户本机运行，不做多人登录或远程部署。
+- Node.js + Fastify 提供本地 API，托管 React + shadcn/ui 静态页面；Python 子进程复用采集解析库。版本与语言边界统一见[技术选型](../architecture/technology-stack.md)。单用户本机运行，不做多人登录或远程部署。
 - 一个服务进程维护调度、后台任务和页面，SQLite 开启 WAL 保存业务状态与持久队列；文件放在 `~/.openlore/`，可用 `OPENLORE_DATA_DIR` 改位置。
 - 服务默认监听 `127.0.0.1:8767`，单个 Node 主服务进程。每 30 秒检查到期任务；HTTP 抓取并发默认 4，同一来源串行，Python 解析并发默认 2，AI 子进程并发默认 1，仓库按 repo/branch 串行。
 - 启动入口设计为 `openlore serve`；`openlore doctor` 检查目录、数据库、Python 环境、解析协议、CLI 与连接；`openlore service install/start/stop` 管理本机常驻运行。macOS 使用当前用户 launchd，Linux 使用 systemd --user，均不使用 root。

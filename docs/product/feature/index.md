@@ -36,7 +36,7 @@
 
 ## 运行与页面
 
-单机单用户，React + shadcn/ui 前端、Node.js/Fastify 主服务、Python 采集解析子进程与 SQLite 持久队列。技术栈和工程边界见[架构选型](../../架构/技术选型.md)。导航为设置、来源、采集组、运行、内容库、调研；管理员与普通使用者在首期是同一人承担的职责。
+单机单用户，React + shadcn/ui 前端、Node.js/Fastify 主服务、Python 采集解析子进程与 SQLite 持久队列。技术栈和工程边界见[架构选型](../../architecture/technology-stack.md)。导航为设置、来源、采集组、运行、内容库、调研；管理员与普通使用者在首期是同一人承担的职责。
 
 细节：[本地服务与 AI](../../design/local-service-and-ai.md) · [采集协议](../../design/collection-adapters.md) · [处理/文件同步协议](../../design/processing-and-delivery.md)。每项基建独立目录，业务只依赖统一接口。
 
