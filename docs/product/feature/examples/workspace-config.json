@@ -119,13 +119,21 @@
         "selected_limit": 10
       },
       "research": {
-        "trigger": "manual",
         "mode": "linked_web",
-        "max_seed_articles": 3,
         "max_new_pages": 6,
         "max_link_depth": 1,
         "max_ai_calls": 3,
-        "timeout_seconds": 900
+        "timeout_seconds": 900,
+        "primary_articles_per_task": 1,
+        "question": "解释本篇文章的核心机制、论据、取舍与适用范围"
+      },
+      "outputs": {
+        "digest_enabled": true,
+        "research_enabled": true,
+        "article_skill": "openlore-article-organizer",
+        "research_skill": "openlore-article-research",
+        "digest_skill": "openlore-batch-digest",
+        "archive_images": true
       }
     },
     {
@@ -169,12 +177,20 @@
         "selected_limit": 10
       },
       "research": {
-        "trigger": "manual",
         "mode": "local",
-        "max_seed_articles": 3,
         "max_new_pages": 0,
         "max_ai_calls": 3,
-        "timeout_seconds": 900
+        "timeout_seconds": 900,
+        "primary_articles_per_task": 1,
+        "question": "解释本篇文章的核心机制、论据、取舍与适用范围"
+      },
+      "outputs": {
+        "digest_enabled": false,
+        "research_enabled": false,
+        "article_skill": "openlore-article-organizer",
+        "research_skill": "openlore-article-research",
+        "digest_skill": "openlore-batch-digest",
+        "archive_images": true
       }
     }
   ]

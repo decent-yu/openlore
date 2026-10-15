@@ -62,6 +62,7 @@
 | --- | --- | --- |
 | `collectors/web_feed/` | 是 | [feedparser](https://feedparser.readthedocs.io/en/latest/) 解析 RSS/Atom；共享 HTTP 层负责预算和条件请求 |
 | `collectors/web_page/` | 是 | HTTP + [Trafilatura](https://trafilatura.readthedocs.io/en/latest/)；支持文章导入、补抓和调研引用页获取 |
+| `media_assets/` | 是 | 提取正文图片、下载原始字节、内联 SVG 归档与本地路径映射；受 03 的完整性和预算规则控制 |
 | `collectors/github_api/` | 后续 | 官方 API，获取 Releases 等；区别于仓库文件同步 |
 | `collectors/web_browser/` | 后续 | Playwright，处理动态页面 |
 | `collectors/web_service/` | 后续 | Firecrawl 等托管能力 |
@@ -80,3 +81,5 @@
 ## 验收
 
 覆盖 RSS、Atom、304、无日期、无 ID、乱序、重复、重定向、摘要补抓、预算截断和断点恢复；用真实来源验证一次，再用固定输入验证上面的数量守恒。停止服务后重启，积压与失败记录仍在，已成功条目不重复发布。
+
+文章配图在入选后由独立图片能力归档，采集条目保存配图清单与原始 URL。图片失败使用 pending_assets，重试不要求重新生成文章或重复拉取已成功图片；具体策略见 [03](03-content-processing.md)。

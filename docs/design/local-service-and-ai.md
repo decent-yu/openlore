@@ -36,8 +36,8 @@ Codex/Gemini 自己管理其登录；OpenLore 不读取或输出其认证文件�
 | 来源 `/sources` | 来源说明、采集入口、预览样例、启停、最近成功时间 |
 | 采集组 `/groups` | 创建/编辑/复制/暂停组，选择连接与路由，预览运行计划，立即运行 |
 | 运行 `/runs` | 当前阶段、数量漏斗、逐条原因、预算、错误、补抓/AI/同步独立重试 |
-| 内容库 `/library` | 来源与组过滤、原文/分析/修订对照、重新抓取、选择种子发起研究 |
-| 调研 `/research` | 问题、种子、读取范围、进度、证据清单、报告、取消和更新 |
+| 内容库 `/library` | 来源与组过滤、原文/分析/修订对照、重新抓取、对单篇发起研究；多选时拆为独立任务 |
+| 调研 `/research` | 问题、唯一主文章、读取范围、进度、证据清单、报告、取消和更新 |
 
 修改操作使用 POST/PATCH，前端校验和服务端校验一致；本地 UI 使用会话/CSRF 校验，跨域请求默认拒绝。通过 SSE 展示运行变化，刷新页面仍可从持久记录恢复。
 
@@ -51,7 +51,8 @@ Codex/Gemini 自己管理其登录；OpenLore 不读取或输出其认证文件�
 | SourceItem / Article / ArticleRevision | 来源内稳定身份；Article 持久 ID；同一内容 hash 不重复建修订；保留多来源关系 |
 | GroupItem | group_id + article_revision + rules_revision；保存 selected/excluded/pending/deferred 和理由 |
 | Run / Job | 运行快照；job_key 唯一；阶段、attempt、available_at、租约和父任务 |
-| Research | 组、问题、种子版本、模式、预算、已读证据；更新沿用研究 ID |
+| Research | group_id + 唯一 article_id、文章版本、问题与 skill 修订、预算、证据；一个任务只有一个主文章 |
+| Collection / ArticleLocation / Asset | 日期批次序号；article_id 的固定文章目录；原始图片 URL、SHA-256、本地引用、下载状态 |
 | Bundle / Delivery | batch_id 固定；目标快照；group/batch/target 唯一，分别记录 GitHub 与消息结果 |
 
 筛选内容所需的组快照包含成员来源及其关键词；来源在不同组出现不会互相覆盖。正文获取可共享，但 SourceItem 的来源关联不能因此丢失。
@@ -60,27 +61,28 @@ Codex/Gemini 自己管理其登录；OpenLore 不读取或输出其认证文件�
 
 任务状态：`queued → running → succeeded`，或 `retry_wait / blocked / failed / cancelled`。blocked 用于缺少授权、额度或人工冲突决策；服务继续处理不受影响的任务。
 
-- 来源任务：`discover → persist`；组任务：`refresh_sources_if_stale → select_candidates → fetch_body → assess → analyze → render → sync_git → notify`；研究任务：`plan → fetch_evidence → synthesize → validate → render → sync_git → notify`。组配置在创建运行时固定，候选截止时间在必要刷新之后一次性固定。
+- 来源任务：`discover → persist`；组任务：`refresh_sources_if_stale → select_candidates → fetch_body → assess → organize_with_skill → archive_assets → render → sync_git → notify`；研究任务：`plan → fetch_evidence → synthesize → archive_assets → validate → render → sync_git → notify`。组配置在创建运行时固定，候选截止时间在必要刷新之后一次性固定。
 - 每个阶段输出先持久化，再推进下一阶段；worker 每 15 秒续租，租约 90 秒。重启回收过期任务，检查其已存输出后从未完成阶段继续。
 - 子进程按任务独立进程组启动，记录 PID 与启动身份；取消/超时只终止本服务启动且身份匹配的进程，不杀用户其他 CLI 会话。
 - 同组同时点击“运行”或定时器与手动重复触发，返回同一在途运行；不会并行生成两份索引。同一来源扫描和同仓库分支同步也有互斥租约。
 - 网络重试依 02；AI 结构修复最多一次，仍失败保留 pending。额度不足按照提供者重试时间暂停，无明确时间则一小时后重新检查；认证失效等待设置修复。
 - 普通组运行总时限 60 分钟。截止时有有效结果则冻结 partial 文件包，未完成条目保持 pending/deferred；之后补全的内容创建后续运行，不修改已发布批次快照。
-- 普通结果冻结后即能同步；深度研究作为独立任务，不阻塞日常简报。用户暂停组停止新自动任务，取消正在执行的任务需显式选择。
+- 普通结果冻结后即能同步；深度研究作为独立任务，不阻塞普通文章发布。用户暂停组停止新自动任务，取消正在执行的任务需显式选择。
 - AI 队列优先执行普通文章任务，研究按规划、报告等轮次分开排队，不以一个长会话持续占用执行器；已开始的单次调用仍受自身超时限制。
 
 ## AIAdapter 接口
 
 `execute(AITask, context) -> AIResult`。
 
-输入：job_id、profile_id/revision、task_type、prompt_revision、材料文件引用、输出 JSON Schema、deadline。task_type 为 `assess / analyze / research_plan / research_report / repair`。
+输入：job_id、profile_id/revision、task_type、prompt_revision、材料文件引用、输出 JSON Schema、deadline。task_type 为 `assess / organize / research_plan / research_report / digest / repair`；评估/整理/研究/简报任务另带 skill_id、skill_revision 与产物开关快照。
 
 输出：`status=success/invalid_output/auth_required/quota_exceeded/timeout/failed`、结构化 result、provider、CLI version、实际 model、usage（可空）、duration、error。退出码为 0 只是必要条件，还需结果 schema 与证据校验通过。
 
 | 任务 | 必要业务输出 |
 | --- | --- |
 | assess | relevance、quality（0–100 整数）、reason、evidence_refs；综合分由应用计算 |
-| analyze | summary（3–5 项）、facts、tradeoffs、applicability、group_relevance、limitations；事实关联 evidence_refs |
+| organize | tags、title_suggestion、导读、整理原文、asset_refs、limitations；AI 内容与原文分区 |
+| digest | 本批概览与已发布文章卡片引用；只在勾选简报时执行 |
 | research_plan | 问题分解、仅从已发现引用链接中选择的 link_ids（最多 6） |
 | research_report | 结论、机制、对比、适用场景、建议、未验证项、带 evidence_refs 的论据 |
 
@@ -126,8 +128,8 @@ gemini -p <task_instruction> --output-format json
 
 - 并发 1，job/文章/研究三级 deadline；超时终止该任务进程组并保留证据与失败原因，不无限 retry。
 - 输入分块规则在 03；research_report 只使用与问题相关的证据片段，材料预算默认 80,000 字符，并在来源清单记录哪些片段实际进入模型。
-- 研究 URL 来自种子正文中的真实链接；应用校验公开 HTTP(S)、域名和预算后获取，默认一次扩展 6 页、深度 1。遇到内网/本机地址、登录页或不支持媒体返回不可读，不将运行权限交给页面内容。
-- 完成 1–3 篇种子阅读后，最多 1 次规划、1 次报告、1 次修复；预算耗尽返回带 gaps 的部分报告。通用全网搜索不在本期实现范围，不影响基于原文引用的深度研究。
+- 研究 URL 来自该篇主文章正文中的真实链接；应用校验公开 HTTP(S)、域名和预算后获取，默认一次扩展 6 页、深度 1。遇到内网/本机地址、登录页或不支持媒体返回不可读，不将运行权限交给页面内容。
+- 每项任务完成唯一一篇主文章阅读后，最多 1 次规划、1 次报告、1 次修复；预算耗尽返回带 gaps 的部分报告。通用全网搜索不在本期实现范围，不影响基于原文引用的深度研究。
 - 普通任务无任何模型可用时保留正文，等待 profile 恢复；不切换到未知供应商或产生新的付费订阅。
 
 ## 独立目录
@@ -139,12 +141,14 @@ apps/server/src/
 ├── modules/scheduler/           # 到期计划与去重调度
 ├── modules/jobs/                # SQLite 队列、租约、恢复与取消
 ├── modules/collection/          # 统一采集协议和编排
-├── modules/processing/          # 分组筛选、AI 任务、文件渲染
+├── modules/processing/          # 分组筛选、skill 任务、文件渲染
+├── skills/                      # 版本固定的整理/逐篇研究/简报 SKILL.md
 ├── modules/research/            # 问题规划、引用扩展和证据核验
 ├── modules/delivery/            # 文件包、路由与同步状态
 └── infrastructure/
     ├── collectors/web_feed/     # Node 适配器，调用 Python 解析
     ├── collectors/web_page/     # Node 适配器，调用 Python 提取
+    ├── media_assets/            # 正文和调研图片提取、下载、去重与路径映射
     ├── python/                  # 子进程协议与生命周期
     ├── ai/codex_cli/
     ├── ai/gemini_cli/
@@ -155,3 +159,9 @@ apps/server/src/
 ```
 
 前端位于 `apps/web/`，Python 解析位于 `workers/python/`，共享契约位于 `packages/contracts/`。同一种能力的新供应商增加目录和注册项，不修改处理/交付业务协议。初期只有单机持久队列；现有协议仍允许以后把 worker 独立部署。
+
+## Skills 与图片的执行边界
+
+本期使用显式装载模式：运行器读取固定版本 SKILL.md 与白名单模板，将其指令放入受控 prompt；材料作为独立输入，不作为指令。已有 Codex/Gemini 无头调用与严格输出校验继续适用，不需要为读取 skill 开放所有工具。原生 Skill 激活属于适配器可选实现，不能把应用装载模式说成已经调用原生技能工具。
+
+产物开关、逐篇任务、图片预算与目录规则见 [03](../product/feature/03-content-processing.md) 和 [skills/资源设计](content-skills-and-assets.md)。图像文件通过 media_assets 处理并以二进制写库；完成下载不代表完成视觉分析。

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="240" viewBox="0 0 720 240" role="img">
+<title>证据组织：虚拟示例图</title>
+<rect width="720" height="240" rx="18" fill="#f3f6fc"/>
+<text x="32" y="48" font-family="PingFang SC,Arial,sans-serif" font-size="25" fill="#18334d">证据组织 · 示例图</text>
+<rect x="32" y="90" width="190" height="76" rx="12" fill="#e3edff"/>
+<text x="62" y="136" font-family="PingFang SC,Arial,sans-serif" font-size="22" fill="#18334d">原文片段</text>
+<path d="M230 128 h25 m-8 -7 l8 7 -8 7" stroke="#5f7188" stroke-width="2" fill="none"/>
+<rect x="264" y="90" width="190" height="76" rx="12" fill="#e8ddff"/>
+<text x="294" y="136" font-family="PingFang SC,Arial,sans-serif" font-size="22" fill="#18334d">来源编号</text>
+<path d="M462 128 h25 m-8 -7 l8 7 -8 7" stroke="#5f7188" stroke-width="2" fill="none"/>
+<rect x="496" y="90" width="190" height="76" rx="12" fill="#d9f2e9"/>
+<text x="526" y="136" font-family="PingFang SC,Arial,sans-serif" font-size="22" fill="#18334d">结论引用</text>
+<text x="32" y="210" font-family="PingFang SC,Arial,sans-serif" font-size="15" fill="#61738a">人工绘制的格式示例，非真实网站采集结果。</text></svg>
