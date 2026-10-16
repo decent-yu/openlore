@@ -45,7 +45,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 
 ## 技术取舍
 
-实施基线以[架构选型](../../../architecture/technology-stack.md)为准：Node.js 主服务负责 HTTP 获取、编排和 SQLite 状态，Python 子进程通过 feedparser 解析订阅、Trafilatura 提取正文，前端采用 React + shadcn/ui。两个采集能力独立成目录，通过[统一采集接口](../../../design/collection-adapters.md)接入；按组输出的文件包通过[GitHub 同步接口](../../../design/processing-and-delivery.md)新增或更新目标仓库文件。
+实施基线以[架构选型](../../../architecture/technology-stack.md)为准：Node.js 主服务负责 HTTP 获取、编排和 SQLite 状态，Python 子进程通过 feedparser 解析订阅、Trafilatura 提取正文，前端采用 React + shadcn/ui。采集能力通过[内容源管理](../../feature/01-source-management.md)统一接入；按组输出的文件包通过[Git 交付归档](../../feature/05-git-delivery-and-archive.md)同步至目标仓库。
 
 - 先检查 Feed 内容是全文还是摘要；需要时再补抓，保留原始链接和最终链接。
 - RSS/Atom 中的 ID 用于源内识别；重定向后的规范 URL 用于合并重复导入。内容 hash 用于识别已存在文章是否改变。

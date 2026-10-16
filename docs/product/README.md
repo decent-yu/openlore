@@ -2,7 +2,7 @@
 
 本目录维护 OpenLore 的产品目标、调研与功能定义。只写重点，按需组织。
 
-功能入口：[功能与架构总览](feature/index.md)。前后端技术栈见 [docs/architecture/technology-stack.md](../architecture/technology-stack.md)；详细接口放在 `docs/design/`，由功能文档链接。
+功能入口：[功能与架构总览](feature/index.md)。前后端技术栈见 [docs/architecture/technology-stack.md](../architecture/technology-stack.md)；功能定义与代码实现统一归拢在 `docs/product/feature/`。
 
 ## 目录结构
 

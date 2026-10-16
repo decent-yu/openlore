@@ -39,7 +39,7 @@ flowchart LR
 - 首期单机单用户，生产环境只有一个 Node 主服务监听 `127.0.0.1:8767`，同时提供 API、SSE 与前端静态文件。关闭网页后任务继续运行。
 - 前后端分目录开发、一起发布；Vite 开发服务器代理 `/api` 至 Node。生产环境通过 `@fastify/static` 托管页面，SPA 回退只处理页面路由，未知 API 返回 JSON 404。
 - 调度器和任务执行循环随主服务启动；Python 与 AI 按任务启动子进程，完成后退出。数据库租约和幂等记录仍是任务状态依据。
-- SQLite、材料、任务目录和凭据继续存放在 `~/.openlore/`。启动、备份、休眠恢复及并发规则见[本地服务设计](../design/local-service-and-ai.md)。
+- SQLite、材料、任务目录和凭据继续存放在 `~/.openlore/`。启动、备份、休眠恢复及并发规则见[功能与架构总览](../product/feature/index.md)。
 
 ## 3. 前端边界与组件规则
 
@@ -75,7 +75,7 @@ shadcn/ui 提供可组合、可修改的组件源码，适合建立本项目自�
 
 1. Node HTTP 层负责下载、重定向检查、超时、大小限制、ETag/304 与原始材料落盘；Python 只解析传入的 Feed/HTML，不自行联网、写业务数据库或推进来源检查点。
 2. Node 以参数数组、`shell: false` 启动固定 Python 可执行文件，执行 `-m openlore_collectors`。stdin 传一个 JSON 请求，stdout 只返回一个 JSON 结果，日志走 stderr；任务结束即退出。
-3. 请求包含 `protocol_version=1`、job_id、operation（`parse_feed` / `extract_article`）、任务目录内的 input_path、原始/最终 URL、必要响应元信息与解析选项。结果包含同版本、job_id、status、data、issues、error；错误携带 code 和 retryable。解析数据经 Node 适配器映射为 [CollectionResult](../design/collection-adapters.md)，不暴露 Python 库对象。
+3. 请求包含 `protocol_version=1`、job_id、operation（`parse_feed` / `extract_article`）、任务目录内的 input_path、原始/最终 URL、必要响应元信息与解析选项。结果包含同版本、job_id、status、data、issues、error；错误携带 code 和 retryable。解析数据经 Node 适配器映射为标准数据实体，详见 [内容源管理](../product/feature/01-source-management.md)。
 4. 解析子进程默认并发 2、单次超时 30 秒、stdout 上限 16 MiB；HTML/Feed 输入单次上限 10 MiB。超限或输出非法显式失败，不截断后标为成功；预算可配置。
 5. 进程退出码、协议版本、JSON 结构和业务结果全部通过校验才接收。超时/取消终止本任务进程组；子进程崩溃只影响当前任务，重试由 Node 队列统一决定。
 6. Python 使用 uv 管理独立环境与锁文件。安装阶段准备依赖，常驻运行使用已验证的解释器绝对路径，不临时安装包；不向解析进程传入 Token、Webhook 或完整主服务环境。
