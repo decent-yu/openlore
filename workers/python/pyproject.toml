@@ -1,0 +1,26 @@
+[project]
+name = "openlore-collectors"
+version = "0.1.0"
+description = "OpenLore Python Collector and Extractor Worker"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "feedparser>=6.0.11",
+    "trafilatura>=2.0.0",
+    "jsonschema>=4.23.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openlore_collectors"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

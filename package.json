@@ -1,0 +1,25 @@
+{
+  "name": "openlore-monorepo",
+  "private": true,
+  "packageManager": "pnpm@12.0.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @openlore/server --filter @openlore/web dev",
+    "dev:server": "pnpm --filter @openlore/server dev",
+    "dev:web": "pnpm --filter @openlore/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @openlore/server test:e2e"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "prettier": "^3.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}
