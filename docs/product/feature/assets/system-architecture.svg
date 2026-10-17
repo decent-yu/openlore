@@ -1,110 +1,97 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="1460" viewBox="0 0 1520 1460" role="img" aria-labelledby="title desc">
-<title id="title">OpenLore 本地知识采集与研究工作台</title>
-<desc id="desc">工作区预配置仓库凭据和本地 AI，管理员维护来源，用户按组配置筛选与归档路由。常驻调度发现条目，按组挑选候选，Codex 或 Gemini 处理文章并开展有限引用扩展研究。结果形成原文、分析、简报与研究文件，更新 GitHub 后可选通知，持久队列负责恢复。</desc>
-<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="#65748b"/></marker></defs>
-<style>text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif}.title{font-size:31px;font-weight:700;fill:#142b43}.head{font-size:24px;font-weight:650;fill:#172d46}.body{font-size:18px;fill:#354962}.small{font-size:16px;fill:#62728a}.code{font-family:Menlo,Consolas,monospace;font-size:17px;fill:#354962}.arrow{fill:none;stroke:#65748b;stroke-width:2.5;marker-end:url(#arrow)}</style>
-<rect width="1520" height="1460" fill="#f4f7fc"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1130" viewBox="0 0 1600 1130" role="img" aria-labelledby="title desc">
+  <title id="title">OpenLore 系统架构：云端控制服务与独立 AI Runner</title>
+  <desc id="desc">浏览器访问云端网站。云端单实例运行采集、Python 解析、内容池、计划编排、SQLite AI 队列与结果校验归档。用户电脑只运行独立 Runner，通过出站 HTTPS 主动领取任务、心跳续租、回传产物，按需调用已登录的 Codex 或 Gemini CLI。不需要在 Runner 电脑上运行 npm run dev。图底部列出独立发行包、设备注册和重启恢复等尚未实现的能力。</desc>
+  <defs>
+    <marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#456bc8"/></marker>
+    <marker id="green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#168570"/></marker>
+  </defs>
+  <style>
+    text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#21334c}
+    .title{font-size:34px;font-weight:700}.sub{font-size:18px;fill:#56677f}.head{font-size:24px;font-weight:650}.label{font-size:20px;font-weight:600}.body{font-size:17px}.small{font-size:15px;fill:#56677f}.mono{font-family:Menlo,Consolas,monospace;font-size:16px}
+    .flow{stroke:#456bc8;stroke-width:2.4;fill:none;marker-end:url(#blue)}.return{stroke:#168570;stroke-width:2.4;fill:none;marker-end:url(#green)}.box{fill:white;stroke:#d1dced;stroke-width:1.4}
+  </style>
+  <rect width="1600" height="1130" fill="#f5f7fb"/>
+  <text x="50" y="60" class="title">OpenLore · 云端编排，Runner 执行</text>
+  <text x="50" y="96" class="sub">标准部署 / 当前 Worker 主链路 · 控制服务与执行进程独立运行 · 核对日期 2026-10-17</text>
 
-<text x="40" y="53" class="title">OpenLore · 本地知识采集与研究工作台</text>
-<text x="40" y="85" class="body">一次配置连接，按组配置路由；持续采集、提炼与研究，最终以文件形式更新 GitHub。</text>
-<rect x="40" y="125" width="440" height="195" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="40" y="143" width="5" height="32" rx="2" fill="#3579cb"/>
-<text x="63" y="167" class="head">01 · 工作区连接</text>
-<text x="63" y="206" class="body">GitHub 仓库 / 分支 / Token 保存一次</text>
-<text x="63" y="237" class="body">通知连接与本地 Codex / Gemini 配置</text>
-<text x="63" y="268" class="body">初始测试通过，各组选择连接引用</text>
-<rect x="540" y="125" width="440" height="195" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="540" y="143" width="5" height="32" rx="2" fill="#3579cb"/>
-<text x="563" y="167" class="head">01 · 管理员：信息源</text>
-<text x="563" y="206" class="body">说明内容定位，配置采集入口与预算</text>
-<text x="563" y="237" class="body">首期 Cloudflare + Simon Willison</text>
-<text x="563" y="268" class="body">RSS/Atom 与 Web 文章能力独立封装</text>
-<rect x="1040" y="125" width="440" height="195" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="1040" y="143" width="5" height="32" rx="2" fill="#8056c5"/>
-<text x="1063" y="167" class="head">01 · 用户：采集组</text>
-<text x="1063" y="206" class="body">名称、来源、关键词、偏好与运行计划</text>
-<text x="1063" y="237" class="body">仓库连接 → /docs/agent-leaning</text>
-<text x="1063" y="268" class="body">组规则勾选：批次简报 / 逐篇深度调研</text>
-<path d="M260 320 V365" class="arrow"/>
-<path d="M760 320 V365" class="arrow"/>
-<path d="M1260 320 V365" class="arrow"/>
-<rect x="40" y="365" width="1440" height="60" rx="12" fill="#e7edf8"/>
-<text x="65" y="402" class="body">本地常驻服务 · Web 管理界面 + 调度器 + SQLite 持久队列 · 来源默认每 30 分钟轮询，组默认每日 09:00 运行</text>
-<path d="M260 425 V480" class="arrow"/>
-<rect x="40" y="480" width="440" height="235" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="40" y="498" width="5" height="32" rx="2" fill="#258b77"/>
-<text x="63" y="522" class="head">02 · 发现与共享采集</text>
-<text x="63" y="561" class="body">来源元信息、原文链接、更新标识</text>
-<text x="63" y="592" class="body">304 / 分页快照 / 去重与断点续采</text>
-<text x="63" y="623" class="body">按候选需要获取正文并保存证据</text>
-<text x="63" y="654" class="body">失败单源可恢复，正文可跨组复用</text>
-<rect x="540" y="480" width="440" height="235" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="540" y="498" width="5" height="32" rx="2" fill="#8056c5"/>
-<text x="563" y="522" class="head">02 · 按组挑选候选</text>
-<text x="563" y="561" class="body">首次近 7 天；后续增量与积压</text>
-<text x="563" y="592" class="body">多来源轮转取数，默认评估 20 篇</text>
-<text x="563" y="623" class="body">区分重复、窗外、正文失败与延后</text>
-<text x="563" y="654" class="body">达到上限的内容保留到后续批次</text>
-<rect x="1040" y="480" width="440" height="235" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="1040" y="498" width="5" height="32" rx="2" fill="#8056c5"/>
-<text x="1063" y="522" class="head">03 · 本地 AI + Skills</text>
-<text x="1063" y="561" class="body">Codex CLI / Gemini CLI，任选其一</text>
-<text x="1063" y="592" class="body">逐任务启动，复用本人登录与模型</text>
-<text x="1063" y="623" class="body">Skills 负责分类、评估与文章整理</text>
-<text x="1063" y="654" class="body">默认最多入选 10 篇，生成中文分析</text>
-<path d="M480 595 H540" class="arrow"/>
-<path d="M980 595 H1040" class="arrow"/>
-<path d="M260 715 V810" class="arrow"/>
-<path d="M1130 715 V765 H760 V810" class="arrow"/>
-<text x="785" y="754" class="small">常规文章处理产物</text>
-<path d="M1260 715 V810" class="arrow"/>
-<text x="1276" y="765" class="small">勾选后逐篇执行</text>
-<rect x="40" y="810" width="440" height="240" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="40" y="828" width="5" height="32" rx="2" fill="#258b77"/>
-<text x="63" y="852" class="head">持久状态与恢复</text>
-<text x="63" y="891" class="body">来源、文章版本与组内处理记录</text>
-<text x="63" y="922" class="body">运行快照、任务租约、积压与预算</text>
-<text x="63" y="953" class="body">额度 / 认证问题保留为 blocked</text>
-<text x="63" y="984" class="body">重启续跑，Git 与消息独立恢复</text>
-<text x="63" y="1015" class="body">每条内容都有结果与原因</text>
-<rect x="540" y="810" width="440" height="240" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="540" y="828" width="5" height="32" rx="2" fill="#8056c5"/>
-<text x="563" y="852" class="head">03 → 04 · 固定文件包</text>
-<text x="563" y="891" class="body">逐篇：article.md + assets/</text>
-<text x="563" y="922" class="body">归档：日期批次 / 文章主题</text>
-<text x="563" y="953" class="body">可选：research.md / digest.md</text>
-<text x="563" y="984" class="body">稳定 ID 和路径，变化时更新</text>
-<text x="563" y="1015" class="body">图片全部本地化，关闭选项不建文件</text>
-<rect x="1040" y="810" width="440" height="240" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="1040" y="828" width="5" height="32" rx="2" fill="#8056c5"/>
-<text x="1063" y="852" class="head">03 · 基于文章深入调研</text>
-<text x="1063" y="891" class="body">唯一主文章，逐篇独立任务</text>
-<text x="1063" y="922" class="body">最多读取 6 个真实引用页，深度 1</text>
-<text x="1063" y="953" class="body">规划 → 取证 → 综合 → 引用校验</text>
-<text x="1063" y="984" class="body">15 分钟预算，区分事实 / 推断 / 缺口</text>
-<text x="1063" y="1015" class="body">报告与正文放一起，不阻塞文章发布</text>
-<path d="M1040 935 H980" class="arrow"/>
-<path d="M760 1050 V1150" class="arrow"/>
-<text x="785" y="1103" class="small">应用校验路径与文件后写入</text>
-<rect x="40" y="1150" width="440" height="200" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="40" y="1168" width="5" height="32" rx="2" fill="#258b77"/>
-<text x="63" y="1192" class="head">可见、可操作的工作台</text>
-<text x="63" y="1231" class="body">设置 / 来源 / 采集组 / 运行</text>
-<text x="63" y="1262" class="body">内容库 / 调研 / 逐阶段重试</text>
-<text x="63" y="1293" class="body">AI 不持有 GitHub Token</text>
-<rect x="540" y="1150" width="440" height="200" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="540" y="1168" width="5" height="32" rx="2" fill="#3579cb"/>
-<text x="563" y="1192" class="head">04 · GitHub 文件同步</text>
-<text x="563" y="1231" class="body">读取预配置连接，按组路由写入</text>
-<text x="563" y="1262" class="body">新增 / 更新，一批一个提交</text>
-<text x="563" y="1293" class="body">核对冲突与结果，保留其他文件</text>
-<rect x="1040" y="1150" width="440" height="200" rx="16" fill="white" stroke="#d7e0ed" stroke-width="1.5"/>
-<rect x="1040" y="1168" width="5" height="32" rx="2" fill="#3579cb"/>
-<text x="1063" y="1192" class="head">04 · 可选消息通知</text>
-<text x="1063" y="1231" class="body">Git 成功后发送通用 JSON Webhook</text>
-<text x="1063" y="1262" class="body">简报 / 调研链接 + 数量与状态</text>
-<text x="1063" y="1293" class="body">相同事件固定 ID，失败只补发消息</text>
-<path d="M980 1250 H1040" class="arrow"/>
-<text x="40" y="1407" class="small">独立能力目录：web_feed · web_page · media_assets · codex_cli · gemini_cli · github · generic_webhook；通过统一协议接入。</text>
-<text x="40" y="1433" class="small">当前为可实施设计与虚拟产物示例，尚未构建运行服务；本地调度不代表模型离线运行或账号额度无限。</text>
+  <rect x="50" y="133" width="1500" height="77" rx="14" class="box"/>
+  <text x="78" y="166" class="label">浏览器 · 云端工作台</text>
+  <text x="78" y="191" class="small">来源与计划配置 / 运行状态 / 调用日志 / 成果阅读</text>
+  <text x="915" y="176" class="body">关闭网页后，云端计划与 Runner 继续运行</text>
+  <text x="380" y="239" class="small">HTTPS · API / 页面状态</text>
+
+  <rect x="50" y="265" width="820" height="650" rx="20" fill="#edf3ff" stroke="#bbccec" stroke-width="1.5"/>
+  <text x="78" y="300" class="head">云端控制服务</text>
+  <text x="542" y="300" class="small">单实例 Node 服务 + Python</text>
+  <path d="M365 210 V325" class="flow"/>
+  <rect x="80" y="325" width="330" height="100" rx="12" class="box"/>
+  <text x="100" y="359" class="label">网站 / 管理 API</text>
+  <text x="100" y="388" class="body">配置、触发、查询与管理认证</text>
+  <text x="100" y="410" class="small">生产托管 Web；开发期使用 Vite</text>
+  <rect x="460" y="325" width="380" height="100" rx="12" class="box"/>
+  <text x="480" y="359" class="label">计划调度 / 手动触发</text>
+  <text x="480" y="388" class="body">来源、流水线、汇报独立计划</text>
+  <text x="480" y="410" class="small">任务决策与业务状态由云端掌握</text>
+  <path d="M410 373 H460" class="flow"/>
+
+  <rect x="80" y="465" width="330" height="110" rx="12" class="box"/>
+  <text x="100" y="500" class="label">来源采集 / Python 解析</text>
+  <text x="100" y="531" class="body">抓取 → 解析 → 质量准入</text>
+  <text x="100" y="555" class="small">Python 按需子进程，仅云端需要</text>
+  <rect x="460" y="465" width="380" height="110" rx="12" class="box"/>
+  <text x="480" y="500" class="label">流水线 / AI 任务编排</text>
+  <text x="480" y="531" class="body">审核、调研、汇报生成任务</text>
+  <text x="480" y="555" class="small">冻结材料、Prompt、Skill 版本与约束</text>
+  <path d="M650 425 V465" class="flow"/>
+  <path d="M480 425 V445 H245 V465" class="flow"/>
+
+  <rect x="80" y="615" width="330" height="110" rx="12" class="box"/>
+  <text x="100" y="650" class="label">SQLite / 文件存储</text>
+  <text x="100" y="680" class="body">内容池、运行、日志、业务凭据</text>
+  <text x="100" y="704" class="small">数据库在云端；执行机不直接访问</text>
+  <rect x="460" y="615" width="380" height="110" rx="12" class="box"/>
+  <text x="480" y="650" class="label">AI 队列 / Worker API</text>
+  <text x="480" y="680" class="body">任务领取、并发约束、租约与鉴权</text>
+  <text x="480" y="704" class="small">ai_jobs 持久化；当前按 profile_id 路由</text>
+  <path d="M245 575 V615" class="flow"/>
+  <path d="M650 575 V615" class="flow"/>
+  <path d="M410 670 H460" class="flow"/>
+
+  <rect x="80" y="780" width="760" height="102" rx="12" class="box"/>
+  <text x="100" y="815" class="label">结果校验 / 流水线推进 / 外部交付</text>
+  <text x="100" y="845" class="body">保存调用与产物 → GitHub 归档 → 每日精选 / 群汇报</text>
+  <text x="100" y="868" class="small">GitHub Token、Webhook 留在云端；AI Runner 只生成并回传结果</text>
+  <path d="M650 725 V780" class="return"/>
+  <text x="668" y="757" class="small">校验有效结果</text>
+
+  <rect x="1020" y="265" width="530" height="650" rx="20" fill="#edf8f4" stroke="#aad7c8" stroke-width="1.5"/>
+  <text x="1048" y="300" class="head">用户电脑 / AI 执行机器</text>
+  <rect x="1050" y="325" width="470" height="100" rx="12" class="box"/>
+  <text x="1070" y="359" class="label">Codex / Gemini CLI</text>
+  <text x="1070" y="388" class="body">按任务启动，完成后退出</text>
+  <text x="1070" y="410" class="small">AI 登录、模型配置与授权保留在执行机</text>
+  <rect x="1050" y="465" width="470" height="110" rx="12" class="box"/>
+  <text x="1070" y="500" class="label">每任务独立工作区</text>
+  <text x="1070" y="531" class="body">同步 Skill / 准备材料 / 生成 output 文件</text>
+  <text x="1070" y="555" class="small">目录隔离不是操作系统沙箱</text>
+  <path d="M1285 465 V425" class="flow"/>
+  <rect x="1050" y="615" width="470" height="110" rx="12" class="box"/>
+  <text x="1070" y="650" class="label">独立 Runner 常驻进程</text>
+  <text x="1070" y="680" class="body">主动领任务 / 心跳续租 / 回传结果与产物</text>
+  <text x="1070" y="704" class="small">当前命令名 worker；无需运行 npm run dev</text>
+  <path d="M1285 615 V575" class="flow"/>
+  <path d="M1050 660 H840" class="flow"/>
+  <text x="880" y="640" class="small">主动 HTTPS 请求</text>
+  <path d="M840 704 H1050" class="return"/>
+  <text x="881" y="738" class="small">任务响应 / 确认</text>
+  <rect x="1050" y="780" width="470" height="102" rx="12" fill="#dff0e8"/>
+  <text x="1070" y="815" class="label">执行机只运行 Runner 与 AI CLI</text>
+  <text x="1070" y="845" class="body">不启动网站、Python 采集器或业务数据库</text>
+  <text x="1070" y="868" class="small">当前需源码构建；独立发行包尚未提供</text>
+
+  <rect x="50" y="945" width="1500" height="137" rx="16" fill="#fff8e9" stroke="#e3c784" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="75" y="979" class="label">待实现 · 架构改进，不代表现有能力</text>
+  <text x="75" y="1011" class="body">独立 Runner 发行包 / 设备注册与能力路由 / 持久化阶段恢复 / 增量日志 / 显式取消 / 系统服务管理</text>
+  <text x="75" y="1043" class="small">当前限制：控制服务重启会中断在途任务；仅有配置级心跳；local / SSH 为辅助拓扑，未画入标准主链路。</text>
+  <text x="50" y="1110" class="small">实线：现有调用与数据流。网络请求均由 Runner 主动发起；云端无需连接执行机入站端口。</text>
 </svg>

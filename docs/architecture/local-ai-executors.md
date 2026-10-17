@@ -1,93 +1,66 @@
-# 服务器网站与本机 AI 执行器
+# AI Runner 协议与生命周期
 
-网站、来源采集、内容池、流水线编排、GitHub 归档和群推送运行在服务器；AI 阶段可以由服务端本机、常驻 Worker 或 SSH 执行。所有方式复用同一套独立工作区执行程序。
+本文记录当前 `worker` 的实现，部署角色统称 Runner。系统拓扑见[整体架构与 SVG](system-architecture.md)，安装配对见[操作指引](../guides/ai-executors.md)。
 
-## 服务器
+## 独立启动边界
 
-```sh
-pnpm install
-pnpm -r build
-export OPENLORE_DATA_DIR=/var/lib/openlore
-export OPENLORE_PUBLIC_URL=https://knowledge.example.com
-export OPENLORE_ADMIN_TOKEN='使用独立的随机管理令牌'
-HOST=0.0.0.0 PORT=8767 node apps/server/dist/cli/index.js serve
-```
+`cli/index.ts` 仅在 `serve` 分支动态导入控制服务、数据库和调度模块。`worker` 分支运行 `modules/executors/worker.ts`，经 HTTPS 连接已有控制服务；不监听网站端口、不初始化业务数据库、不运行采集器。
 
-通过 HTTPS 反向代理访问。浏览器使用 HTTP Basic 登录，用户名可填 `openlore`，密码为管理令牌。Worker 使用独立的执行器令牌，不使用管理令牌。`/api/v1/worker/:id/*` 只允许对应执行器领取与回传自己的任务。
+当前共享的是源码包和构建依赖，尚无独立 Runner 发行包。`local` 和 `ssh` 调用同一个工作区执行程序，但不经过 Worker 领取协议。
 
-服务器与执行机应部署相同版本 OpenLore。Worker 不需要启动网站，也不会打开或共享服务器数据库。
+## 配对与身份
 
-## 常驻本机 Worker
+云端为 `ai_profiles` 生成随机专用令牌，仅保存 SHA-256 哈希；配对 JSON 保存 `server_url`、`profile_id`、`token`、`name`。可选 `cli_path` 和 `overrides` 覆盖执行机配置。远程 URL 要求 HTTPS，回环地址允许 HTTP。
 
-1. 系统设置 → AI 执行器，连接方式选“我的电脑 · 常驻 Worker”。
-2. 配置本机 CLI 路径、工作区、Skills 来源、执行超时、离线等待、文件保留时间和并发数。
-3. 保存后点击“下载配对配置”，将 JSON 保存到电脑上。文件包含专用令牌，请限制文件读取权限。
-4. 在电脑安装本项目依赖、完成构建，并运行：
+当前令牌长期有效，直到重新配对或删除配置。重新配对会清除在线时间、替换令牌哈希，并取消该配置排队与运行中的 AI 任务。它还不是“一次性注册码换设备证书”的设备注册协议；管理令牌与 Worker 令牌不能混用。
 
-```sh
-chmod 600 /path/to/openlore-worker.json
-node apps/server/dist/cli/index.js worker /path/to/openlore-worker.json
-```
+## HTTP 交互
 
-配对文件格式：
+统一前缀 `/api/v1/worker/:id`，每次校验对应配置的 Bearer 令牌。
 
-```json
-{
-  "server_url": "https://knowledge.example.com",
-  "profile_id": "ai_xxx",
-  "token": "界面生成的执行器专用令牌",
-  "name": "我的常驻电脑"
-}
-```
+| 接口                     | 调用者 | 行为                                                   |
+| ------------------------ | ------ | ------------------------------------------------------ |
+| `GET /configuration`     | Runner | 获取模型提供方、CLI 路径及执行配置                     |
+| `POST /heartbeat`        | Runner | 报告名称和本地 Skill 清单                              |
+| `POST /claim`            | Runner | 原子领取该配置队列中的一个任务，受并发上限约束         |
+| `POST /jobs/:job/renew`  | Runner | 续租并确认任务仍有效                                   |
+| `POST /jobs/:job/result` | Runner | 提交结构化结果、诊断、产物；过期或不匹配的租约返回 409 |
 
-可选 `cli_path` 与 `overrides` 用于固定本机配置（例如 `workspace_root`、`skills_directory`），优先于服务器配置。默认通过服务器配置管理。也可使用 `OPENLORE_WORKER_TOKEN` 环境变量配合 `worker-init <文件> <服务器URL> <执行器ID>` 生成权限为 0600 的文件。
+Runner 空闲循环约 2 秒一次，每约 10 秒更新配置和心跳；单请求网络超时为 15 秒。没有任务时返回空结果，当前不是长轮询。页面以最近 45 秒内心跳判断在线；在线仅代表通信及 CLI `--version` 检查通过，不代表模型登录或额度有效。
 
-Worker 每 10 秒报告在线状态，主动领取任务；不需要电脑开放入站端口。任务运行中续租，失联后终止本次执行，过期结果不能覆盖新任务结果。执行器离线时任务排队，超过配置的等待期限会明确失败。服务端重启会将中断任务标记失败，需要重新运行，不会一直显示执行中。
+## 排队、执行与结果
 
-常驻运行可交给 macOS launchd 或 Linux systemd。首次接入先在终端确认正常，再按实际可执行路径安装服务。
+- `ai_jobs` 保存请求、`profile_id`、状态、租约、尝试次数、结果和 deadline。
+- 状态为 `queued → running → completed`；`completed` 表示结果已经回传，AI 业务成功与否另看 `ExecutionResult.status`。取消、过期和领取失败还有 `cancelled`、`expired`、`failed` 终态。
+- 领取时授予 60 秒租约；执行期间约每 10 秒续租。失去有效租约立即请求终止 AI 进程；续租网络持续失败超过约 40 秒也终止。
+- 领取逻辑将过期租约重新入队，达到三次领取尝试后失败。回传时再次核验配置、租约、任务状态和期限，拒收旧执行结果。可能出现重复执行，但不能接受过期结果覆盖有效结果。
+- 云端当前以每 500ms 查询结果的内存协程等待；排队上限单独计算，总 deadline 为入队时间加排队上限和执行上限。AI CLI 自身还有执行机上的单次超时。
+- 产物和诊断随最终结果 JSON 回传；目前没有增量日志、分块产物上传或本地持久回传队列。网络失败时回传最多尝试五次，耗尽后不能保证产物送达。
 
-## SSH
+## 故障语义
 
-选择 SSH，填写：主机、用户、端口、服务器上的密钥文件路径、远端 Node 路径、远端 `apps/server/dist/cli/index.js` 路径。服务器必须能够连接执行机。
+| 场景                     | 当前行为                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| Runner 尚未上线          | 云端等待任务被领取，达到排队上限后失败；不回退到浏览器执行                         |
+| 执行机断网、休眠或退出   | 停止心跳；租约失效后可重领，仍受尝试次数与 deadline 限制                           |
+| 控制服务重启             | `serve` 启动时把在途 AI 任务取消、运行中流水线标记失败，调用日志标记中断；需要重跑 |
+| 结果晚到或重复回传       | 无有效租约则拒收，不推进业务                                                       |
+| Worker 令牌失效          | 停止连接并提示重新配对                                                             |
+| 重新配对或服务端取消租约 | Runner 在下一次续租发现无效后终止，传播不是瞬时完成                                |
 
-使用 SSH 的非交互密钥认证和严格主机指纹检查；先在服务器完成可信的 known_hosts 配置。测试连接会检查远端 CLI 并刷新远端 Skills 目录。执行通过标准输入传输 JSON，复用 `execute-once` 程序；任务材料不会拼接到 shell 命令中。
+当前没有完整的用户取消、跨重启恢复与恰好一次交付协议。改进顺序见[架构差距与验收](system-architecture.md#交付顺序与验收)。
 
-## Skills 与工作区
+## 工作区与材料
 
-两种来源：
+每个 AI 请求独立创建 `<workspace_root>/jobs/job-*/`，包含 `.agents/skills/`、`input/article.md`、`output/`、`prompt.txt`、`manifest.json` 等。Skill 包按哈希和路径校验，不安装到全局目录。
 
-- **同步服务器版本**：从服务器托管的 Skill 包复制本次指定版本。
-- **执行机本地目录**：目录下每个子目录包含 `SKILL.md`。Worker 上报目录清单；SSH 点击测试连接刷新清单。执行前校验文件内容哈希，不一致时要求刷新。
+同步模式传入服务器管理的 Skill 版本；本地模式由执行机读取配置目录，并检查已选版本。默认保留完成目录 7 天，清理由后续任务启动时触发；不是独立定时清理服务。
 
-每次执行目录：
+AI CLI 环境移除 `OPENLORE_*`，沿用执行机的模型授权与其他用户环境；这不等于完整环境隔离。任务目录是文件组织边界，不是操作系统隔离。控制服务负责保存校验后的结果与执行日志；执行机不需要 GitHub 或群通知凭据。
 
-```text
-<workspace_root>/jobs/job-随机标识/
-├── .agents/skills/<skill-name>/
-├── input/article.md
-├── output/
-├── prompt.txt
-├── manifest.json
-└── events.log
-```
+## 实现与验证入口
 
-不安装到全局 Skills 目录。复制完整 Skill 包，校验路径与哈希，不接受路径穿越或包内符号链接。默认保留已完成任务目录 7 天。
-
-实际 Prompt 使用 `$skill-name` 与明确的工作区 Skill 路径，再附任务定位和阶段要求。Codex 使用项目级 Skill 发现；Gemini 使用工作区 Skill/显式路径加载。页面显示同一段任务指令，Skill 文件内容单独展开。
-
-Codex 默认沿用本机用户配置，可选 Profile；Gemini 沿用本机 Gemini CLI 配置。`--version` 检查仅代表 CLI 可执行；AI 登录和实际模型调用仍需真实任务验证。
-
-AI 只负责生成任务结果和 `output/` 文件；服务器校验结果并负责归档、推送。执行工作区是文件组织边界，不等同于操作系统隔离；CLI 的工具权限由对应执行器控制。
-
-## 验证
-
-- `test/executors.test.ts`：独立工作区、完整 Skill 包、目录边界、Worker 鉴权、租约过期、实际 HTTP Worker 回传、SSH 命令转义。
-- `scripts/verify-real-executor.mjs`：显式传入真实文章和本机 AI 配置后，使用隔离数据库、独立 Worker、真实 Gemini 完成审核与调研。GitHub 和群发送被模拟，正式业务数据不会修改。
-
-网页路径和 API 角色已具备服务器部署所需配置；真实服务器域名、SSH 主机及系统常驻服务需要按目标环境配置。
-
-## 手动运行与验证
-
-空正文操作（立即运行、同步来源、发送汇报、连接测试）不携带 JSON Content-Type；仅有请求正文时声明 JSON。首页按工作区时区展示成功完成归档的任务结果，每 10 秒刷新；未完成时显示运行状态与进度入口。原始采集文章在内容池查看。
-
-群通知发送会按飞书/Lark 兼容地址转换为原生消息卡片，同时检查平台业务返回码。HTTP 200 但平台拒绝时记录失败，不能当作发送成功。
+- 入口：`apps/server/src/cli/index.ts`。
+- 领取与执行：`modules/executors/worker.ts`、`infrastructure/ai/workspace_runner.ts`。
+- 身份与队列：`modules/executors/service.ts`、`queue.ts`、`http/routes/executors.ts`。
+- 验证：`apps/server/test/executors.test.ts` 覆盖独立进程、实际 HTTP 领取回传、SSH 入口、鉴权与租约。2026-10-17 核查时 9 项通过，CLI 使用测试替身，未调用付费模型。
