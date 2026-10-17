@@ -24,13 +24,13 @@
 
 ## 存储与调度
 
-任务服务沿用内部 `Group` 存储模型，公开路由为 `/api/v1/pipelines`。池内范围存于 `group_sources`；旧 `group_source_rules` 的关键词迁移到来源，旧全局任务执行时间迁移到每个任务，旧任务通知字段移除。
+任务服务沿用内部 `Group` 存储模型，公开路由为 `/api/v1/pipelines`。池内范围存于 `group_sources`。
 
 来源轮询、任务执行与汇报发送独立调度，慢速采集不阻塞其他任务的定时检查。
 
 ## Skills 顺序
 
-审核阶段只调用 `assessment_skill_id`，结合任务定位及 `preferences` 评估候选，并确定精选与调研名单；调研阶段只调用 `research_skill_id` 并应用 `research_instructions`，不重新选文。简报不属于任务阶段，只由汇报方案生成。旧的混合 `skill_ids` 和任务 `generate_digest` 配置已移除。
+审核阶段只调用 `assessment_skill_id`，结合任务定位及 `preferences` 评估候选，并确定精选与调研名单；调研阶段只调用 `research_skill_id` 并应用 `research_instructions`，不重新选文。简报不属于任务阶段，只由汇报方案生成。
 
 ## 审核证据与复用
 
@@ -38,7 +38,7 @@
 
 相同文章材料、任务要求及执行器配置复用审核缓存；排除与待选决定也持久化。AI 失败或证据无法核验时明确失败，不生成固定评分。
 
-执行器支持服务端本机、常驻 Worker 与 SSH。实际任务指令使用 `$skill-name`，Skill 包在每次任务的独立工作区同步，无需全局安装。详见 [本机 AI 执行器](../../architecture/local-ai-executors.md)。
+执行器支持服务端本机、常驻 Worker 与 SSH。实际任务指令使用 `$skill-name`，Skill 包在每次任务的独立工作区同步，无需全局安装。详见 [AI Runner 协议](../../architecture/local-ai-executors.md)。
 
 ## 运行计数
 

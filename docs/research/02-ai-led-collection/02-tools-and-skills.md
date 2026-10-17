@@ -1,5 +1,7 @@
 # 采集工具与 skills 核查
 
+> 2026-10-15 调研快照：本文保留当时的核查与提议，不代表当前实现状态。现状见[系统架构](../../architecture/system-architecture.md)与[功能总览](../../product/feature/index.md)。
+
 日期：2026-10-15。返回：[方案总览](01-overview.md)。
 
 Skill 告诉 AI 如何使用工具；CLI/API 执行读取；MCP 将工具暴露给 Agent。三者可以组合，安装 skill 本身不会自动获得账号权限、完整数据或定时运行能力。

@@ -1,5 +1,7 @@
 # 03 Skills 与 Prompt 调用流程
 
+AI 任务由云端编排，标准方式为独立 Runner 领取并执行；无需在执行机启动网站。部署边界见[系统架构](../../architecture/system-architecture.md)，配对与启动见[Runner 指引](../../guides/ai-executors.md)。
+
 ## 流水线任务
 
 1. **审核精选**：使用 `assessment_skill_id`（默认 `tech-article-extractor`），通过 `$skill-name` 和工作区路径加载 Skill，传入任务定位和附加审核要求 `preferences`。全部备选文章逐篇评分后统一排序，选出目标篇数。
@@ -16,6 +18,8 @@
 
 ## Skill 来源
 
-`skillsService` 从仓库 `skills/` 与本地数据目录 `skills/` 发现 SKILL.md，读取类型、说明、基础 Prompt 和引用材料。审核列表筛选 extraction 类型，调研列表筛选 research 类型，汇报列表筛选 digest 类型。
+同步模式下，`skillsService` 从云端仓库 `skills/` 与业务数据目录 `skills/` 发现 SKILL.md，读取类型、说明、基础 Prompt 和引用材料。审核列表筛选 extraction 类型，调研列表筛选 research 类型，汇报列表筛选 digest 类型。
 
 Skill 文件与任务指令分开展示。审核阶段配置调研篇数并输出调研名单，调研阶段只对选定文章生成新文章。Skills 随任务复制到 `.agents/skills/`，不会全局安装。
+
+执行机本地目录模式由 Runner 上报 Skill 清单，SSH 通过连接测试刷新，本机执行则直接读取；流水线列表按所选执行器获取对应 Skills。

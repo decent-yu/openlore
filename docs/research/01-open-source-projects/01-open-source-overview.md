@@ -1,6 +1,8 @@
 # 开源项目调研总览
 
-日期：2026-10-15。参考：[产品规划](../../product-brief.md)。
+> 2026-10-15 调研快照：本文保留当时的核查与提议，不代表当前实现状态。现状见[系统架构](../../architecture/system-architecture.md)与[功能总览](../../product/feature/index.md)。
+
+日期：2026-10-15。参考：[产品规划](../../product/product-brief.md)。
 
 ## 范围与结论
 

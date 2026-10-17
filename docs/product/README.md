@@ -1,8 +1,8 @@
 # 产品文档规范
 
-本目录维护 OpenLore 的产品目标、调研与功能定义。只写重点，按需组织。
+本目录维护 OpenLore 的产品目标与功能定义。只写重点，按需组织。
 
-功能入口：[功能与架构总览](feature/index.md)。前后端技术栈见 [docs/architecture/technology-stack.md](../architecture/technology-stack.md)；功能定义与代码实现统一归拢在 `docs/product/feature/`。
+功能入口：[功能总览](feature/index.md)。部署边界和图示见[系统架构](../architecture/system-architecture.md)，安装和操作见[用户指南](../guides/README.md)。本目录维护产品定义，不把技术协议、安装步骤或代码实现混入功能目录。
 
 ## 目录结构
 
@@ -10,18 +10,19 @@
 product/
 ├── README.md                 # 本规范
 ├── product-brief.md          # 产品目标、用户与整体范围
-├── research/                 # 技术调研与方案依据（按 NN-topic 目录组织）
 └── feature/                  # index 总览、NN-topic 功能定义、assets 图示、examples 样例
 ```
 
 ## 命名与组织
 
 - 文件和目录使用小写英文与连字符，名称直接表达主题；正文使用中文。
-- 调研与功能文件按递增编号与主题命名（如 `01-xxx.md`）。
-- 方案探索与技术依据留在调研中；已确认的需求与行为进入功能文档。
+- 功能文件按递增编号与主题命名（如 `01-xxx.md`）；调研统一放在 [docs/research](../research/README.md)。
+- 方案探索与技术依据留在 `docs/research/` 中；已确认的需求与行为进入功能文档。
 
 ## 维护原则
 
 - **只写重点**：结论先行，描述具体场景和可验证行为，避免套话与冗余背景。
 - **无历史包袱**：本项目为全新项目，按当前需求设计，无需保留兼容逻辑。
 - **单点维护**：一项事实或规则尽量只维护一处，其他文档通过相对链接引用。
+
+历史调研按原核查日期保留，涉及当时的原型、技术提议和“尚未实现”陈述不代表当前状态；现状以功能文档、系统架构和源码为准。

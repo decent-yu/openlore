@@ -1,6 +1,8 @@
 # 最小原型：RSS 订阅与文章导入
 
-日期：2026-10-15。依据：[来源配置](../../feature/01-source-configuration.md)、[采集能力](../../feature/02-content-collection.md)、[内容处理](../../feature/03-content-processing.md)、[推送与 Git 沉淀](../../feature/04-delivery-and-git-archive.md)。
+> 2026-10-15 调研快照：本文保留当时的核查与提议，不代表当前实现状态。现状见[系统架构](../../architecture/system-architecture.md)与[功能总览](../../product/feature/index.md)。
+
+日期：2026-10-15。依据：[来源配置](../../product/feature/01-source-management.md)、[采集能力](../../product/feature/01-source-management.md)、[内容处理](../../product/feature/03-ai-skills-and-processing.md)、[推送与 Git 沉淀](../../product/feature/05-git-delivery-and-archive.md)。
 
 ## 结论
 
@@ -10,13 +12,13 @@
 
 阅读产物现按日期批次与文章组织，文章旁保存 assets，可选简报和逐篇调研由组规则勾选；具体以 feature 03/04 为准。
 
-首期来源方向已确认，具体能力边界以 [feature 总览](../../feature/index.md) 及其关联接入设计为准；整体技术选型已确定，待编码验证，尚未实现四项功能。
+首期来源方向已确认，具体能力边界以 [feature 总览](../../product/feature/index.md) 及其关联接入设计为准；整体技术选型已确定，待编码验证，尚未实现四项功能。
 
 ## 信息源选择
 
 Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 的独立实践分析，两者共同覆盖当前阅读目标。Jules Blom 保留为前端专题候选，Anthropic Engineering 作为后续 Agent 深度内容候选。
 
-各网站的主要内容、采集入口、验证结果与边界见[网站信息源清单](02-web-source-catalog.md)，来源配置要求见 [feature 01](../../feature/01-source-configuration.md)。已完成的验证仅说明当时可读取，不代表长期稳定性或正文完整度已验收。
+各网站的主要内容、采集入口、验证结果与边界见[网站信息源清单](02-web-source-catalog.md)，来源配置要求见 [feature 01](../../product/feature/01-source-management.md)。已完成的验证仅说明当时可读取，不代表长期稳定性或正文完整度已验收。
 
 ## 配置如何驱动采集
 
@@ -28,7 +30,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 | 采集组：Agent 相关知识 | 选择两个来源，分别设置 Agent 关键词；同步到该组指定 Git 仓库的 `knowledge/agents/` 与 Webhook A |
 | 采集组：后端性能优化 | 选择 Cloudflare，设置数据库和性能关键词；同步到该组指定 Git 仓库的 `knowledge/performance/` 与 Webhook B |
 
-两组可以复用来源，也可以配置不同仓库。字段与交互以 [feature 01](../../feature/01-source-configuration.md) 为准，当前连接复用、页面和运行规则以功能文档为准。
+两组可以复用来源，也可以配置不同仓库。字段与交互以 [feature 01](../../product/feature/01-source-management.md) 为准，当前连接复用、页面和运行规则以功能文档为准。
 
 当前组默认首次回看 7 天、每批评估 20 篇、入选最多 10 篇；管理员控制来源轮询预算。手动导入文章可超出时间窗。详细候选与关键词规则统一维护在 feature 02/03。
 
@@ -45,7 +47,7 @@ Cloudflare 提供厂商一手工程实践，Simon Willison 补充 LLM 与 Agent 
 
 ## 技术取舍
 
-实施基线以[架构选型](../../../architecture/technology-stack.md)为准：Node.js 主服务负责 HTTP 获取、编排和 SQLite 状态，Python 子进程通过 feedparser 解析订阅、Trafilatura 提取正文，前端采用 React + shadcn/ui。采集能力通过[内容源管理](../../feature/01-source-management.md)统一接入；按组输出的文件包通过[Git 交付归档](../../feature/05-git-delivery-and-archive.md)同步至目标仓库。
+实施基线以[架构选型](../../architecture/technology-stack.md)为准：Node.js 主服务负责 HTTP 获取、编排和 SQLite 状态，Python 子进程通过 feedparser 解析订阅、Trafilatura 提取正文，前端采用 React + shadcn/ui。采集能力通过[内容源管理](../../product/feature/01-source-management.md)统一接入；按组输出的文件包通过[Git 交付归档](../../product/feature/05-git-delivery-and-archive.md)同步至目标仓库。
 
 - 先检查 Feed 内容是全文还是摘要；需要时再补抓，保留原始链接和最终链接。
 - RSS/Atom 中的 ID 用于源内识别；重定向后的规范 URL 用于合并重复导入。内容 hash 用于识别已存在文章是否改变。

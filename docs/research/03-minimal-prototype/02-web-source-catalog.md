@@ -1,6 +1,8 @@
 # 网站信息源与采集清单
 
-核查日期：2026-10-15。关联：[最小原型结论](01-conclusion.md)、[来源配置](../../feature/01-source-configuration.md)。
+> 2026-10-15 调研快照：本文保留当时的核查与提议，不代表当前实现状态。现状见[系统架构](../../architecture/system-architecture.md)与[功能总览](../../product/feature/index.md)。
+
+核查日期：2026-10-15。关联：[最小原型结论](01-conclusion.md)、[来源配置](../../product/feature/01-source-management.md)。
 
 ## 信息源与内容定位
 
@@ -38,4 +40,4 @@ Simon 的运行依据见[第二批公开实践中的 RSS 实跑](../02-ai-led-co
 
 首期选择 **Cloudflare + Simon Willison**：内容分别覆盖一手工程实践与独立 Agent 分析，且订阅入口已有读取记录。相较于此前为验证采集而选择的 Jules Blom，这个组合更贴合用户明确的阅读目标。
 
-主题和筛选偏好统一维护在 [feature 01](../../feature/01-source-configuration.md)。本清单维护网站内容定位、入口与验证依据，后续新增来源时继续补充。
+主题和筛选偏好统一维护在 [feature 01](../../product/feature/01-source-management.md)。本清单维护网站内容定位、入口与验证依据，后续新增来源时继续补充。

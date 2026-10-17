@@ -1,9 +1,14 @@
-# openlore
+# OpenLore
 
-团队的知识助手，持续发现、提炼和沉淀值得关注的技术
+团队的知识助手，持续发现、提炼和沉淀值得关注的技术。
 
-[操作与开发指引](docs/guides/README.md) · [产品方案](docs/product/feature/index.md) · [前后端架构与技术选型](docs/architecture/technology-stack.md)
+**云端管理来源、计划与交付；独立 AI Runner 在自己的电脑执行任务。**
 
-- [新电脑安装与首次使用](docs/guides/getting-started.md)
-- [AI 执行器配置：本机、Worker、SSH](docs/guides/ai-executors.md)
+- [系统架构与 SVG 图](docs/architecture/system-architecture.md)
+- [首次使用与角色选择](docs/guides/getting-started.md)
+- [电脑接入 AI Runner](docs/guides/ai-executors.md)
+- [部署云端控制服务](docs/guides/server-deployment.md)
 - [开发者指引](docs/guides/development.md)
+- [完整文档目录](docs/README.md) · [产品功能](docs/product/feature/index.md)
+
+`npm run dev` 用于整站开发；仅作为 AI Runner 的电脑只运行独立 `worker` 进程。

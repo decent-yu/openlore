@@ -1,8 +1,10 @@
 # 开发者指引
 
-环境安装见[新电脑安装](getting-started.md)，AI 接入见[执行器配置](ai-executors.md)。以下命令从仓库根目录执行，Python 测试除外。
+本指南用于修改代码与整站调试。只运行 AI 的用户按[Runner 接入](ai-executors.md)操作，服务器管理员按[部署指引](server-deployment.md)操作。整体边界见[系统架构](../architecture/system-architecture.md)。以下命令从仓库根目录执行，Python 测试除外。
 
 ## 开发启动
+
+准备 Git、Node.js（项目选型为 24）、Python ≥3.12 和 uv；pnpm 版本以根 `package.json` 为准，当前可用 `npm install -g pnpm@12.0.0` 安装。
 
 ```sh
 pnpm install
@@ -12,6 +14,8 @@ pnpm dev
 ```
 
 `npm run dev` 与 `pnpm dev` 调用相同脚本：并行启动 Fastify 后端和 Vite 前端。后端使用 `tsx watch`，前端使用 Vite 热更新。共享契约从 `dist` 导入，修改 `packages/contracts/src` 后需重跑契约构建；需要时重启开发服务。
+
+整站开发命令不会自动启动独立 Runner。要按正式拓扑联调，先构建后在另一终端运行 `node apps/server/dist/cli/index.js worker <配对文件>`，其 `server_url` 指向 `http://127.0.0.1:8767`；只调试模型适配时也可选择 `local`。
 
 分别启动可用 `pnpm dev:server`、`pnpm dev:web`。前端默认 5173，`/api` 固定代理至后端 8767；后端使用 `PORT` 改端口时，也要修改 `apps/web/vite.config.ts` 的代理目标。
 
@@ -98,4 +102,4 @@ node apps/server/dist/cli/index.js serve
 
 `node apps/server/dist/cli/index.js doctor` 可执行基础自检，但会初始化所选数据目录及数据库，且不验证真实模型调用。`service` 尚未实现服务安装，长期运行请自行配置进程管理器。
 
-服务器部署的 HTTPS、管理令牌和 Worker 说明见[服务器网站与本机 AI 执行器](../architecture/local-ai-executors.md)。产品预期见[功能总览](../product/feature/index.md)；架构文档包含实施基线，涉及具体命令和已实现行为时以源码及本指引为准。
+服务器部署见[管理员指引](server-deployment.md)，Runner 协议见[生命周期](../architecture/local-ai-executors.md)。业务规则见[功能总览](../product/feature/index.md)，技术事实见[技术栈](../architecture/technology-stack.md)。

@@ -1,6 +1,8 @@
 # AI 主导的信息采集：方案与建议
 
-日期：2026-10-15。参考：[产品规划](../../product-brief.md)、[上一批采集调研](../01-open-source-projects/02-source-collection.md)。本次聚焦采集能力。
+> 2026-10-15 调研快照：本文保留当时的核查与提议，不代表当前实现状态。现状见[系统架构](../../architecture/system-architecture.md)与[功能总览](../../product/feature/index.md)。
+
+日期：2026-10-15。参考：[产品规划](../../product/product-brief.md)、[上一批采集调研](../01-open-source-projects/02-source-collection.md)。本次聚焦采集能力。
 
 ## 初步结论
 

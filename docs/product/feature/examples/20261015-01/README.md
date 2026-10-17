@@ -1,12 +1,10 @@
 # 2026-10-15 · 第 01 批
 
-主题：Agent 相关知识。本示例勾选了“生成批次简报”和“逐篇深度调研”。
+主题：Agent 相关知识。人工构造的文章与独立调研阅读样例，不代表程序实际生成或验收通过。
 
-| 文章 | 深度调研 |
-| --- | --- |
-| [01 · Agent 工具调用的可恢复执行](01-agent-recovery/article.md) | [本篇调研](01-agent-recovery/research.md) |
-| [02 · 上下文证据的结构化整理](02-context-evidence/article.md) | [本篇调研](02-context-evidence/research.md) |
+| 文章                                                            | 深度调研                                    |
+| --------------------------------------------------------------- | ------------------------------------------- |
+| [01 · Agent 工具调用的可恢复执行](01-agent-recovery/article.md) | [本篇调研](01-agent-recovery/research.md)   |
+| [02 · 上下文证据的结构化整理](02-context-evidence/article.md)   | [本篇调研](02-context-evidence/research.md) |
 
-[阅读本批简报](digest.md) · [返回全部批次](../README.md)
-
-文章与研究的配图均在各自 assets/，不依赖远端图片。这里的导航由程序生成，关闭简报或调研后仅保留对应的可用入口。
+[返回全部样例](../README.md)。文章与研究的配图位于各自 assets/；独立汇报样例不属于批次归档。
