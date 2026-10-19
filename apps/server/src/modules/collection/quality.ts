@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
+import { hasReviewableBody } from "../../infrastructure/content/review-body.js";
 import type {
   ContentItem,
   PoolStatus,
   SourceOptions,
 } from "@openlore/contracts";
 
-export const QUALITY_VERSION = "collection-quality-v1";
+export const QUALITY_VERSION = "collection-quality-v2";
 export const reasonLabels: Record<string, string> = {
   ready: "日期、正文和主题初筛通过；工程价值由流水线审核",
   outside_window: "超出采集时间窗",
@@ -166,6 +167,7 @@ export function evaluateContent(
   if (!item.title || item.body.completeness !== "full")
     return done("pending", "body_missing");
   if (
+    !hasReviewableBody(item.body.value, item.title || "") ||
     body.length < 80 ||
     /^(access denied|just a moment|page not found|sign in to continue|403 forbidden|404 not found)/i.test(
       body,

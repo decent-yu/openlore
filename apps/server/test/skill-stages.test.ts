@@ -71,24 +71,22 @@ beforeEach(async () => {
   db.exec(
     "DELETE FROM research_claims; DELETE FROM research_tasks; DELETE FROM group_items; DELETE FROM article_reviews; DELETE FROM source_items; DELETE FROM article_revisions; DELETE FROM articles; DELETE FROM ai_execution_logs; DELETE FROM groups; DELETE FROM sources; DELETE FROM collection_candidates; DELETE FROM collection_runs; DELETE FROM source_states",
   );
-  execute
-    .mockReset()
-    .mockImplementation(async (input) => ({
-      status: "success",
-      provider: "mock",
-      model: "mock",
-      durationMs: 0,
-      result:
-        input.taskType === "assess"
-          ? assessment
-          : input.taskType === "select"
-            ? {
-                selected: [
-                  { article_id: id, reason: "Matches the research task" },
-                ],
-              }
-            : "# Actual AI research",
-    }));
+  execute.mockReset().mockImplementation(async (input) => ({
+    status: "success",
+    provider: "mock",
+    model: "mock",
+    durationMs: 0,
+    result:
+      input.taskType === "assess"
+        ? assessment
+        : input.taskType === "select"
+          ? {
+              selected: [
+                { article_id: id, reason: "Matches the research task" },
+              ],
+            }
+          : "# Actual AI research",
+  }));
   const adapter = new ai.FallbackAIAdapter([
     {
       target: {
@@ -130,7 +128,14 @@ it("reviews new admitted articles independently and reuses the shared result for
   expect(review.taskType).toBe("assess");
   expect(review.outputSchema).toMatchObject({
     additionalProperties: false,
-    required: ["quality", "positioning", "summary", "tags", "reason", "evidence_refs"],
+    required: [
+      "quality",
+      "positioning",
+      "summary",
+      "tags",
+      "reason",
+      "evidence_refs",
+    ],
   });
   expect(review.groupId).toBeUndefined();
   expect(review.prompt).not.toContain("Agent systems");
@@ -278,6 +283,27 @@ it("records invalid evidence as failed, then supports explicit retry without fak
   expect(articleReviewsService.enqueue([id])).toBe(1);
   await articleReviewsService.processPending();
   expect(getArticleReviews([id]).get(id)?.status).toBe("succeeded");
+});
+
+it("finishes navigation-only material without AI, fabricated scores or automatic re-enqueue", async () => {
+  const content =
+    "18th October 2026\n\n## Recent articles\n\n- [A sufficiently long navigation link](https://example.com/one) - 12th October 2026";
+  collectionService.persistContentItem(
+    { ...item(), body: { ...item().body, value: content } },
+    id,
+  );
+  await articleReviewsService.processPending();
+  expect(execute).not.toHaveBeenCalled();
+  expect(getArticleReviews([id]).get(id)).toMatchObject({
+    status: "insufficient",
+    result: null,
+    error_message: null,
+    log_id: null,
+  });
+  expect(articleReviewsService.enqueue([id])).toBe(0);
+  expect(articleReviewsService.enqueue([id], true)).toBe(1);
+  await articleReviewsService.processPending();
+  expect(execute).not.toHaveBeenCalled();
 });
 
 it("does not change an old score into a current-revision review and validates manual requests atomically", async () => {

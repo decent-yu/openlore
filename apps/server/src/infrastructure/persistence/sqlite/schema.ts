@@ -129,6 +129,7 @@ export const articleReviewsTable = sqliteTable('article_reviews', {
   status: text('status').notNull().default('queued'),
   resultJson: text('result_json'),
   errorMessage: text('error_message'),
+  materialIssue: text('material_issue'),
   logId: text('log_id'),
   createdAt: text('created_at').notNull(),
   assessedAt: text('assessed_at'),

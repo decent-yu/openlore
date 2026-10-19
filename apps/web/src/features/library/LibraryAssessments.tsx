@@ -28,6 +28,22 @@ export function LibraryAssessments({
   timezone: string;
   articleTitle?: string;
 }) {
+  if (review?.status === "insufficient") {
+    return (
+      <section
+        aria-label="内容初审"
+        className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+      >
+        <p className="flex items-center gap-1.5 font-medium">
+          <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+          材料不足 · 未调用 AI
+        </p>
+        <p className="leading-relaxed">
+          {review.material_issue || "缺少可评估的正文，请补充正文。"}
+        </p>
+      </section>
+    );
+  }
   if (!review || review.status === "queued" || review.status === "running") {
     const running = review?.status === "running";
     const queued = review?.status === "queued";

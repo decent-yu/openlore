@@ -13,6 +13,25 @@ import { api } from "../lib/api.js";
 import { LibraryAssessments } from "../features/library/LibraryAssessments.js";
 
 afterEach(() => vi.unstubAllGlobals());
+it("shows insufficient material separately from AI failure and does not invent a quality score", () => {
+  const html = renderToStaticMarkup(
+    <LibraryAssessments
+      timezone="Asia/Shanghai"
+      review={{
+        status: "insufficient",
+        result: null,
+        error_message: null,
+        assessed_at: null,
+        log_id: null,
+        material_issue: "正文只有日期与导航",
+      }}
+    />,
+  );
+  expect(html).toContain("材料不足 · 未调用 AI");
+  expect(html).toContain("正文只有日期与导航");
+  expect(html).not.toContain("/ 100");
+  expect(html).not.toContain("初审失败");
+});
 it("separates discovery and publication rows and shows custom date controls for each", () => {
   const html = renderToStaticMarkup(
     <LibraryFilters
@@ -84,9 +103,7 @@ it("keeps status and interest active simultaneously and validates dates before a
 
 it("displays exactly one article state with deep analysis taking precedence over selection", () => {
   const deep = renderToStaticMarkup(
-    <LibraryArticleStatus
-      article={{ review: null, is_deep_analyzed: true }}
-    />,
+    <LibraryArticleStatus article={{ review: null, is_deep_analyzed: true }} />,
   );
   expect(deep).toContain("深度分析");
   expect(deep).not.toContain("已评分");
@@ -95,7 +112,13 @@ it("displays exactly one article state with deep analysis taking precedence over
     renderToStaticMarkup(
       <LibraryArticleStatus
         article={{
-          review: {status: 'succeeded', result: null, error_message: null, assessed_at: null, log_id: null},
+          review: {
+            status: "succeeded",
+            result: null,
+            error_message: null,
+            assessed_at: null,
+            log_id: null,
+          },
           is_deep_analyzed: false,
         }}
       />,
@@ -160,14 +183,40 @@ it("shows independent unreviewed, scored and archived states with counts", () =>
 });
 
 it("shows a compact review preview while reserving detailed evidence and logs for the dialog", () => {
-  const html = renderToStaticMarkup(<MemoryRouter><LibraryAssessments timezone="UTC" review={{
-    status: 'succeeded', error_message: null, log_id: 'review-log', assessed_at: '2026-10-19T03:00:00Z',
-    result: {quality: 0, positioning: '数据库性能', summary: '问题、方法和局限', tags: ['数据库'], reason: '证据不足', evidence_refs: ['A complete original sentence from the article.']},
-  }} /></MemoryRouter>);
-  for (const text of ['内容质量', '数据库性能', '查看审核详情']) expect(html).toContain(text);
-  for (const text of ['问题、方法和局限', '证据不足', '查看初审记录', 'review-log']) expect(html).not.toContain(text);
-  expect(html).not.toContain('相关度');
-  const none = renderToStaticMarkup(<LibraryAssessments timezone="UTC" review={null} />);
-  expect(none).toContain('待初审');
-  expect(none).not.toContain('内容质量');
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <LibraryAssessments
+        timezone="UTC"
+        review={{
+          status: "succeeded",
+          error_message: null,
+          log_id: "review-log",
+          assessed_at: "2026-10-19T03:00:00Z",
+          result: {
+            quality: 0,
+            positioning: "数据库性能",
+            summary: "问题、方法和局限",
+            tags: ["数据库"],
+            reason: "证据不足",
+            evidence_refs: ["A complete original sentence from the article."],
+          },
+        }}
+      />
+    </MemoryRouter>,
+  );
+  for (const text of ["内容质量", "数据库性能", "查看审核详情"])
+    expect(html).toContain(text);
+  for (const text of [
+    "问题、方法和局限",
+    "证据不足",
+    "查看初审记录",
+    "review-log",
+  ])
+    expect(html).not.toContain(text);
+  expect(html).not.toContain("相关度");
+  const none = renderToStaticMarkup(
+    <LibraryAssessments timezone="UTC" review={null} />,
+  );
+  expect(none).toContain("待初审");
+  expect(none).not.toContain("内容质量");
 });

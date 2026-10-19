@@ -581,19 +581,23 @@ export function LibraryPage() {
                       onClick={() =>
                         reviewMutation.mutate({
                           ids: [art.id],
-                          force: art.review?.status === "succeeded",
+                          force:
+                            art.review?.status === "succeeded" ||
+                            art.review?.status === "insufficient",
                         })
                       }
                     >
-                      {art.review?.status === "succeeded"
-                        ? "重新初审"
-                        : art.review?.status === "failed"
-                          ? "重试初审"
-                          : art.review?.status === "queued"
-                            ? "排队中"
-                            : art.review?.status === "running"
-                              ? "审核中"
-                              : "初审"}
+                      {art.review?.status === "insufficient"
+                        ? "重新检查正文"
+                        : art.review?.status === "succeeded"
+                          ? "重新初审"
+                          : art.review?.status === "failed"
+                            ? "重试初审"
+                            : art.review?.status === "queued"
+                              ? "排队中"
+                              : art.review?.status === "running"
+                                ? "审核中"
+                                : "初审"}
                     </Button>
                     {art.research?.status === "succeeded" ? (
                       <>

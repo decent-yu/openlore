@@ -1,7 +1,7 @@
 ---
 name: tech-article-extractor
 description: 对内容池文章进行与任务无关的初审，提取质量评分、主题定位、简介和原文证据。
-version: 3.0.0
+version: 3.1.0
 type: extraction
 ---
 
@@ -13,6 +13,6 @@ type: extraction
 - quality 评估论据充分度、内容深度和完整度。来源名气、关键词和字数不能证明质量；营销主张、公告不能冒充实现证据。
 - positioning 说明主题定位与适用场景；tags 支持多个交叉技术主题。
 - summary 使用中文，说明解决的问题、主要方法、结论与局限，供后续批量比较选文。材料不足的事项必须明确写出。
-- reason 解释评分依据；evidence_refs 必须逐字引用正文完整原句，每段至少16字符，不翻译或改写。
+- reason 解释评分依据；evidence_refs 必须逐字引用“正文（唯一可引用区域）”中的完整原句，每段至少16字符，不翻译或改写。Title、Metadata 与页面导航不是正文证据。
 
 只输出 JSON，字段为 quality（0-100）、positioning（最多400字符）、summary（最多1600字符）、tags（1-8个）、reason、evidence_refs（1-10段）。不选文、不调研、不推送、不归档。

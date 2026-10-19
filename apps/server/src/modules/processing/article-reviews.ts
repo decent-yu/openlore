@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import {
+  hasReviewableBody,
+  reviewBody,
+} from "../../infrastructure/content/review-body.js";
+import {
   ArticleAssessmentSchema,
   buildAssessmentPrompt,
   type ArticleReview,
@@ -23,6 +27,7 @@ type ReviewRow = {
   error_message: string | null;
   assessed_at: string | null;
   log_id: string | null;
+  material_issue: string | null;
 };
 export const CURRENT_REVIEW_JOIN = `LEFT JOIN article_reviews review ON review.article_id=a.id AND review.revision_hash=a.latest_revision`;
 export function getArticleReviews(
@@ -46,6 +51,7 @@ export function getArticleReviews(
         error_message: row.error_message,
         assessed_at: row.assessed_at,
         log_id: row.log_id,
+        material_issue: row.material_issue || undefined,
       },
     ]),
   );
@@ -78,12 +84,12 @@ export class ArticleReviewsService {
         if (
           row &&
           (["queued", "running"].includes(row.status) ||
-            (row.status === "succeeded" && !force))
+            (["succeeded", "insufficient"].includes(row.status) && !force))
         )
           continue;
         db.prepare(
           `INSERT INTO article_reviews(article_id,revision_hash,status,created_at) VALUES (?,?,'queued',?)
-          ON CONFLICT(article_id,revision_hash) DO UPDATE SET status='queued',result_json=NULL,error_message=NULL,log_id=NULL,assessed_at=NULL,created_at=excluded.created_at`,
+          ON CONFLICT(article_id,revision_hash) DO UPDATE SET status='queued',result_json=NULL,error_message=NULL,material_issue=NULL,log_id=NULL,assessed_at=NULL,created_at=excluded.created_at`,
         ).run(article.id, article.latest_revision, new Date().toISOString());
         queued++;
       }
@@ -135,9 +141,7 @@ export class ArticleReviewsService {
     let logId: string | undefined;
     try {
       const article = db
-        .prepare(
-          "SELECT title,published_at FROM articles WHERE id=?",
-        )
+        .prepare("SELECT title,published_at FROM articles WHERE id=?")
         .get(row.article_id) as {
         title: string;
         published_at: string | null;
@@ -149,7 +153,18 @@ export class ArticleReviewsService {
         .get(row.article_id, row.revision_hash) as
         { content_ref: string } | undefined;
       if (!revision) throw new Error("正文版本不存在");
-      const content = fs.readFileSync(revision.content_ref, "utf8");
+      const content = reviewBody(fs.readFileSync(revision.content_ref, "utf8"));
+      if (!hasReviewableBody(content, article.title)) {
+        db.prepare(
+          "UPDATE article_reviews SET status='insufficient',result_json=NULL,error_message=NULL,material_issue=?,assessed_at=?,log_id=NULL WHERE article_id=? AND revision_hash=?",
+        ).run(
+          "正文缺失或仅包含标题、日期、导航，需补充正文后再初审。",
+          new Date().toISOString(),
+          row.article_id,
+          row.revision_hash,
+        );
+        return;
+      }
       const adapter = getAIAdapterWithFallback() as FallbackAIAdapter | null;
       const profileId = adapter?.targets?.[0]?.target.id || "default";
       const skill = await skillsService.getSkill(SKILL_ID, profileId);

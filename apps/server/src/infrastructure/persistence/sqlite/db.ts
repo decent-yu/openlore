@@ -486,6 +486,8 @@ function migrateCollectionQuality(sqlite: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS article_reviews_pending ON article_reviews(status, created_at);
   `);
+  const reviewColumns = sqlite.pragma('table_info(article_reviews)') as Array<{name:string}>;
+  if (!reviewColumns.some(column => column.name === 'material_issue')) sqlite.exec('ALTER TABLE article_reviews ADD COLUMN material_issue TEXT');
   sqlite.exec('DROP INDEX IF EXISTS articles_pool_date');
   for (const [table, removed] of [['articles',['pool_status','quality_reason','content_kind']],['groups',['lookback_days']]] as const) {
     const columns=sqlite.pragma(`table_info(${table})`) as Array<{name:string}>;

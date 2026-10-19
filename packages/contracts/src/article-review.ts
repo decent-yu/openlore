@@ -10,11 +10,12 @@ export const ArticleAssessmentSchema = z.object({
 });
 export type ArticleAssessment = z.infer<typeof ArticleAssessmentSchema>;
 export const ArticleReviewSchema = z.object({
-  status: z.enum(["queued", "running", "succeeded", "failed"]),
+  status: z.enum(["queued", "running", "succeeded", "failed", "insufficient"]),
   result: ArticleAssessmentSchema.nullable(),
   error_message: z.string().nullable(),
   assessed_at: z.string().nullable(),
   log_id: z.string().nullable(),
+  material_issue: z.string().optional(),
 });
 export type ArticleReview = z.infer<typeof ArticleReviewSchema>;
 export const ReviewArticlesRequestSchema = z.object({
