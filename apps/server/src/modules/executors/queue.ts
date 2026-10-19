@@ -5,7 +5,10 @@ import {
   ExecutionResultSchema,
   type ExecutionRequest,
   type ExecutionResult,
+  type ExecutionProgress,
+  ExecutionProgressSchema,
 } from '@openlore/contracts';
+import { redactExecutionText } from '../../infrastructure/ai/execution_logs.js';
 
 export class ExecutionQueue {
   enqueue(profileId: string, request: ExecutionRequest): string {
@@ -52,7 +55,7 @@ export class ExecutionQueue {
       if (!row) return null;
       const lease = crypto.randomBytes(24).toString('hex');
       db.prepare(
-        "UPDATE ai_jobs SET status='running',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=?",
+        "UPDATE ai_jobs SET status='running',lease_token=?,lease_until=?,attempts=attempts+1,progress_json=NULL WHERE id=?",
       ).run(lease, now + 60000, row.id);
       return {
         id: row.id,
@@ -61,14 +64,30 @@ export class ExecutionQueue {
       };
     })();
   }
-  renew(profileId: string, id: string, lease: string): boolean {
+  renew(
+    profileId: string,
+    id: string,
+    lease: string,
+    progress?: ExecutionProgress,
+  ): boolean {
     return (
       getSqliteDatabase()
         .prepare(
-          "UPDATE ai_jobs SET lease_until=? WHERE id=? AND profile_id=? AND lease_token=? AND status='running' AND deadline>? AND lease_until>?",
+          "UPDATE ai_jobs SET lease_until=?,progress_json=COALESCE(?,progress_json) WHERE id=? AND profile_id=? AND lease_token=? AND status='running' AND deadline>? AND lease_until>?",
         )
-        .run(Date.now() + 60000, id, profileId, lease, Date.now(), Date.now())
-        .changes === 1
+        .run(
+          Date.now() + 60000,
+          progress
+            ? redactExecutionText(
+                JSON.stringify(ExecutionProgressSchema.parse(progress)),
+              )
+            : null,
+          id,
+          profileId,
+          lease,
+          Date.now(),
+          Date.now(),
+        ).changes === 1
     );
   }
   complete(
@@ -93,13 +112,26 @@ export class ExecutionQueue {
         ).changes === 1
     );
   }
-  async wait(id: string, request: ExecutionRequest): Promise<ExecutionResult> {
+  async wait(
+    id: string,
+    request: ExecutionRequest,
+    onProgress?: (progress: ExecutionProgress) => void,
+  ): Promise<ExecutionResult> {
     const started = Date.now();
     const waitingUntil = started + request.config.queue_timeout_seconds * 1000;
+    let previousProgress = '';
     while (true) {
       const row = getSqliteDatabase()
-        .prepare('SELECT status,result_json,deadline FROM ai_jobs WHERE id=?')
+        .prepare(
+          'SELECT status,result_json,deadline,progress_json FROM ai_jobs WHERE id=?',
+        )
         .get(id) as any;
+      if (row?.progress_json && row.progress_json !== previousProgress) {
+        previousProgress = row.progress_json;
+        onProgress?.(
+          ExecutionProgressSchema.parse(JSON.parse(row.progress_json)),
+        );
+      }
       if (row?.status === 'completed')
         return ExecutionResultSchema.parse(JSON.parse(row.result_json));
       if (
@@ -119,10 +151,14 @@ export class ExecutionQueue {
           model: request.input.model || 'default',
           durationMs: Date.now() - started,
           error: {
-            code: row?.status === 'queued' ? 'worker_queue_timeout' : 'worker_timeout',
-            message: row?.status === 'queued'
-              ? `Worker 排队等待达到 ${request.config.queue_timeout_seconds} 秒上限，请检查执行器在线状态与并发占用`
-              : `Worker 调用未完成（执行上限 ${request.config.timeout_seconds} 秒，排队上限 ${request.config.queue_timeout_seconds} 秒），请检查 Worker 连接与任务状态`,
+            code:
+              row?.status === 'queued'
+                ? 'worker_queue_timeout'
+                : 'worker_timeout',
+            message:
+              row?.status === 'queued'
+                ? `Worker 排队等待达到 ${request.config.queue_timeout_seconds} 秒上限，请检查执行器在线状态与并发占用`
+                : `Worker 调用未完成（执行上限 ${request.config.timeout_seconds} 秒，排队上限 ${request.config.queue_timeout_seconds} 秒），请检查 Worker 连接与任务状态`,
           },
         };
       }

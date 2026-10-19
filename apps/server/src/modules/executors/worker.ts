@@ -6,6 +6,7 @@ import {
   ExecutorConfigSchema,
   ExecutionRequestSchema,
   type ExecutorConfig,
+  type ExecutionProgress,
 } from '@openlore/contracts';
 import {
   executeInWorkspace,
@@ -56,8 +57,18 @@ export async function executeOnce() {
         )
       : await executeInWorkspace(
           ExecutionRequestSchema.parse(envelope.request),
+          undefined,
+          envelope.stream
+            ? (progress) =>
+                process.stdout.write(
+                  JSON.stringify({ type: 'progress', progress }) + '\n',
+                )
+            : undefined,
         );
-  process.stdout.write(JSON.stringify(result));
+  process.stdout.write(
+    JSON.stringify(envelope.stream ? { type: 'result', result } : result) +
+      '\n',
+  );
 }
 export async function runWorker(configPath: string) {
   const local = WorkerConfiguration.parse(
@@ -134,12 +145,14 @@ export async function runWorker(configPath: string) {
             const run = (async () => {
               let lastRenewal = Date.now();
               let renewing = false;
+              let progress: ExecutionProgress | undefined;
               const timer = setInterval(async () => {
                 if (renewing) return;
                 renewing = true;
                 try {
                   const result = await request(`jobs/${job.id}/renew`, {
                     lease_token: job.lease_token,
+                    progress,
                   });
                   if (!result.active) controller.abort();
                   else lastRenewal = Date.now();
@@ -159,6 +172,9 @@ export async function runWorker(configPath: string) {
                 const result = await executeInWorkspace(
                   envelope,
                   controller.signal,
+                  (update) => {
+                    progress = update;
+                  },
                 );
                 if (controller.signal.aborted) return;
                 for (let attempt = 0; attempt < 5 && !stopping; attempt++) {

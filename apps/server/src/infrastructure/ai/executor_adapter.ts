@@ -6,6 +6,8 @@ import {
   type ExecutorConfig,
   type ExecutionRequest,
   type SkillBundle,
+  type ExecutionProgress,
+  ExecutionProgressSchema,
 } from '@openlore/contracts';
 import type { AIAdapter, AITaskInput, AIResult } from './adapter.js';
 import { executeInWorkspace, runProcess } from './workspace_runner.js';
@@ -24,7 +26,10 @@ export class ExecutorAdapter implements AIAdapter {
     public cliPath: string,
     public config: ExecutorConfig,
   ) {}
-  async execute(input: AITaskInput): Promise<AIResult> {
+  async execute(
+    input: AITaskInput,
+    onProgress?: (progress: ExecutionProgress) => void,
+  ): Promise<AIResult> {
     try {
       let bundle: SkillBundle | undefined;
       if (input.skillId) {
@@ -72,10 +77,14 @@ export class ExecutorAdapter implements AIAdapter {
         result = await executionQueue.wait(
           executionQueue.enqueue(this.profileId, request),
           request,
+          onProgress,
         );
       else if (this.config.transport === 'ssh')
-        result = await this.ssh({ action: 'execute', request });
-      else result = await executeInWorkspace(request);
+        result = await this.ssh(
+          { action: 'execute', request, stream: true },
+          onProgress,
+        );
+      else result = await executeInWorkspace(request, undefined, onProgress);
       return result;
     } catch (error: any) {
       return {
@@ -87,7 +96,10 @@ export class ExecutorAdapter implements AIAdapter {
       };
     }
   }
-  async ssh(payload: unknown): Promise<any> {
+  async ssh(
+    payload: unknown,
+    onProgress?: (progress: ExecutionProgress) => void,
+  ): Promise<any> {
     const c = this.config;
     if (
       !/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(c.ssh_host) ||
@@ -113,18 +125,42 @@ export class ExecutorAdapter implements AIAdapter {
       c.ssh_user ? `${c.ssh_user}@${c.ssh_host}` : c.ssh_host,
       `${shellQuote(c.ssh_node_path)} ${shellQuote(c.ssh_cli_entry)} execute-once`,
     );
+    let pendingLine = '';
+    let finalEnvelope: any;
     const result = await runProcess(
       'ssh',
       args,
       process.cwd(),
       JSON.stringify(payload),
       (c.timeout_seconds + 20) * 1000,
+      undefined,
+      {
+        stdoutTailBytes: 65536,
+        onStdoutChunk: (chunk) => {
+          pendingLine += chunk;
+          if (Buffer.byteLength(pendingLine) > 24 * 1024 * 1024)
+            throw new Error('SSH 执行消息超出大小上限');
+          const lines = pendingLine.split('\n');
+          pendingLine = lines.pop()!;
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event.type === 'progress')
+              onProgress?.(ExecutionProgressSchema.parse(event.progress));
+            else finalEnvelope = event;
+          }
+        },
+      },
     );
     if (result.code !== 0 || result.timedOut)
       throw new Error(
         'SSH 执行失败，请检查连通性、known_hosts、密钥和远端路径',
       );
-    return JSON.parse(result.stdout);
+    const envelope = pendingLine.trim()
+      ? JSON.parse(pendingLine)
+      : finalEnvelope;
+    if (!envelope) throw new Error('SSH 执行未返回完成结果');
+    return envelope.type === 'result' ? envelope.result : envelope;
   }
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     if (this.config.transport === 'worker') {

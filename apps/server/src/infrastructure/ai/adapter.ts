@@ -1,7 +1,14 @@
-import type { ExecutionInput, ExecutionResult } from '@openlore/contracts';
+import type {
+  ExecutionInput,
+  ExecutionResult,
+  ExecutionProgress,
+} from '@openlore/contracts';
 export type AITaskInput = ExecutionInput;
 export type AIResult = Omit<ExecutionResult, 'result'> & { result?: any };
 export interface AIAdapter {
-  execute(input: AITaskInput): Promise<AIResult>;
+  execute(
+    input: AITaskInput,
+    onProgress?: (progress: ExecutionProgress) => void,
+  ): Promise<AIResult>;
   testConnection(): Promise<{ ok: boolean; message: string; version?: string }>;
 }

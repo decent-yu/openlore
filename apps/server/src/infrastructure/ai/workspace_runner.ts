@@ -8,7 +8,9 @@ import {
   type ExecutionRequest,
   type ExecutionResult,
   type SkillBundle,
+  type ExecutionProgress,
 } from '@openlore/contracts';
+import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
   scanSkillDirectory,
   safeRelativePath,
@@ -28,6 +30,12 @@ export async function runProcess(
   input: string,
   timeout: number,
   signal?: AbortSignal,
+  options: {
+    onOutput?: (stdout: string, stderr: string) => void;
+    shouldStop?: (stdout: string, stderr: string) => boolean;
+    onStdoutChunk?: (chunk: string) => void;
+    stdoutTailBytes?: number;
+  } = {},
 ): Promise<{
   code: number | null;
   stdout: string;
@@ -52,6 +60,34 @@ export async function runProcess(
       stderrTruncated = false,
       timedOut = false,
       settled = false;
+    let observerError: unknown;
+    let lastPublished = 0;
+    let publishTimer: ReturnType<typeof setTimeout> | undefined;
+    const publish = (force = false) => {
+      if (observerError) return;
+      try {
+        if (force || Date.now() - lastPublished >= 1000) {
+          if (publishTimer) {
+            clearTimeout(publishTimer);
+            publishTimer = undefined;
+          }
+          lastPublished = Date.now();
+          options.onOutput?.(stdout, stderr);
+        } else if (!publishTimer) {
+          publishTimer = setTimeout(
+            () => {
+              publishTimer = undefined;
+              publish(true);
+            },
+            1000 - (Date.now() - lastPublished),
+          );
+        }
+        if (!force && options.shouldStop?.(stdout, stderr)) terminate();
+      } catch (error) {
+        observerError = error;
+        terminate();
+      }
+    };
     const stop = () => {
       try {
         if (child.pid && process.platform !== 'win32')
@@ -79,15 +115,30 @@ export async function runProcess(
     }, timeout);
     const finish = () => {
       clearTimeout(timer);
+      if (publishTimer) clearTimeout(publishTimer);
       if (hardTimer) clearTimeout(hardTimer);
       signal?.removeEventListener('abort', abort);
     };
-    child.stdout.on('data', (data) => {
-      if (Buffer.byteLength(stdout) + data.length > 16 * 1024 * 1024) {
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (data: string) => {
+      if (
+        !options.stdoutTailBytes &&
+        Buffer.byteLength(stdout) + Buffer.byteLength(data) > 16 * 1024 * 1024
+      ) {
         terminate();
         return;
       }
-      stdout += data.toString();
+      stdout += data;
+      if (options.stdoutTailBytes)
+        stdout = stdout.slice(-options.stdoutTailBytes);
+      try {
+        if (!observerError) options.onStdoutChunk?.(data);
+      } catch (error) {
+        observerError = error;
+        terminate();
+      }
+      publish();
     });
     child.stderr.on('data', (data) => {
       stderr += data.toString();
@@ -95,6 +146,7 @@ export async function runProcess(
         stderrTruncated = true;
         stderr = stderr.slice(-512 * 1024);
       }
+      publish();
     });
     child.stdin.on('error', () => {});
     child.on('error', (error) => {
@@ -108,7 +160,9 @@ export async function runProcess(
       if (!settled) {
         settled = true;
         finish();
-        resolve({ code, stdout, stderr, timedOut, stderrTruncated });
+        publish(true);
+        if (observerError) reject(observerError);
+        else resolve({ code, stdout, stderr, timedOut, stderrTruncated });
       }
     });
     if (signal?.aborted) terminate();
@@ -148,6 +202,7 @@ export function collectArtifacts(
 export async function executeInWorkspace(
   raw: ExecutionRequest,
   signal?: AbortSignal,
+  onProgress?: (progress: ExecutionProgress) => void,
 ): Promise<ExecutionResult> {
   const request = ExecutionRequestSchema.parse(raw),
     { input, config } = request;
@@ -258,7 +313,7 @@ export async function executeInWorkspace(
         '-p',
         prompt,
         '--output-format',
-        'json',
+        'stream-json',
         '--approval-mode',
         'auto_edit',
         '--skip-trust',
@@ -266,10 +321,48 @@ export async function executeInWorkspace(
       if (input.model) args.push('-m', input.model);
     }
     execution = {
-      workspace, skill_id: bundle?.id, skill_revision: bundle?.revision, prompt, mode,
-      skill_instructions: bundle?.files.find(file => file.path === 'SKILL.md') ? Buffer.from(bundle.files.find(file => file.path === 'SKILL.md')!.content, 'base64').toString('utf8') : undefined,
-      skill_files: bundle?.files.map(file => file.path),
+      workspace,
+      skill_id: bundle?.id,
+      skill_revision: bundle?.revision,
+      prompt,
+      mode,
+      skill_instructions: bundle?.files.find((file) => file.path === 'SKILL.md')
+        ? Buffer.from(
+            bundle.files.find((file) => file.path === 'SKILL.md')!.content,
+            'base64',
+          ).toString('utf8')
+        : undefined,
+      skill_files: bundle?.files.map((file) => file.path),
     };
+    let lastOutputAt: string | undefined;
+    let previousStdout = '',
+      previousStderr = '';
+    const progress = (stdout = '', stderr = '') => {
+      if (stdout !== previousStdout || stderr !== previousStderr)
+        lastOutputAt = new Date().toISOString();
+      previousStdout = stdout;
+      previousStderr = stderr;
+      fs.writeFileSync(path.join(workspace, 'events.log'), stdout, {
+        mode: 0o600,
+      });
+      fs.writeFileSync(path.join(workspace, 'stderr.log'), stderr, {
+        mode: 0o600,
+      });
+      onProgress?.({
+        updated_at: new Date().toISOString(),
+        last_output_at: lastOutputAt,
+        execution,
+        diagnostics: {
+          stdout: stdout.slice(-65536),
+          stderr: stderr.slice(-65536),
+          exit_code: null,
+          timed_out: false,
+          timeout_seconds: config.timeout_seconds,
+          output_truncated: stdout.length > 65536 || stderr.length > 65536,
+        },
+      });
+    };
+    progress();
     const res = await runProcess(
       request.cli_path,
       args,
@@ -277,20 +370,52 @@ export async function executeInWorkspace(
       request.provider === 'codex_cli' ? prompt : '',
       config.timeout_seconds * 1000,
       signal,
+      {
+        onOutput: progress,
+        shouldStop: (stdout, stderr) =>
+          ['gemini_policy_unavailable', 'invalid_json_schema'].includes(
+            classifyProcessFailure(stdout, stderr)?.error.code || '',
+          ),
+      },
     );
     const diagnosticLimit = 512 * 1024;
     diagnostics = {
-      stdout: res.stdout.slice(-diagnosticLimit), stderr: res.stderr,
-      exit_code: res.code, timed_out: res.timedOut, timeout_seconds: config.timeout_seconds,
-      output_truncated: res.stdout.length > diagnosticLimit || res.stderrTruncated,
+      stdout: res.stdout.slice(-diagnosticLimit),
+      stderr: res.stderr,
+      exit_code: res.code,
+      timed_out: res.timedOut,
+      timeout_seconds: config.timeout_seconds,
+      output_truncated:
+        res.stdout.length > diagnosticLimit || res.stderrTruncated,
     };
     if (res.timedOut) {
-      const document = path.join(workspace, 'output', input.taskType === 'digest' ? 'digest.md' : 'research.md');
-      if (fs.existsSync(document) && !fs.lstatSync(document).isSymbolicLink() && fs.statSync(document).size <= diagnosticLimit) {
+      const document = path.join(
+        workspace,
+        'output',
+        input.taskType === 'digest' ? 'digest.md' : 'research.md',
+      );
+      if (
+        fs.existsSync(document) &&
+        !fs.lstatSync(document).isSymbolicLink() &&
+        fs.statSync(document).size <= diagnosticLimit
+      ) {
         diagnostics.partial_document = fs.readFileSync(document, 'utf8');
       }
     }
     fs.writeFileSync(path.join(workspace, 'events.log'), res.stdout);
+    const knownFailure =
+      res.code !== 0 || res.timedOut
+        ? classifyProcessFailure(res.stdout, res.stderr)
+        : undefined;
+    if (knownFailure)
+      return {
+        ...knownFailure,
+        provider: request.provider,
+        model,
+        durationMs: Date.now() - started,
+        execution,
+        diagnostics,
+      };
     if (res.timedOut)
       return {
         status: 'timeout',
@@ -299,7 +424,10 @@ export async function executeInWorkspace(
         durationMs: Date.now() - started,
         execution,
         diagnostics,
-        error: { code: 'timeout', message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}` },
+        error: {
+          code: 'timeout',
+          message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}`,
+        },
       };
     if (res.code !== 0)
       return {
@@ -311,7 +439,7 @@ export async function executeInWorkspace(
         diagnostics,
         error: {
           code: 'cli_failed',
-          message: `AI CLI 执行失败（退出码 ${res.code}），请检查执行机的 CLI 登录与配置`,
+          message: `AI CLI 执行失败（退出码 ${res.code}），请查看本次尝试的标准输出与错误日志`,
         },
       };
     let result: any;
@@ -325,18 +453,27 @@ export async function executeInWorkspace(
       result = input.outputSchema ? JSON.parse(text) : text;
       for (const line of res.stdout.split('\n')) {
         try {
-          const event=JSON.parse(line);
-          if(event.type==='turn.completed' && event.usage) {
-            usage ||= {promptTokens:0,completionTokens:0,totalTokens:0,cachedTokens:0};
+          const event = JSON.parse(line);
+          if (event.type === 'turn.completed' && event.usage) {
+            usage ||= {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              cachedTokens: 0,
+            };
             usage.promptTokens! += event.usage.input_tokens || 0;
             usage.completionTokens! += event.usage.output_tokens || 0;
             usage.cachedTokens! += event.usage.cached_input_tokens || 0;
-            usage.totalTokens! += (event.usage.input_tokens || 0)+(event.usage.output_tokens || 0);
+            usage.totalTokens! +=
+              (event.usage.input_tokens || 0) +
+              (event.usage.output_tokens || 0);
           }
-        } catch { /* Non-JSON CLI lines are retained in diagnostics. */ }
+        } catch {
+          /* Non-JSON CLI lines are retained in diagnostics. */
+        }
       }
     } else {
-      const envelope = JSON.parse(res.stdout);
+      const envelope = parseGeminiOutput(res.stdout);
       const models = Object.entries(envelope.stats?.models || {}) as Array<
         [string, any]
       >;
@@ -346,9 +483,15 @@ export async function executeInWorkspace(
             (b[1].tokens?.total || b[1].api?.totalRequests || 0) -
             (a[1].tokens?.total || a[1].api?.totalRequests || 0),
         )[0][0];
-      if(models.some(([,metrics])=>metrics.tokens)) {
-        usage={promptTokens:0,completionTokens:0,totalTokens:0,cachedTokens:0,reasoningTokens:0};
-        for(const [,metrics] of models) {
+      if (models.some(([, metrics]) => metrics.tokens)) {
+        usage = {
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cachedTokens: 0,
+          reasoningTokens: 0,
+        };
+        for (const [, metrics] of models) {
           usage.promptTokens! += metrics.tokens?.prompt || 0;
           usage.completionTokens! += metrics.tokens?.candidates || 0;
           usage.totalTokens! += metrics.tokens?.total || 0;
@@ -396,7 +539,8 @@ export async function executeInWorkspace(
       provider: request.provider,
       model,
       durationMs: Date.now() - started,
-      execution, diagnostics,
+      execution,
+      diagnostics,
       error: { code: 'execution_failed', message: error.message },
     };
   } finally {

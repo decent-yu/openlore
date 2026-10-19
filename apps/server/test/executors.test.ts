@@ -50,7 +50,7 @@ describe('Workspace execution and remote Worker', () => {
     );
     fs.writeFileSync(
       fakeCli,
-      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8')})}));`,
+      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);const finish=()=>console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8')})}));if(process.cwd().includes('worker-work')){process.stderr.write('Reading Skill and article');setTimeout(finish,11500);}else finish();`,
       { mode: 0o700 },
     );
     request = {
@@ -213,6 +213,28 @@ describe('Workspace execution and remote Worker', () => {
       marker: 'TEST_SKILL_REVISION',
     });
   });
+  it('streams progress and a final result through the SSH entrypoint protocol', async () => {
+    const result = await runProcess(
+      process.execPath,
+      [path.resolve('dist/cli/index.js'), 'execute-once'],
+      process.cwd(),
+      JSON.stringify({ action: 'execute', request, stream: true }),
+      10000,
+    );
+    expect(result.code).toBe(0);
+    const events = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(events[0]).toMatchObject({
+      type: 'progress',
+      progress: { execution: { prompt: request.input.prompt } },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      result: { status: 'success', result: { marker: 'TEST_SKILL_REVISION' } },
+    });
+  });
   it('requires management authentication when a server access token is configured', async () => {
     const previous = process.env.OPENLORE_ADMIN_TOKEN;
     process.env.OPENLORE_ADMIN_TOKEN = 'test-administrator-token';
@@ -251,7 +273,7 @@ describe('Workspace execution and remote Worker', () => {
       workspace_root: path.join(root, 'worker-work'),
       skills_mode: 'local',
       skills_directory: path.join(root, 'skills'),
-      timeout_seconds: 10,
+      timeout_seconds: 20,
       queue_timeout_seconds: 20,
     });
     await settingsService.saveAIProfile({
@@ -294,12 +316,25 @@ describe('Workspace execution and remote Worker', () => {
           ).toMatchObject({ worker_last_seen: expect.any(String) }),
         { timeout: 15000 },
       );
-      const result = await new ExecutorAdapter(
+      const onProgress = vi.fn();
+      const running = new ExecutorAdapter(
         'remote',
         'gemini_cli',
         fakeCli,
         config,
-      ).execute({ ...request.input, profileId: 'remote' });
+      ).execute({ ...request.input, profileId: 'remote' }, onProgress);
+      await vi.waitFor(
+        () =>
+          expect(onProgress).toHaveBeenCalledWith(
+            expect.objectContaining({
+              diagnostics: expect.objectContaining({
+                stderr: 'Reading Skill and article',
+              }),
+            }),
+          ),
+        { timeout: 15000 },
+      );
+      const result = await running;
       expect(result.status, errors).toBe('success');
       expect(result.result).toMatchObject({ marker: 'TEST_SKILL_REVISION' });
       const denied = await app.inject({

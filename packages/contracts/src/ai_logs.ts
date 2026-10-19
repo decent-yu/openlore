@@ -13,6 +13,8 @@ export interface AIExecutionAttempt {
   finished_at?: string;
   duration_ms?: number;
   status: string;
+  progress_at?: string;
+  last_output_at?: string;
   error?: ExecutionResult["error"];
   usage?: ExecutionResult["usage"];
   execution?: ExecutionResult["execution"];

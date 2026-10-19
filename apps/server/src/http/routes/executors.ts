@@ -4,6 +4,7 @@ import {
   ExecutorConfigSchema,
   SkillBundleSchema,
   SkillSchema,
+  ExecutionProgressSchema,
 } from '@openlore/contracts';
 import { executorService } from '../../modules/executors/service.js';
 import { executionQueue } from '../../modules/executors/queue.js';
@@ -59,13 +60,17 @@ export const executorsRoutes: FastifyPluginAsync = async (app) => {
         '/:id/jobs/:job/renew',
         (request) => {
           const body = z
-            .object({ lease_token: z.string() })
+            .object({
+              lease_token: z.string(),
+              progress: ExecutionProgressSchema.optional(),
+            })
             .parse(request.body);
           return {
             active: executionQueue.renew(
               request.params.id,
               request.params.job,
               body.lease_token,
+              body.progress,
             ),
           };
         },

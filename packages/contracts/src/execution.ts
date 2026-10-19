@@ -70,15 +70,17 @@ export const ExecutionResultSchema = z.object({
   model: z.string(),
   durationMs: z.number(),
   trace_id: z.string().optional(),
-  diagnostics: z.object({
-    stdout: z.string(),
-    stderr: z.string(),
-    exit_code: z.number().nullable(),
-    timed_out: z.boolean(),
-    timeout_seconds: z.number(),
-    output_truncated: z.boolean().default(false),
-    partial_document: z.string().optional(),
-  }).optional(),
+  diagnostics: z
+    .object({
+      stdout: z.string(),
+      stderr: z.string(),
+      exit_code: z.number().nullable(),
+      timed_out: z.boolean(),
+      timeout_seconds: z.number(),
+      output_truncated: z.boolean().default(false),
+      partial_document: z.string().optional(),
+    })
+    .optional(),
   usage: z
     .object({
       promptTokens: z.number().optional(),
@@ -103,6 +105,13 @@ export const ExecutionResultSchema = z.object({
     .optional(),
 });
 export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;
+export const ExecutionProgressSchema = z.object({
+  updated_at: z.string().datetime(),
+  last_output_at: z.string().datetime().optional(),
+  execution: ExecutionResultSchema.shape.execution,
+  diagnostics: ExecutionResultSchema.shape.diagnostics,
+});
+export type ExecutionProgress = z.infer<typeof ExecutionProgressSchema>;
 export const ExecutionRequestSchema = z.object({
   input: ExecutionInputSchema,
   config: ExecutorConfigSchema,

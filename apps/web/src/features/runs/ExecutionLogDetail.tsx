@@ -52,7 +52,7 @@ export function ExecutionLogDetail({
   onViewRun?: (runId: string) => void;
   onViewPush?: (planId: string) => void;
 }) {
-  const [tab, setTab] = useState<"input" | "output" | "attempts">("input");
+  const [tab, setTab] = useState<"input" | "output" | "attempts">("attempts");
   const [notice, setNotice] = useState("");
   const { data: detail, error: detailError } = useQuery({
     queryKey: ["executionLog", id],
@@ -178,7 +178,7 @@ export function ExecutionLogDetail({
                 [
                   ["input", "完整输入", FileInput],
                   ["output", "完整输出", FileOutput],
-                  ["attempts", "执行与错误", Clock],
+                  ["attempts", "执行与实时日志", Clock],
                 ] as const
               ).map(([key, label, Icon]) => (
                 <button
@@ -258,7 +258,7 @@ export function ExecutionLogDetail({
               {detail && tab === "output" && (
                 <div className="space-y-4">
                   <p className="text-xs text-neutral-500">
-                    这里显示最终成功尝试的完整返回内容。失败尝试及超时留下的文件请在“执行与错误”查看。
+                    这里显示最终成功尝试的完整返回内容。失败尝试及超时留下的文件请在“执行与实时日志”查看。
                   </p>
                   {detail.output ? (
                     <>
@@ -362,6 +362,9 @@ export function ExecutionLogDetail({
                                 )
                               : duration(attempt.duration_ms),
                           退出码: attempt.diagnostics?.exit_code ?? "未返回",
+                          最近进程输出: attempt.last_output_at
+                            ? time(attempt.last_output_at)
+                            : "尚无输出",
                           "Token 用量": attempt.usage
                             ? `输入 ${attempt.usage.promptTokens ?? "—"} / 输出 ${attempt.usage.completionTokens ?? "—"} / 总量 ${attempt.usage.totalTokens ?? "—"}${attempt.usage.cachedTokens ? ` / 缓存 ${attempt.usage.cachedTokens}` : ""}${attempt.usage.reasoningTokens ? ` / 推理 ${attempt.usage.reasoningTokens}` : ""}`
                             : "执行器未提供",
@@ -421,10 +424,13 @@ export function ExecutionLogDetail({
                       )}
                       <details className="rounded border p-3">
                         <summary className="text-xs font-medium">
-                          CLI 标准输出与错误输出
+                          CLI 实时日志 · 标准输出与错误输出
                         </summary>
                         <p className="my-2 text-xs text-neutral-500">
                           已对已知凭据脱敏。
+                          {attempt.status === "running"
+                            ? "运行中自动刷新；没有新日志不代表模型正在推理。"
+                            : ""}
                           {attempt.diagnostics?.output_truncated
                             ? "原始输出超出 512KB，保留末尾并标记截断。"
                             : ""}
@@ -432,8 +438,7 @@ export function ExecutionLogDetail({
                         <TextBlock
                           title="stdout"
                           value={
-                            attempt.diagnostics?.stdout ||
-                            "CLI 未输出或尚未结束"
+                            attempt.diagnostics?.stdout || "CLI 尚无标准输出"
                           }
                           onCopy={copy}
                         />

@@ -342,6 +342,8 @@ export function initDatabase(dbPath?: string): void {
     attempts INTEGER NOT NULL DEFAULT 0, result_json TEXT,
     created_at INTEGER NOT NULL, deadline INTEGER NOT NULL
   ); CREATE INDEX IF NOT EXISTS ai_jobs_status ON ai_jobs(profile_id,status);`);
+  const aiJobColumns = sqlite.pragma('table_info(ai_jobs)') as Array<{name: string}>;
+  if (!aiJobColumns.some(column => column.name === 'progress_json')) sqlite.exec('ALTER TABLE ai_jobs ADD COLUMN progress_json TEXT');
   const logColumns = sqlite.pragma('table_info(ai_execution_logs)') as Array<{name:string}>;
   if (!logColumns.some(column => column.name === 'report_plan_id')) {
     sqlite.exec('ALTER TABLE ai_execution_logs ADD COLUMN report_plan_id TEXT');
