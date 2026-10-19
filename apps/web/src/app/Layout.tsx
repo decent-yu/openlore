@@ -38,7 +38,7 @@ const NAV_GROUPS = [
 
 export function Layout() {
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-neutral-50 text-neutral-900 overflow-x-hidden">
+    <div className="min-h-screen flex flex-col md:flex-row bg-neutral-50 text-neutral-900 overflow-x-clip">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-white focus:p-3">跳到主要内容</a>
       {/* Sidebar Navigation */}
       <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r md:sticky md:top-0 md:h-screen border-neutral-200 shrink-0 flex flex-col justify-between max-w-full overflow-hidden">
