@@ -35,6 +35,7 @@ import {
 } from '../../components/ui/card.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 function formatPoolTime(iso: string, timezone: string) {
   if (!iso) return '未知时间';
@@ -69,6 +70,8 @@ export function LibraryPage() {
   const [researchGroupId, setResearchGroupId] = useState<string>('');
   const [viewingResearchArticle, setViewingResearchArticle] = useState<LibraryArticle | null>(null);
   const [copiedReport, setCopiedReport] = useState<boolean>(false);
+  const [message, setMessage] = useState('');
+  useDialog(Boolean(selectedArticleForResearch || viewingResearchArticle), () => { setSelectedArticleForResearch(null); setViewingResearchArticle(null); });
 
   const { data: groups } = useQuery({
     queryKey: ['groups'],
@@ -86,7 +89,8 @@ export function LibraryPage() {
     return map;
   }, [sources]);
 
-  const { data: libraryData, isLoading } = useQuery({
+  const { data: libraryData, isLoading, error: libraryError } = useQuery({
+    refetchInterval: 5000,
     queryKey: ['library', { timeRange, statusFilter, selectedSourceId, searchTerm, page, pageSize }],
     queryFn: () =>
       api.listLibrary({
@@ -109,12 +113,15 @@ export function LibraryPage() {
   });
 
   const researchMutation = useMutation({
-    mutationFn: ({ articleId, groupId }: { articleId: string; groupId: string }) =>
-      api.startResearchOnArticle(articleId, { group_id: groupId }),
-    onSuccess: () => {
+    mutationFn: async ({ articleId, groupId }: { articleId: string; groupId: string }) => {
+      const task = await api.startResearchOnArticle(articleId, { group_id: groupId });
+      if (task.status === 'failed') throw new Error(task.error_message || '调研失败，请重试');
+      return task;
+    },
+    onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['research'] });
       queryClient.invalidateQueries({ queryKey: ['library'] });
-      alert('已启动对该文章的独立深度调研任务，完成后研报将直接显示在当前卡片上。');
+      setMessage(task.status === 'succeeded' ? '深度调研已完成，可在文章卡片查看完整研报。' : '调研已启动，完成后将自动更新。');
       setSelectedArticleForResearch(null);
     },
   });
@@ -145,6 +152,8 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-6">
+      {message && <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">{message}</p>}
+      {(libraryError || toggleInterestMutation.error) && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{libraryError?.message || toggleInterestMutation.error?.message}</p>}
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -157,7 +166,7 @@ export function LibraryPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
             <Input
-              placeholder="搜索标题或作者..."
+              aria-label="搜索标题或作者" placeholder="搜索标题或作者..."
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 h-9 text-sm"
@@ -175,7 +184,7 @@ export function LibraryPage() {
               <Clock className="w-3.5 h-3.5 text-neutral-400" />
               时间范围:
             </span>
-            <div className="flex items-center gap-1.5 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+            <div className="flex flex-wrap items-center gap-1.5 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
               <button
                 type="button"
                 onClick={() => handleTimeChange('all')}
@@ -460,7 +469,7 @@ export function LibraryPage() {
                     <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
                       <span className="flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-purple-600" />
-                        深度调研白盒剖析维度:
+                        调研重点：
                       </span>
                       {art.research.finished_at && (
                         <span className="text-[10px] text-purple-400 font-normal">
@@ -504,7 +513,7 @@ export function LibraryPage() {
                         <Button
                           size="sm"
                           className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white gap-1"
-                          onClick={() => setViewingResearchArticle(art)}
+                          onClick={() => { setCopiedReport(false); setViewingResearchArticle(art); }}
                         >
                           <BookOpen className="h-3.5 w-3.5" />
                           查看深度研报
@@ -515,6 +524,7 @@ export function LibraryPage() {
                           className="h-8 w-8 p-0 text-neutral-400 hover:text-neutral-700"
                           title="重新发起深度调研"
                           onClick={() => {
+                            researchMutation.reset();
                             setSelectedArticleForResearch(art);
                             if (art.groups && art.groups.length > 0) {
                               setResearchGroupId(art.groups[0].id);
@@ -595,7 +605,7 @@ export function LibraryPage() {
 
       {/* Start Research Modal */}
       {selectedArticleForResearch && (
-        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div role="dialog" aria-modal="true" aria-label="单篇深度调研" className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <Card className="max-w-md w-full shadow-xl">
             <CardHeader>
               <CardTitle className="text-base flex items-center">
@@ -603,15 +613,16 @@ export function LibraryPage() {
                 单篇深度调研
               </CardTitle>
               <CardDescription>
-                将对 《{selectedArticleForResearch.title}》 展开核心机制白盒剖析、取舍分析与证据交叉验证。
+                将对 《{selectedArticleForResearch.title}》 展开机制分析、取舍分析与证据核验。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <label className="text-xs text-neutral-600 block mb-1">
-                  选择归属流水线任务 (用于读取 AI 配置与归档路由)
+                  选择流水线任务（使用该任务的 AI 与调研配置）
                 </label>
                 <select
+                  aria-label="归属流水线任务"
                   className="w-full h-9 px-3 rounded-md border border-neutral-200 text-sm bg-white"
                   value={researchGroupId}
                   onChange={(e) => setResearchGroupId(e.target.value)}
@@ -624,6 +635,8 @@ export function LibraryPage() {
                   ))}
                 </select>
               </div>
+              {researchMutation.error && <p role="alert" className="text-xs text-red-700">{researchMutation.error.message}</p>}
+              {researchMutation.isPending && <p role="status" className="text-xs text-blue-700">正在生成完整研报，请稍候。关闭窗口后仍会继续处理。</p>}
               <div className="flex justify-end space-x-2 pt-2">
                 <Button
                   variant="ghost"
@@ -642,7 +655,7 @@ export function LibraryPage() {
                     })
                   }
                 >
-                  启动调研
+                  {researchMutation.isPending ? '正在生成…' : '启动调研'}
                 </Button>
               </div>
             </CardContent>
@@ -652,11 +665,11 @@ export function LibraryPage() {
 
       {/* View Full Research Report Modal */}
       {viewingResearchArticle && viewingResearchArticle.research && (
-        <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-hidden">
+        <div role="dialog" aria-modal="true" aria-label="深度技术调研报告" className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-hidden">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-neutral-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/80 rounded-t-xl shrink-0">
-              <div className="space-y-1 pr-4">
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/80 rounded-t-xl shrink-0">
+              <div className="min-w-0 flex-1 space-y-1 pr-4">
                 <div className="flex items-center gap-2">
                   <span className="p-1 rounded bg-purple-100 text-purple-700">
                     <BookOpen className="h-4 w-4" />
@@ -665,7 +678,7 @@ export function LibraryPage() {
                     《{viewingResearchArticle.title}》深度技术调研报告
                   </h3>
                 </div>
-                <p className="text-xs text-neutral-500 flex items-center gap-2">
+                <p className="text-xs text-neutral-500 flex flex-wrap items-center gap-2">
                   <span>
                     {viewingResearchArticle.research.finished_at
                       ? `完成于 ${new Date(viewingResearchArticle.research.finished_at).toLocaleString()}`
@@ -688,12 +701,12 @@ export function LibraryPage() {
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs gap-1"
-                  onClick={() => {
-                    if (viewingResearchArticle.research?.report_markdown) {
-                      navigator.clipboard.writeText(viewingResearchArticle.research.report_markdown);
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(viewingResearchArticle.research?.report_markdown || '');
                       setCopiedReport(true);
                       setTimeout(() => setCopiedReport(false), 2000);
-                    }
+                    } catch { setMessage('无法访问剪贴板，请选中研报内容后复制。'); }
                   }}
                 >
                   {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -703,7 +716,7 @@ export function LibraryPage() {
                   size="sm"
                   variant="ghost"
                   className="h-8 w-8 p-0 text-neutral-400 hover:text-neutral-700"
-                  onClick={() => setViewingResearchArticle(null)}
+                  aria-label="关闭研报" onClick={() => setViewingResearchArticle(null)}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -717,7 +730,7 @@ export function LibraryPage() {
                 <div className="bg-purple-50/70 border border-purple-100 rounded-lg p-4 space-y-2">
                   <h4 className="text-xs font-semibold text-purple-900 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                    核心白盒剖析问题
+                    核心研究问题
                   </h4>
                   <ul className="list-disc list-inside text-xs text-neutral-700 space-y-1">
                     {viewingResearchArticle.research.questions.map((q, i) => (
@@ -770,7 +783,7 @@ export function LibraryPage() {
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between rounded-b-xl shrink-0">
               <span className="text-xs text-neutral-400">OpenLore 深度调研白盒报告</span>
-              <Button size="sm" variant="outline" onClick={() => setViewingResearchArticle(null)}>
+              <Button size="sm" variant="outline" aria-label="关闭研报" onClick={() => setViewingResearchArticle(null)}>
                 关闭
               </Button>
             </div>

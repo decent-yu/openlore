@@ -34,6 +34,7 @@ import {
 } from '../../components/ui/card.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 type SettingsTab = 'connections' | 'doctor';
 
@@ -46,23 +47,25 @@ function extractRepoName(url: string): string {
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<SettingsTab>('connections');
+  const [notice, setNotice] = useState('');
+  const [testingProfile, setTestingProfile] = useState('');
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
   });
 
-  const { data: repos } = useQuery({
+  const { data: repos, error: reposError } = useQuery({
     queryKey: ['repos'],
     queryFn: api.listRepos,
   });
 
-  const { data: notifs } = useQuery({
+  const { data: notifs, error: notifsError } = useQuery({
     queryKey: ['notifs'],
     queryFn: api.listNotifs,
   });
 
-  const { data: aiProfiles } = useQuery({
+  const { data: aiProfiles, error: profilesError } = useQuery({
     queryKey: ['aiProfiles'],
     queryFn: api.listAIProfiles,
     refetchInterval: 15000,
@@ -132,10 +135,16 @@ export function SettingsPage() {
     webhookUrl: '',
   });
 
+  useDialog(repoModal.open || aiModal.open || notifModal.open, () => {
+    setRepoModal(previous => ({...previous, open:false}));
+    setAiModal(previous => ({...previous, open:false}));
+    setNotifModal(previous => ({...previous, open:false}));
+  });
   // Mutations
   const saveRepoMutation = useMutation({
     mutationFn: api.saveRepo,
     onSuccess: () => {
+      setNotice('仓库连接已保存');
       queryClient.invalidateQueries({ queryKey: ['repos'] });
       for (const queryKey of ['daily-feed', 'library', 'reports', 'reportPreview']) queryClient.invalidateQueries({ queryKey: [queryKey] });
       setRepoModal((prev) => ({ ...prev, open: false }));
@@ -149,7 +158,7 @@ export function SettingsPage() {
       setRepoModal((prev) => ({ ...prev, open: false }));
     },
     onError: (err: any) => {
-      alert(err.message || '删除仓库失败');
+      setNotice(err.message || '删除仓库失败');
     },
   });
 
@@ -164,6 +173,7 @@ export function SettingsPage() {
   const saveAiMutation = useMutation({
     mutationFn: api.saveAIProfile,
     onSuccess: () => {
+      setNotice('AI 执行器已保存');
       queryClient.invalidateQueries({ queryKey: ['aiProfiles'] });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setAiModal((prev) => ({ ...prev, open: false }));
@@ -178,7 +188,7 @@ export function SettingsPage() {
       setAiModal((prev) => ({ ...prev, open: false }));
     },
     onError: (err: any) => {
-      alert(err.message || '删除 AI 执行器失败');
+      setNotice(err.message || '删除 AI 执行器失败');
     },
   });
 
@@ -193,6 +203,7 @@ export function SettingsPage() {
   const saveNotifMutation = useMutation({
     mutationFn: api.saveNotif,
     onSuccess: () => {
+      setNotice('通知通道已保存');
       queryClient.invalidateQueries({ queryKey: ['notifs'] });
       setNotifModal((prev) => ({ ...prev, open: false }));
     },
@@ -206,7 +217,7 @@ export function SettingsPage() {
       setNotifModal((prev) => ({ ...prev, open: false }));
     },
     onError: (err: any) => {
-      alert(err.message || '删除通知通道失败');
+      setNotice(err.message || '删除通知通道失败');
     },
   });
 
@@ -214,6 +225,8 @@ export function SettingsPage() {
 
   // Modal Handlers
   const openCreateRepoModal = () => {
+    saveRepoMutation.reset();
+    deleteRepoMutation.reset();
     setRepoModal({
       open: true,
       mode: 'create',
@@ -227,6 +240,8 @@ export function SettingsPage() {
   };
 
   const openEditRepoModal = (r: RepositoryConnection) => {
+    saveRepoMutation.reset();
+    deleteRepoMutation.reset();
     setRepoModal({
       open: true,
       mode: 'edit',
@@ -241,6 +256,8 @@ export function SettingsPage() {
   };
 
   const openCreateAiModal = () => {
+    saveAiMutation.reset();
+    deleteAiMutation.reset();
     setAiModal({
       open: true,
       mode: 'create',
@@ -254,6 +271,8 @@ export function SettingsPage() {
   };
 
   const openEditAiModal = (ai: AIProfile) => {
+    saveAiMutation.reset();
+    deleteAiMutation.reset();
     setAiModal({
       open: true,
       mode: 'edit',
@@ -268,6 +287,8 @@ export function SettingsPage() {
   };
 
   const openCreateNotifModal = () => {
+    saveNotifMutation.reset();
+    deleteNotifMutation.reset();
     setNotifModal({
       open: true,
       mode: 'create',
@@ -277,6 +298,8 @@ export function SettingsPage() {
   };
 
   const openEditNotifModal = (n: NotificationConnection) => {
+    saveNotifMutation.reset();
+    deleteNotifMutation.reset();
     setNotifModal({
       open: true,
       mode: 'edit',
@@ -311,6 +334,9 @@ export function SettingsPage() {
         </p>
       </div>
 
+      {notice && <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">{notice}</p>}
+      {(testRepoMutation.error || setPrimaryAIMutation.error) && <p role="alert" className="text-sm text-red-700">{testRepoMutation.error?.message || setPrimaryAIMutation.error?.message}</p>}
+      {(reposError || notifsError || profilesError) && <p role="alert" className="text-sm text-red-700">加载配置失败：{reposError?.message || notifsError?.message || profilesError?.message}</p>}
       {/* Tabs Navigation */}
       <div className="flex border-b border-neutral-200 gap-1 overflow-x-auto pb-px scrollbar-none">
         {TABS.map((tab) => {
@@ -345,7 +371,7 @@ export function SettingsPage() {
         <div className="space-y-6">
           {/* Card 1: GitHub 仓库连接 */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-neutral-100">
+            <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between pb-3 border-b border-neutral-100">
               <div>
                 <CardTitle className="text-base flex items-center">
                   <Github className="mr-2 h-4 w-4" />
@@ -372,10 +398,10 @@ export function SettingsPage() {
                         className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 border border-neutral-200 rounded-lg gap-2 hover:bg-neutral-50/40 transition-colors"
                       >
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-sm text-neutral-900">{r.name}</p>
                             <Badge variant={r.state === 'ready' ? 'success' : 'destructive'}>
-                              {r.state}
+                              {({ready:'可用',invalid_credential:'凭据无效',repo_not_found:'仓库不存在',unknown:'待核验'} as Record<string,string>)[r.state] || r.state}
                             </Badge>
                             <span className="text-xs text-neutral-400 font-mono">分支: {r.default_branch}</span>
                           </div>
@@ -443,7 +469,7 @@ export function SettingsPage() {
 
           {/* Card 2: AI 执行器 */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-neutral-100">
+            <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between pb-3 border-b border-neutral-100">
               <div>
                 <CardTitle className="text-base flex items-center">
                   <Cpu className="mr-2 h-4 w-4" />
@@ -479,8 +505,8 @@ export function SettingsPage() {
                         ai.is_primary ? 'border-amber-300 bg-amber-50/20' : 'border-neutral-200 hover:bg-neutral-50/40'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-sm text-neutral-900">{ai.name}</p>
                           {ai.is_primary ? (
                             <Badge className="bg-amber-500/10 text-amber-700 border-amber-300 text-[10px] font-normal">
@@ -493,18 +519,19 @@ export function SettingsPage() {
                             </Badge>
                           )}
                           <Badge variant={ai.state === 'ready' ? 'success' : 'warning'}>
-                            {ai.state}
+                            {ai.state === 'ready' ? '可用' : ai.state}
                           </Badge>
                         </div>
-                        <p className="text-xs text-neutral-500 font-mono mt-0.5">
+                        <p className="mt-1 text-xs text-blue-800">单次时限 {ai.execution.timeout_seconds / 60} 分钟 · 并发 {ai.execution.concurrency}</p>
+                        <p className="break-all text-xs text-neutral-500 font-mono mt-0.5">
                           {ai.provider} · {ai.cli_path} {ai.model ? `(${ai.model})` : ''} · {ai.execution.transport === 'worker' ? (ai.worker_online ? 'Worker 在线' : 'Worker 离线') : ai.execution.transport === 'ssh' ? 'SSH' : '服务端本机'}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                        <Button size="sm" variant="outline" onClick={async()=>{try{const result=await api.testAIProfile(ai.id);alert(result.message);queryClient.invalidateQueries({queryKey:['skills']});queryClient.invalidateQueries({queryKey:['aiProfiles']});}catch(error:any){alert(error.message);}}}>测试连接</Button>
+                        <Button size="sm" variant="outline" disabled={Boolean(testingProfile)} onClick={async()=>{setTestingProfile(ai.id);try{const result=await api.testAIProfile(ai.id);setNotice(result.message);queryClient.invalidateQueries({queryKey:['skills']});queryClient.invalidateQueries({queryKey:['aiProfiles']});}catch(error:any){setNotice(error.message);}finally{setTestingProfile('');}}}>{testingProfile === ai.id ? '测试中…' : '测试连接'}</Button>
                         {ai.execution.transport==='worker'&&<Button size="sm" variant="outline" onClick={async()=>{
                           if(ai.worker_paired&&!window.confirm('重新配对会使旧令牌失效，是否继续？'))return;
-                          try{const paired=await api.pairAIProfile(ai.id);const json=JSON.stringify({server_url:window.location.origin,profile_id:paired.profile_id,token:paired.token,name:ai.name},null,2);const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`openlore-worker-${ai.id}.json`;link.click();URL.revokeObjectURL(url);queryClient.invalidateQueries({queryKey:['aiProfiles']});alert('已下载 Worker 配置文件（包含专用令牌）。在本机运行：node apps/server/dist/cli/index.js worker <配置文件路径>');}catch(error:any){alert(error.message);}
+                          try{const paired=await api.pairAIProfile(ai.id);const json=JSON.stringify({server_url:window.location.origin,profile_id:paired.profile_id,token:paired.token,name:ai.name},null,2);const url=URL.createObjectURL(new Blob([json],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`openlore-worker-${ai.id}.json`;link.click();URL.revokeObjectURL(url);queryClient.invalidateQueries({queryKey:['aiProfiles']});setNotice('已下载 Worker 配置文件（包含专用令牌）。在本机运行：node apps/server/dist/cli/index.js worker <配置文件路径>');}catch(error:any){setNotice(error.message);}
                         }}>下载配对配置</Button>}
                         {!ai.is_primary && (
                           <Button
@@ -554,14 +581,14 @@ export function SettingsPage() {
 
           {/* Card 3: 消息通知 Webhook */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-neutral-100">
+            <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between pb-3 border-b border-neutral-100">
               <div>
                 <CardTitle className="text-base flex items-center">
                   <Send className="mr-2 h-4 w-4" />
                   消息通知 Webhook
                 </CardTitle>
                 <CardDescription className="text-xs text-neutral-500 mt-0.5">
-                  配置汇报推送使用的 Webhook 目标通道，支持企微、飞书、钉钉等标准协议。
+                  配置汇报推送使用的 Webhook 目标通道，支持飞书、Lark 及通用 JSON Webhook，其他平台可通过适配服务接入。
                 </CardDescription>
               </div>
               <Button size="sm" onClick={openCreateNotifModal} className="h-8 text-xs gap-1">
@@ -575,16 +602,16 @@ export function SettingsPage() {
                   {notifs.map((n) => (
                     <div
                       key={n.id}
-                      className="flex items-center justify-between p-3.5 border border-neutral-200 rounded-lg hover:bg-neutral-50/40 transition-colors"
+                      className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between p-3.5 border border-neutral-200 rounded-lg hover:bg-neutral-50/40 transition-colors"
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-sm text-neutral-900">{n.name}</p>
                           <Badge variant={n.state === 'ready' ? 'success' : 'destructive'}>
-                            {n.state}
+                            {n.state === 'ready' ? '可用' : n.state}
                           </Badge>
                         </div>
-                        <p className="text-xs text-neutral-500 font-mono mt-0.5">协议: {n.protocol}</p>
+                        <p className="break-all text-xs text-neutral-500 font-mono mt-0.5">协议: {n.protocol}</p>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Button
@@ -638,7 +665,7 @@ export function SettingsPage() {
                   自动化排查 Node.js 运行时、Git CLI、SQLite 数据库及 AI 执行器连通性。
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {doctor && (
                   <Badge variant={doctor.ok ? 'success' : 'warning'}>
                     {doctor.ok ? '全部检查通过' : '需要关注'}
@@ -664,7 +691,7 @@ export function SettingsPage() {
                   key={i}
                   className="flex items-center justify-between py-2.5 px-3 border border-neutral-100 rounded-lg hover:bg-neutral-50/60 transition-colors"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CheckCircle2
                       className={`w-4 h-4 ${
                         chk.status === 'pass'
@@ -701,7 +728,7 @@ export function SettingsPage() {
 
       {/* Modal 1: GitHub 仓库创建与编辑弹窗 */}
       {repoModal.open && (
-        <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div role="dialog" aria-modal="true" aria-label="仓库连接配置" className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-neutral-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 bg-neutral-50/60">
               <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-2">
@@ -774,6 +801,7 @@ export function SettingsPage() {
             <RepositoryWikiFields value={repoModal} onChange={(wiki) => setRepoModal((previous) => ({ ...previous, ...wiki }))} />
             <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between gap-2">
               <div>
+                {(saveRepoMutation.error || deleteRepoMutation.error) && <p role="alert" className="text-xs text-red-700">{saveRepoMutation.error?.message || deleteRepoMutation.error?.message}</p>}
                 {repoModal.mode === 'edit' && (
                   <Button
                     variant="ghost"
@@ -791,7 +819,7 @@ export function SettingsPage() {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -829,7 +857,7 @@ export function SettingsPage() {
 
       {/* Modal 2: AI 执行器创建与编辑弹窗 */}
       {aiModal.open && (
-        <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div role="dialog" aria-modal="true" aria-label="AI 执行器配置" className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[92vh] flex flex-col border border-neutral-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 bg-neutral-50/60">
               <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-2">
@@ -915,7 +943,7 @@ export function SettingsPage() {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -948,7 +976,7 @@ export function SettingsPage() {
 
       {/* Modal 3: 通知通道创建与编辑弹窗 */}
       {notifModal.open && (
-        <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div role="dialog" aria-modal="true" aria-label="通知通道配置" className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-neutral-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 bg-neutral-50/60">
               <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-2">
@@ -980,12 +1008,13 @@ export function SettingsPage() {
                   onChange={(e) => setNotifModal((prev) => ({ ...prev, webhookUrl: e.target.value }))}
                 />
                 <p className="text-[11px] text-neutral-400">
-                  {notifModal.mode === 'edit' ? '若无需更换 Webhook 地址请直接留空' : '支持企业微信、飞书机器人、钉钉等标准 Webhook'}
+                  {notifModal.mode === 'edit' ? '若无需更换 Webhook 地址请直接留空' : '支持飞书、Lark 或接收通用 JSON 的 Webhook 服务'}
                 </p>
               </div>
             </div>
             <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between gap-2">
               <div>
+                {(saveNotifMutation.error || deleteNotifMutation.error) && <p role="alert" className="text-xs text-red-700">{saveNotifMutation.error?.message || deleteNotifMutation.error?.message}</p>}
                 {notifModal.mode === 'edit' && (
                   <Button
                     variant="ghost"
@@ -1003,7 +1032,7 @@ export function SettingsPage() {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"

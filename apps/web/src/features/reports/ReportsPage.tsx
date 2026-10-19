@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
 import { Clock, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
-import { DEFAULT_REPORT_TEMPLATE, ReportTemplateSchema, type ReportPlan } from '@openlore/contracts';
+import { DEFAULT_REPORT_TEMPLATE, DEFAULT_REPORT_CARD_TITLE, ReportCardTitleTemplateSchema, ReportTemplateSchema, type ReportPlan } from '@openlore/contracts';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { FeishuCardPreview } from './FeishuCardPreview.js';
 import { ReportTemplateEditor } from './ReportTemplateEditor.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 const statuses: Record<string, string> = {
   succeeded: '已完成归档',
@@ -25,6 +26,7 @@ const empty: Draft = {
   timezone: 'Asia/Shanghai',
   notification_connection_id: null,
   template: DEFAULT_REPORT_TEMPLATE,
+  card_title_template: DEFAULT_REPORT_CARD_TITLE,
   pipeline_ids: [],
 };
 export function ReportsPage() {
@@ -47,6 +49,7 @@ export function ReportsPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [previewId, setPreviewId] = useState('');
   const [message, setMessage] = useState('');
+  const [messageError, setMessageError] = useState(false);
   const {
     data: preview,
     refetch,
@@ -66,6 +69,7 @@ export function ReportsPage() {
     mutationFn: api.saveReportPlan,
     onSuccess: (plan) => {
       invalidate();
+      setMessageError(false);
       setDraft(null);
       setPreviewId(plan.id);
       setMessage(`「${plan.name}」已保存`);
@@ -74,23 +78,29 @@ export function ReportsPage() {
   const toggle = useMutation({
     mutationFn: api.saveReportPlan,
     onSuccess: invalidate,
-    onError: (error) => setMessage(error.message),
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const remove = useMutation({
     mutationFn: api.deleteReportPlan,
-    onSuccess: (_, id) => {
-      invalidate();
+    onMutate: async (id) => {
       if (previewId === id) setPreviewId('');
+      await client.cancelQueries({ queryKey: ['reportPreview', id] });
     },
-    onError: (error) => setMessage(error.message),
+    onSuccess: (_, id) => {
+      client.invalidateQueries({ queryKey: ['reportPlans'] });
+      setMessageError(false);
+      setMessage('汇报方案已删除');
+    },
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const send = useMutation({
     mutationFn: api.sendReport,
     onSuccess: (result) => {
+      setMessageError(!result.ok);
       setMessage(result.message);
       client.invalidateQueries({ queryKey: ['pushDeliveries'] });
     },
-    onError: (error) => setMessage(error.message),
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((previous) =>
@@ -112,6 +122,7 @@ export function ReportsPage() {
           },
     );
   };
+  useDialog(Boolean(draft), () => setDraft(null));
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -135,7 +146,7 @@ export function ReportsPage() {
         </p>
       )}
       {message && (
-        <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">
+        <p role={messageError ? "alert" : "status"} className={`rounded-lg border p-3 text-sm ${messageError ? "border-red-200 bg-red-50 text-red-700" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
           {message}
         </p>
       )}
@@ -271,8 +282,10 @@ export function ReportsPage() {
             ))}
           </div>
           {preview?.summary && (
-            <div className="prose prose-sm max-w-none rounded-lg bg-neutral-50 p-4">
-              <ReactMarkdown>{preview.summary}</ReactMarkdown>
+            <div className="space-y-2 rounded-lg bg-neutral-50 p-4">
+              <p className="text-xs font-medium text-neutral-600">飞书卡片模拟 · 真实数据</p>
+              <FeishuCardPreview title={preview.card_title} markdown={preview.summary} />
+              <p className="text-[11px] text-neutral-500">标题和正文与实际发送内容一致，排版以飞书客户端为准。</p>
             </div>
           )}
           <p className="text-[11px] text-neutral-500">
@@ -364,7 +377,7 @@ export function ReportsPage() {
                 </p>
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
-                <ReportTemplateEditor value={draft.template} reportName={draft.name} taskNames={tasks.filter((task) => draft.pipeline_ids.includes(task.id)).map((task) => task.name)} onChange={(value) => update('template', value)} />
+                <ReportTemplateEditor value={draft.template} titleTemplate={draft.card_title_template} onTitleChange={(value) => update('card_title_template', value)} reportName={draft.name} taskNames={tasks.filter((task) => draft.pipeline_ids.includes(task.id)).map((task) => task.name)} onChange={(value) => update('template', value)} />
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <h4 className="text-sm font-semibold">3 · 推送到群</h4>
@@ -449,7 +462,7 @@ export function ReportsPage() {
                 >
                   取消
                 </Button>
-                <Button type="submit" disabled={save.isPending || !ReportTemplateSchema.safeParse(draft.template).success}>
+                <Button type="submit" disabled={save.isPending || !ReportTemplateSchema.safeParse(draft.template).success || !ReportCardTitleTemplateSchema.safeParse(draft.card_title_template).success}>
                   {save.isPending ? '保存中…' : '保存方案'}
                 </Button>
               </div>

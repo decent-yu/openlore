@@ -13,15 +13,17 @@ import {
 } from '../../components/ui/card.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 export function SourcesPage() {
   const queryClient = useQueryClient();
-  const { data: sources, isLoading } = useQuery({
+  const { data: sources, isLoading, error: sourcesError } = useQuery({
     queryKey: ['sources'],
     queryFn: api.listSources,
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useDialog(isModalOpen, () => setIsModalOpen(false));
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [pollMsg, setPollMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -68,6 +70,8 @@ export function SourcesPage() {
     mutationFn: (id: string) => api.pollSource(id),
     onSuccess: (res, id) => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       setPollMsg({
         type: res.status === 'failed' ? 'error' : 'success',
         text: res.status === 'failed' ? res.errors?.[0]?.message || '采集失败' : `同步完成：新增可读 ${res.stats?.items_new ?? 0} 篇，待补抓 ${res.stats?.queued ?? 0} 篇。未通过准入的内容不会进入内容池。`,
@@ -84,9 +88,11 @@ export function SourcesPage() {
     mutationFn: api.pollAllSources,
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       setPollMsg({
-        type: 'success',
-        text: `已完成全部 ${res.polled_sources.length} 个启用源的静默增量同步！`,
+        type: res.polled_sources.length === sources?.filter(source => source.enabled).length ? 'success' : 'error',
+        text: `已同步 ${res.polled_sources.length} / ${sources?.filter(source => source.enabled).length || 0} 个启用来源。${res.polled_sources.length < (sources?.filter(source => source.enabled).length || 0) ? '部分来源失败，请查看卡片中的异常信息。' : '内容池已更新。'}`,
       });
       setTimeout(() => setPollMsg(null), 4000);
     },
@@ -117,6 +123,7 @@ export function SourcesPage() {
 
   const handleOpenCreate = () => {
     setEditingSource(null);
+    saveMutation.reset();
     setPollInterval(30);
     setKeywords('');
     setExcludedKeywords('');
@@ -131,6 +138,7 @@ export function SourcesPage() {
 
   const handleOpenEdit = (source: Source) => {
     setEditingSource(source);
+    saveMutation.reset();
     setPollInterval(source.options.poll_interval_mins);
     setKeywords(source.options.keywords.join(', '));
     setExcludedKeywords(source.options.excluded_keywords.join(', '));
@@ -210,6 +218,7 @@ export function SourcesPage() {
         </div>
       )}
 
+      {(sourcesError || toggleMutation.error) && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{sourcesError?.message || toggleMutation.error?.message}</p>}
       {/* Tabs */}
       <div className="flex items-center space-x-2 border-b border-neutral-200">
         <div className="flex items-center space-x-2 py-2.5 px-4 text-sm font-semibold border-b-2 border-neutral-900 text-neutral-900 -mb-px">
@@ -222,7 +231,7 @@ export function SourcesPage() {
       </div>
 
       {/* Responsive Multi-column Cards Grid */}
-      {feedSources.length === 0 ? (
+      {isLoading ? <p role="status" className="p-12 text-center text-sm text-neutral-500">正在加载信息源…</p> : feedSources.length === 0 ? (
         <Card className="p-12 text-center text-neutral-500 border-dashed">
           <Rss className="mx-auto h-8 w-8 text-neutral-300 mb-2" />
           <p className="text-sm font-medium">当前暂无 RSS / Atom 信息源</p>
@@ -322,7 +331,7 @@ export function SourcesPage() {
                             {new Date(s.last_polled_at).toLocaleString()}
                           </strong>
                         ) : (
-                          <span className="text-amber-600">尚未同步 (系统静默轮询中)</span>
+                          <span className="text-amber-600">{s.enabled ? '尚未同步，等待首次采集' : '尚未同步，来源已停用'}</span>
                         )}
                       </span>
                     </div>
@@ -387,9 +396,9 @@ export function SourcesPage() {
 
       {/* Add / Edit Source Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl border border-neutral-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 pb-4 border-b border-neutral-100 flex items-center justify-between">
+        <div role="dialog" aria-modal="true" aria-label={editingSource ? "编辑信息源配置" : "新增信息源"} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <form onSubmit={(event) => { event.preventDefault(); handleSave(); }} className="flex flex-col w-full max-w-lg max-h-[90vh] bg-white rounded-xl shadow-2xl border border-neutral-200 overflow-hidden">
+            <div className="shrink-0 p-6 pb-4 border-b border-neutral-100 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 {editingSource ? (
                   <Pencil className="h-5 w-5 text-neutral-900" />
@@ -404,25 +413,25 @@ export function SourcesPage() {
                 </Badge>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                type="button" aria-label="关闭信息源配置" onClick={() => setIsModalOpen(false)}
                 className="text-neutral-400 hover:text-neutral-600 p-1 rounded hover:bg-neutral-100 transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-neutral-700">来源名称 *</label>
+                <label htmlFor="source-name" className="text-xs font-medium text-neutral-700">来源名称 *</label>
                 <Input
-                  placeholder="例如：OpenAI Blog 或 Cloudflare"
+                  id="source-name" required placeholder="例如：OpenAI Blog 或 Cloudflare"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-neutral-700">Feed URL *</label>
+                <label htmlFor="source-url" className="text-xs font-medium text-neutral-700">Feed URL *</label>
                 <Input
-                  placeholder="https://example.com/feed.xml"
+                  id="source-url" type="url" required placeholder="https://example.com/feed.xml"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                 />
@@ -476,18 +485,18 @@ export function SourcesPage() {
                 </label>
               </div>
             </div>
-            <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex items-center justify-end space-x-2">
-              <Button variant="ghost" onClick={() => setIsModalOpen(false)}>
+            <div className="shrink-0 p-4 bg-neutral-50 border-t border-neutral-100 flex items-center justify-end space-x-2">
+              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
                 取消
               </Button>
               <Button
-                onClick={handleSave}
-                disabled={!Number.isInteger(maxAgeDays) || maxAgeDays<1 || maxAgeDays>3650 || !name.trim() || !url.trim() || !Number.isInteger(pollInterval) || pollInterval < 1 || saveMutation.isPending}
+                type="submit"
+                disabled={!Number.isInteger(maxAgeDays) || maxAgeDays<1 || maxAgeDays>3650 || !name.trim() || !url.trim() || !Number.isInteger(pollInterval) || pollInterval < 1 || pollInterval > 10080 || saveMutation.isPending}
               >
                 {saveMutation.isPending ? '保存中...' : editingSource ? '保存变更' : '确认保存'}
               </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

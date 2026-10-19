@@ -28,6 +28,7 @@ import {
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { WikiReadingLinks } from '../../components/WikiReadingLinks.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 export function DailyFeedPage() {
   const queryClient = useQueryClient();
@@ -38,15 +39,18 @@ export function DailyFeedPage() {
   const { data: settings } = useQuery({queryKey:['settings'],queryFn:api.getSettings});
   const todayStr = new Intl.DateTimeFormat('en-CA', {timeZone:settings?.timezone || 'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
-  const { data: feedData, isLoading } = useQuery({
+  const { data: feedData, isLoading, error: feedError } = useQuery({
     queryKey: ['daily-feed', selectedGroupId, selectedDate],
     queryFn: () => api.getDailyFeed(selectedGroupId || undefined, selectedDate || undefined),
     refetchInterval: 10000,
   });
 
   const researchMutation = useMutation({
-    mutationFn: ({ groupId, articleId }: { groupId: string; articleId: string }) =>
-      api.researchFeedArticle(groupId, articleId),
+    mutationFn: async ({ groupId, articleId }: { groupId: string; articleId: string }) => {
+      const task = await api.researchFeedArticle(groupId, articleId);
+      if (task.status === 'failed') throw new Error(task.error_message || '调研失败，请重试');
+      return task;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       queryClient.invalidateQueries({ queryKey: ['research'] });
@@ -71,6 +75,7 @@ export function DailyFeedPage() {
     },
   });
 
+  useDialog(Boolean(activeReport), () => setActiveReport(null));
   const currentGroup = feedData?.group;
   const running = feedData?.current_run?.status === 'running';
   const deepArticles = feedData?.deep_articles || [];
@@ -90,10 +95,14 @@ export function DailyFeedPage() {
 
   return (
     <div className="space-y-8">
+      {feedError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">加载精选失败：{feedError.message}</p>}
+      {(researchMutation.error || toggleInterestMutation.error || triggerRunMutation.error) && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{researchMutation.error?.message || toggleInterestMutation.error?.message || triggerRunMutation.error?.message}</p>}
+      {feedData?.current_run?.status === 'failed' && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">上次生成失败：{feedData.current_run.error_message}。已完成的历史精选仍可阅读。<Link className="ml-2 underline" to="/runs">查看失败详情</Link></p>}
+      {running && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{({processing:'正在审核内容池文章',research:'正在生成深度调研文章',delivery:'正在同步知识库归档'} as Record<string,string>)[feedData?.current_run?.stage || ''] || '正在生成新一批精选'}，完成后自动更新。<Link className="ml-2 underline" to="/runs">查看实时进度</Link></p>}
       {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 pb-5">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-neutral-200 pb-5">
         <div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
               <Sparkles className="h-5 w-5" />
             </span>
@@ -111,7 +120,7 @@ export function DailyFeedPage() {
             )}
           </div>
           <p className="text-sm text-neutral-500 mt-1">
-            从池内未处理文章中自动精选入围，已生成 {deepArticles.length} 篇深度研报并同步知识库，提供 {candidateArticles.length} 篇备选拓展。
+            已精选 {stats?.total_selected_count || 0} 篇文章，{stats?.deep_analyzed_count || 0} 篇已完成深度调研。归档状态与完整研报可在卡片中查看。
           </p>
         </div>
 
@@ -128,6 +137,7 @@ export function DailyFeedPage() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <input
+              aria-label="精选日期"
               type="date"
               className="text-xs border-0 bg-transparent px-1.5 py-1 focus:outline-none text-neutral-700 font-mono"
               value={activeDate}
@@ -162,15 +172,16 @@ export function DailyFeedPage() {
               size="sm"
               className="h-8 text-xs gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50"
               onClick={() => triggerRunMutation.mutate(currentGroup.id)}
-              disabled={triggerRunMutation.isPending}
+              disabled={triggerRunMutation.isPending || running}
             >
               <Sparkles className={`h-3.5 w-3.5 text-amber-600 ${triggerRunMutation.isPending ? 'animate-spin' : ''}`} />
-              {triggerRunMutation.isPending ? '跑批执行中...' : '立即执行跑批'}
+              {triggerRunMutation.isPending || running ? '正在生成精选…' : '生成新一批精选'}
             </Button>
           )}
 
           {feedData?.groups && feedData.groups.length > 1 && (
             <select
+              aria-label="筛选流水线任务"
               className="text-xs bg-white border border-neutral-200 rounded-md px-2.5 py-1.5 h-8 focus:outline-none focus:ring-1 focus:ring-neutral-900"
               value={selectedGroupId || currentGroup?.id || ''}
               onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -201,7 +212,7 @@ export function DailyFeedPage() {
             </div>
           </div>
           <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg">
-            <div className="text-xs text-amber-800 font-medium">深度研报已入库</div>
+            <div className="text-xs text-amber-800 font-medium">完成深度调研</div>
             <div className="text-xl font-bold text-amber-900 mt-0.5">
               {stats.deep_analyzed_count} <span className="text-xs font-normal text-amber-700">篇</span>
             </div>
@@ -215,7 +226,7 @@ export function DailyFeedPage() {
         </div>
       )}
 
-      {deepArticles.length === 0 && candidateArticles.length === 0 ? (
+      {isLoading ? <p role="status" className="py-20 text-center text-sm text-neutral-500">正在加载精选…</p> : !feedData?.group && !feedError ? <div className="rounded-xl border border-dashed bg-white p-10 text-center"><h2 className="font-semibold">先创建一个学习主题</h2><p className="mt-2 text-sm text-neutral-500">配置来源和流水线后，即可生成每日精选与研报。</p><Link to="/pipelines" className="mt-4 inline-block text-sm text-blue-700 underline">创建流水线任务</Link></div> : deepArticles.length === 0 && candidateArticles.length === 0 ? (
         isToday ? (
           <Card className="border-neutral-200 bg-white shadow-sm p-8 text-center">
             <CardContent className="space-y-4 max-w-lg mx-auto p-0">
@@ -223,12 +234,11 @@ export function DailyFeedPage() {
                 <Sparkles className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-neutral-900">{running ? '今日精选正在生成' : '今日精选尚未生成'}</h3>
+                <h3 className="text-lg font-bold text-neutral-900">{running ? '今日精选正在生成' : feedData?.has_run_today ? '本次没有新增精选' : '今日精选尚未生成'}</h3>
                 <p className="text-sm text-neutral-500 mt-1.5 leading-relaxed">
-                  {running ? '任务正在审核、调研或归档，完成后此页自动更新。' : ''} 当前池中有 <strong className="text-neutral-800">{stats?.pool_count || 0}</strong> 篇文章，其中 {stats?.candidate_remaining_count || 0} 篇尚未精选或深度调研，全部参与下次审核。系统定时任务设定于每天 {currentGroup?.schedule_cron || '09:00'} 执行，您也可以立即手动触发跑批。
+                  {running ? '任务正在审核、调研或归档，完成后此页自动更新。' : feedData?.has_run_today ? '本次审核已完成，没有符合标准的新增内容，未生成空归档。' : ''} 当前池中有 <strong className="text-neutral-800">{stats?.pool_count || 0}</strong> 篇文章，其中 {stats?.candidate_remaining_count || 0} 篇尚未精选或深度调研，全部参与下次审核。系统定时任务设定于每天 {currentGroup?.schedule_cron || '09:00'} 执行，您也可以立即手动触发跑批。
                 </p>
               </div>
-              {feedData?.current_run?.status === 'failed' && <p role="alert" className="text-sm text-red-600">上次运行失败：{feedData.current_run.error_message}</p>}
               {triggerRunMutation.error && <p role="alert" className="text-sm text-red-600">{triggerRunMutation.error.message}</p>}
               <p className="text-xs text-neutral-500">采集完成的原始文章可在<Link to="/pool" className="text-blue-700 underline">内容池</Link>查看；此页展示成功归档的精选。<Link to="/runs" className="ml-2 text-blue-700 underline">查看任务进度</Link></p>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
@@ -271,14 +281,14 @@ export function DailyFeedPage() {
         <>
           {/* Section 1: Top 3 Deep Analyzed Articles */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center space-x-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                 <h2 className="text-lg font-bold text-neutral-900">
                   {isToday ? '今日深度技术研报' : `${activeDate} 深度技术研报`} ({deepArticles.length} 篇)
                 </h2>
               </div>
-              <span className="text-xs text-neutral-400">已完整分析并自动提交至 Git 知识库</span>
+              <span className="text-xs text-neutral-400">完整研报可直接阅读，归档状态见文章卡片</span>
             </div>
 
         {deepArticles.length === 0 ? (
@@ -288,20 +298,20 @@ export function DailyFeedPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
             {deepArticles.map((art) => (
               <Card
                 key={art.id}
                 className="flex flex-col justify-between border-neutral-200 hover:border-amber-400 transition-colors shadow-sm"
               >
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-base font-semibold leading-snug line-clamp-2 hover:text-amber-600">
+                  <div className="flex flex-col gap-3">
+                    <CardTitle className="min-w-0 text-base font-semibold leading-relaxed line-clamp-3 hover:text-amber-600">
                       <a href={art.research?.wiki_url || art.wiki_url || art.original_url || '#'} target="_blank" rel="noreferrer">
                         {art.title}
                       </a>
                     </CardTitle>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {art.group_id && (
                         <Badge
                           variant="outline"
@@ -333,7 +343,7 @@ export function DailyFeedPage() {
                         />
                       </button>
                       <Badge variant="success" className="text-[10px]">
-                        已入库
+                        {art.delivery?.commit_url ? '已归档' : '研报就绪'}
                       </Badge>
                     </div>
                   </div>
@@ -367,13 +377,13 @@ export function DailyFeedPage() {
 
                   {/* Git Delivery Info */}
                   {art.delivery?.commit_sha && (
-                    <div className="flex items-center space-x-1.5 text-[11px] text-neutral-500 bg-neutral-100/70 px-2 py-1 rounded">
+                    <a href={art.delivery.commit_url || undefined} target="_blank" rel="noreferrer" aria-label="查看此文章归档提交" className="flex items-center space-x-1.5 text-[11px] text-neutral-500 bg-neutral-100/70 px-2 py-1 rounded hover:text-blue-700">
                       <GitBranch className="h-3 w-3 text-neutral-600" />
                       <span className="font-mono text-neutral-700">
                         {art.delivery.commit_sha.slice(0, 7)}
                       </span>
                       <span>已同步到仓库</span>
-                    </div>
+                    </a>
                   )}
 
                   <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
@@ -415,11 +425,11 @@ export function DailyFeedPage() {
 
       {/* Section 2: Remaining 7 Candidate Articles */}
       <div className="space-y-4 pt-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
             <h2 className="text-lg font-bold text-neutral-900">
-              今日备选精选阅读 ({candidateArticles.length} 篇)
+              更多精选阅读 ({candidateArticles.length} 篇)
             </h2>
           </div>
           <span className="text-xs text-neutral-400">
@@ -446,7 +456,7 @@ export function DailyFeedPage() {
                   className="flex flex-col justify-between border-neutral-200 hover:border-neutral-300 transition-colors"
                 >
                   <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3">
                       <div className="space-y-1">
                         <CardTitle className="text-base font-medium line-clamp-2 hover:text-blue-600">
                           <a
@@ -465,7 +475,7 @@ export function DailyFeedPage() {
                         </CardDescription>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {art.group_id && (
                           <Badge
                             variant="outline"
@@ -582,7 +592,7 @@ export function DailyFeedPage() {
 
       {/* Research Report Modal */}
       {activeReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div role="dialog" aria-modal="true" aria-label={activeReport.title} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
             <div className="p-4 border-b border-neutral-200 flex items-center justify-between bg-neutral-50">
               <div className="space-y-0.5">

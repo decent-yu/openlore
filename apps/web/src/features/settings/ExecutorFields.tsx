@@ -1,6 +1,6 @@
-import React from 'react';
-import type { ExecutorConfig } from '@openlore/contracts';
-import { Input } from '../../components/ui/input.js';
+import React from "react";
+import type { ExecutorConfig } from "@openlore/contracts";
+import { Input } from "../../components/ui/input.js";
 
 export function ExecutorFields({
   value,
@@ -15,7 +15,7 @@ export function ExecutorFields({
     key: K,
     next: ExecutorConfig[K],
   ) => onChange({ ...value, [key]: next });
-  const text = (label: string, key: keyof ExecutorConfig, placeholder = '') => (
+  const text = (label: string, key: keyof ExecutorConfig, placeholder = "") => (
     <label className="block text-xs font-medium text-neutral-600">
       {label}
       <Input
@@ -34,7 +34,7 @@ export function ExecutorFields({
           className="mt-1 h-9 w-full rounded border bg-white px-2 text-xs"
           value={value.transport}
           onChange={(event) =>
-            set('transport', event.target.value as ExecutorConfig['transport'])
+            set("transport", event.target.value as ExecutorConfig["transport"])
           }
         >
           <option value="local">服务端本机</option>
@@ -47,9 +47,9 @@ export function ExecutorFields({
         路径均属于执行机器。网站部署到服务器后，可通过 Worker 使用你的电脑。
       </p>
       {text(
-        '工作区根目录',
-        'workspace_root',
-        '留空使用执行机 ~/.openlore/executor-workspace',
+        "工作区根目录",
+        "workspace_root",
+        "留空使用执行机 ~/.openlore/executor-workspace",
       )}
       <label className="block text-xs font-medium text-neutral-600">
         Skills 来源
@@ -57,49 +57,49 @@ export function ExecutorFields({
           className="mt-1 h-9 w-full rounded border bg-white px-2 text-xs"
           value={value.skills_mode}
           onChange={(event) =>
-            set('skills_mode', event.target.value as 'synced' | 'local')
+            set("skills_mode", event.target.value as "synced" | "local")
           }
         >
           <option value="synced">同步服务器管理的 Skill 版本</option>
           <option value="local">读取执行机器上的 Skills 目录</option>
         </select>
       </label>
-      {value.skills_mode === 'local' &&
+      {value.skills_mode === "local" &&
         text(
-          'Skills 目录',
-          'skills_directory',
-          '目录下每个子目录包含 SKILL.md',
+          "Skills 目录",
+          "skills_directory",
+          "目录下每个子目录包含 SKILL.md",
         )}
       <p className="text-[11px] text-neutral-500">
         每次任务复制所需 Skill
         到独立工作区，不安装到用户全局目录。本地目录模式需要 Worker 在线或先测试
         SSH，才会显示可用 Skills。
       </p>
-      {provider === 'codex_cli' && (
+      {provider === "codex_cli" && (
         <>
-          {text('Codex 配置 Profile（可选）', 'config_profile')}
+          {text("Codex 配置 Profile（可选）", "config_profile")}
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
               checked={value.inherit_user_config}
               onChange={(event) =>
-                set('inherit_user_config', event.target.checked)
+                set("inherit_user_config", event.target.checked)
               }
             />
             沿用本机用户配置和模型服务
           </label>
         </>
       )}
-      {value.transport === 'ssh' && (
+      {value.transport === "ssh" && (
         <div className="space-y-3 border-t pt-3">
-          {text('SSH 主机', 'ssh_host', 'example.com')}
-          {text('SSH 用户', 'ssh_user')}
-          {text('密钥文件（服务器上的路径）', 'ssh_identity_file')}
-          {text('远端 Node 可执行路径', 'ssh_node_path', '/usr/local/bin/node')}
+          {text("SSH 主机", "ssh_host", "example.com")}
+          {text("SSH 用户", "ssh_user")}
+          {text("密钥文件（服务器上的路径）", "ssh_identity_file")}
+          {text("远端 Node 可执行路径", "ssh_node_path", "/usr/local/bin/node")}
           {text(
-            '远端 OpenLore CLI 文件路径',
-            'ssh_cli_entry',
-            '/opt/openlore/apps/server/dist/cli/index.js',
+            "远端 OpenLore CLI 文件路径",
+            "ssh_cli_entry",
+            "/opt/openlore/apps/server/dist/cli/index.js",
           )}
           <label className="block text-xs">
             SSH 端口
@@ -108,7 +108,7 @@ export function ExecutorFields({
               min={1}
               max={65535}
               value={value.ssh_port}
-              onChange={(event) => set('ssh_port', Number(event.target.value))}
+              onChange={(event) => set("ssh_port", Number(event.target.value))}
             />
           </label>
           <p className="text-[11px] text-neutral-500">
@@ -116,13 +116,49 @@ export function ExecutorFields({
           </p>
         </div>
       )}
+      <section className="space-y-3 rounded-lg border border-blue-200 bg-white p-3">
+        <label className="block text-xs font-medium text-neutral-800">
+          AI 单次执行时限（分钟）
+          <Input
+            className="mt-1.5 h-9"
+            type="number"
+            min={1 / 6}
+            max={60}
+            step="any"
+            value={value.timeout_seconds / 60}
+            onChange={(event) =>
+              set(
+                "timeout_seconds",
+                Math.round(Number(event.target.value) * 60),
+              )
+            }
+          />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {[5, 15, 30, 60].map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              aria-pressed={value.timeout_seconds === minutes * 60}
+              className={`rounded-md border px-2.5 py-1 text-xs ${value.timeout_seconds === minutes * 60 ? "border-blue-600 bg-blue-50 text-blue-800" : "border-neutral-200"}`}
+              onClick={() => set("timeout_seconds", minutes * 60)}
+            >
+              {minutes} 分钟
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] leading-relaxed text-neutral-500">
+          当前上限 {value.timeout_seconds} 秒。从 CLI 开始执行计时，生成文章建议
+          15–30
+          分钟；达到上限会终止本次尝试并切换备用执行器。保存后用于新调用，正在执行的调用沿用启动时限。排队等待单独计时。
+        </p>
+      </section>
       <div className="grid grid-cols-2 gap-3">
         {(
           [
-            ['执行超时（秒）', 'timeout_seconds', 10, 3600],
-            ['离线等待（秒）', 'queue_timeout_seconds', 10, 86400],
-            ['任务文件保留（天）', 'retention_days', 1, 90],
-            ['Worker 并发数', 'concurrency', 1, 4],
+            ["排队等待上限（秒）", "queue_timeout_seconds", 10, 86400],
+            ["任务文件保留（天）", "retention_days", 1, 90],
+            ["AI 并发数", "concurrency", 1, 4],
           ] as const
         ).map(([label, key, min, max]) => (
           <label key={key} className="text-[11px] text-neutral-600">

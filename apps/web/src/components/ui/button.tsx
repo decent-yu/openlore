@@ -13,12 +13,13 @@ export interface ButtonProps
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'default', ...props }, ref) => {
+  ({ className, variant = 'default', size = 'default', type = 'button', ...props }, ref) => {
     return (
       <button
+        type={type}
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-950 disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+          'inline-flex shrink-0 whitespace-nowrap items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-950 disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
           variant === 'default' &&
             'bg-neutral-900 text-neutral-50 shadow hover:bg-neutral-900/90',
           variant === 'destructive' &&

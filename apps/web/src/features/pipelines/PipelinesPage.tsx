@@ -11,6 +11,7 @@ import {
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 const fieldClass =
   'w-full rounded-md border border-neutral-200 bg-white p-2 text-sm';
@@ -52,6 +53,7 @@ export function PipelinesPage() {
     queryKey: ['aiProfiles'],
     queryFn: api.listAIProfiles,
   });
+  const { data: runs = [] } = useQuery({queryKey: ['runs'], queryFn: () => api.listRuns(), refetchInterval: 5000});
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [form, setForm] = useState(initialForm);
@@ -73,6 +75,7 @@ export function PipelinesPage() {
     mutationFn: api.triggerGroupRun,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['runs'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       setMessage('任务已启动，可在运行记录查看审核、调研与归档进度');
     },
     onError: (error) => setMessage(error.message),
@@ -81,6 +84,7 @@ export function PipelinesPage() {
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.toggleGroup(id, enabled),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+    onError: error => setMessage(error.message),
   });
   const edit = (group?: Group) => {
     setEditingId(group?.id);
@@ -114,6 +118,7 @@ export function PipelinesPage() {
     );
     setOpen(true);
   };
+  useDialog(open, () => setOpen(false));
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -183,14 +188,15 @@ export function PipelinesPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={run.isPending}
+                disabled={run.isPending || runs.some(run => run.group_id === group.id && run.status === 'running')}
                 onClick={() => run.mutate(group.id)}
               >
                 <Play className="mr-1 h-3 w-3" />
-                立即运行
+                {runs.some(run => run.group_id === group.id && run.status === 'running') ? '正在执行…' : '立即运行'}
               </Button>
             </div>
           </div>
+          {runs.find(run => run.group_id === group.id)?.status === 'failed' && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">最近运行失败：{runs.find(run => run.group_id === group.id)?.error_message}。修复后可重新运行。</p>}
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border bg-blue-50/40 p-4">
               <h4 className="flex items-center gap-2 text-sm font-semibold">

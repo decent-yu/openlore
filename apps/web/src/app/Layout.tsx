@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Activity,
@@ -39,8 +39,9 @@ const NAV_GROUPS = [
 export function Layout() {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-neutral-50 text-neutral-900 overflow-x-hidden">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-white focus:p-3">跳到主要内容</a>
       {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-neutral-200 shrink-0 flex flex-col justify-between max-w-full overflow-hidden">
+      <aside className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r md:sticky md:top-0 md:h-screen border-neutral-200 shrink-0 flex flex-col justify-between max-w-full overflow-hidden">
         <div className="p-3 md:p-4 space-y-3 md:space-y-6">
           <div className="flex items-center justify-between md:justify-start space-x-2 px-2 py-1">
             <div className="flex items-center space-x-2">
@@ -91,8 +92,8 @@ export function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-        <Outlet />
+      <main id="main-content" className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+        <Suspense fallback={<p role="status" className="py-20 text-center text-sm text-neutral-500">正在加载页面…</p>}><Outlet /></Suspense>
       </main>
     </div>
   );

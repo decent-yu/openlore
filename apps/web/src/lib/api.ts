@@ -1,5 +1,7 @@
 import type {
   AIProfile,
+  AIExecutionLogPage,
+  AIExecutionLogDetail,
   DailyFeedArticle,
   DoctorResult,
   Group,
@@ -145,6 +147,13 @@ export const api = {
   deleteReportPlan: (id: string) => request<{ ok: boolean }>(`/reports/${id}`, { method: 'DELETE' }),
   previewReport: (id: string) => request<ReportPreview>(`/reports/${id}/preview`),
   sendReport: (id: string) => request<{ ok: boolean; state: string; message: string }>(`/reports/${id}/send`, { method: 'POST' }),
+
+  listExecutionLogs: (filters: {run_id?:string;job_id?:string;log_id?:string;status?:string;task_type?:string;search?:string;page?:number} = {}) => {
+    const params=new URLSearchParams();
+    for(const [key,value] of Object.entries(filters)) if(value)params.set(key,String(value));
+    return request<AIExecutionLogPage>(`/execution-logs?${params}`);
+  },
+  getExecutionLog: (id:string) => request<AIExecutionLogDetail>(`/execution-logs/${id}`),
 
   // Runs
   listRuns: (groupId?: string) =>
