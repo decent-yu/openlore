@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { DEFAULT_REPORT_TEMPLATE, ReportTemplateSchema } from './report-template.js';
-export { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_VARIABLES, ReportTemplateSchema, renderReportTemplate } from './report-template.js';
+import { DEFAULT_REPORT_CARD_TITLE, ReportCardTitleTemplateSchema, DEFAULT_REPORT_TEMPLATE, ReportTemplateSchema } from './report-template.js';
+export { DEFAULT_REPORT_TEMPLATE, DEFAULT_REPORT_CARD_TITLE, REPORT_TEMPLATE_VARIABLES, ReportTemplateSchema, ReportCardTitleTemplateSchema, renderReportTemplate, renderReportCardTitle, buildFeishuCard } from './report-template.js';
 import { ExecutorConfigSchema } from './execution.js';
 
 export const AIProfileSchema = z.object({
@@ -64,6 +64,7 @@ export const ReportSettingsSchema = z.object({
   timezone: z.string().default('Asia/Shanghai'),
   notification_connection_id: z.string().nullable().default(null),
   template: ReportTemplateSchema.default(DEFAULT_REPORT_TEMPLATE),
+  card_title_template: ReportCardTitleTemplateSchema.default(DEFAULT_REPORT_CARD_TITLE),
   pipeline_ids: z.array(z.string()).default([]),
 });
 export type ReportSettings = z.infer<typeof ReportSettingsSchema>;
@@ -73,6 +74,7 @@ export const ReportPreviewSchema = z.object({
   message: z.string(),
   date: z.string(),
   summary: z.string(),
+  card_title: z.string(),
   tasks: z.array(z.object({ id: z.string(), name: z.string(), status: z.string(), count: z.number() })),
   articles: z.array(z.object({ article_id: z.string(), title: z.string(), summary: z.string(), url: z.string().optional(), is_deep_analyzed: z.boolean() })),
 });

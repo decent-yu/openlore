@@ -59,7 +59,9 @@ export async function createServer(): Promise<FastifyInstance> {
     return reply.status(statusCode).send({
       error: {
         code: error.code || 'internal_server_error',
-        message: error.message || 'An unexpected error occurred',
+        message: error.name === 'ZodError'
+          ? error.issues.map((issue: { path: string[]; message: string }) => `${issue.path.join('.')}${issue.path.length ? '：' : ''}${issue.message}`).join('；')
+          : error.message || 'An unexpected error occurred',
       },
       request_id: request.id,
     });

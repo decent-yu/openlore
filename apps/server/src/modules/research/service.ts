@@ -64,6 +64,7 @@ export class ResearchService {
     groupId: string,
     articleId: string,
     customInstructions?: string,
+    runId?: string,
   ): Promise<ResearchTask> {
     const db = getDb();
     const now = new Date().toISOString();
@@ -134,13 +135,13 @@ export class ResearchService {
 
         const aiRes = await aiAdapter.execute({
           jobId: taskId,
+          runId, groupId, articleId, articleTitle: art.title || undefined,
           profileId: group!.aiProfileId!,
           taskType: 'research_report',
           skillId: researchSkill.id,
           skillRevision: researchSkill.revision,
           prompt,
           material: `Title: ${art.title}\nSource URL: ${art.canonicalUrl || '未提供'}\n\n${content}`,
-          timeoutMs: 60000,
         });
 
         db.update(researchTasksTable).set({executionJson: JSON.stringify(aiRes.execution || {}), model: aiRes.model}).where(eq(researchTasksTable.id,taskId)).run();

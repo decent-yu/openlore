@@ -1,3 +1,5 @@
+import { executionLogs, redactExecutionText } from './execution_logs.js';
+import type { AIExecutionAttempt } from '@openlore/contracts';
 import type { AIAdapter, AIResult, AITaskInput } from './adapter.js';
 import { ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
 import { ExecutorAdapter } from './executor_adapter.js';
@@ -23,19 +25,25 @@ export class FallbackAIAdapter implements AIAdapter {
   ) {}
 
   async execute(input: AITaskInput): Promise<AIResult> {
+    const started = Date.now();
+    const traceId = executionLogs.start(input);
     if (this.targets.length === 0) {
-      return {
+      const failure: AIResult = {
         status: 'failed',
         provider: 'none',
         model: 'none',
         durationMs: 0,
+        trace_id: traceId,
         error: {
           code: 'no_ai_executors',
           message: '未配置任何本地 AI 执行器',
         },
       };
+      executionLogs.finish(traceId,failure,Date.now()-started);
+      return failure;
     }
 
+    const attempts: AIExecutionAttempt[] = [];
     let lastError: any = null;
 
     for (let i = 0; i < this.targets.length; i++) {
@@ -43,6 +51,16 @@ export class FallbackAIAdapter implements AIAdapter {
       const isPrimary = target.isPrimary;
       const roleStr = isPrimary ? '主执行器' : `备用执行器 #${i}`;
 
+      const attempt: AIExecutionAttempt = {
+        index: i + 1, profile_id: target.id, executor_name: target.name, provider: target.provider,
+        transport: target.execution?.transport || 'local', model: input.model || target.model || 'default',
+        timeout_seconds: target.execution?.timeout_seconds || 900,
+        queue_timeout_seconds: target.execution?.queue_timeout_seconds || 3600,
+        started_at: new Date().toISOString(), status: 'running',
+      };
+      attempts.push(attempt);
+      executionLogs.attempts(traceId, attempts);
+      const attemptStarted = Date.now();
       try {
         const res = await adapter.execute({
           ...input,
@@ -50,37 +68,49 @@ export class FallbackAIAdapter implements AIAdapter {
           model: input.model || target.model,
         });
 
+        Object.assign(attempt, {
+          status: res.status, finished_at: new Date().toISOString(), duration_ms: Date.now() - attemptStarted,
+          model: res.model, error: res.error, usage: res.usage, execution: res.execution, diagnostics: res.diagnostics,
+          output: typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2),
+        });
+        executionLogs.attempts(traceId, attempts);
         if (res.status === 'success') {
           if (!isPrimary) {
             console.warn(
               `[AI Fallback] 备用执行器 "${target.name}" (${target.provider}) 成功接管并完成任务 (Job: ${input.jobId}, Type: ${input.taskType})`,
             );
           }
-          return res;
+          executionLogs.finish(traceId, res, Date.now() - started);
+          return {...res, trace_id: traceId};
         }
 
         lastError = res.error || { code: res.status, message: `Status: ${res.status}` };
         console.warn(
-          `[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 执行异常 [${res.status}: ${lastError.message}]，准备切换后续执行器...`,
+          redactExecutionText(`[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 执行异常 [${res.status}: ${lastError.message}]，准备切换后续执行器...`),
         );
       } catch (err: any) {
         lastError = err;
+        Object.assign(attempt,{status:'failed',finished_at:new Date().toISOString(),duration_ms:Date.now()-attemptStarted,error:{code:'executor_error',message:err.message}});
+        executionLogs.attempts(traceId,attempts);
         console.warn(
-          `[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 抛出异常 [${err.message}]，准备切换后续执行器...`,
+          redactExecutionText(`[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 抛出异常 [${err.message}]，准备切换后续执行器...`),
         );
       }
     }
 
-    return {
+    const failure: AIResult = {
       status: 'failed',
       provider: this.targets[0].target.provider,
       model: this.targets[0].target.model || 'unknown',
-      durationMs: 0,
+      durationMs: Date.now() - started,
+      trace_id: traceId,
       error: {
         code: 'all_executors_failed',
         message: `所有 AI 执行器均无法完成任务 (包括主执行器与 ${this.targets.length - 1} 个备用执行器): ${lastError?.message || 'Unknown error'}`,
       },
     };
+    executionLogs.finish(traceId,failure,Date.now()-started);
+    return failure;
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {

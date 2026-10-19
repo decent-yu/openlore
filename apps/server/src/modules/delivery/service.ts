@@ -392,7 +392,7 @@ export class DeliveryService {
       .get();
 
     if (!loc) {
-      return { status: 'unchanged', changed_paths: [], errors: [] };
+      throw Object.assign(new Error('文章尚未建立归档位置，请先运行所属流水线完成归档'), { statusCode: 409 });
     }
 
     const researchPath = `${basePath}/${loc.directory}/research.md`;
@@ -452,6 +452,24 @@ export class DeliveryService {
           files: filesToSync,
           commitMessage: `docs(research): add in-depth research for ${loc.slug}`,
         });
+
+        const record = {
+          id: `research_delivery_${task.id}`,
+          groupId: group.id,
+          batchId: `research_${task.id}`,
+          targetKind: 'github',
+          status: ghRes.status,
+          commitSha: ghRes.commitSha || null,
+          commitUrl: ghRes.commitUrl || null,
+          changedPathsJson: JSON.stringify(ghRes.changedPaths),
+          errorMessage: ghRes.errorMessage || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        db.insert(deliveriesTable).values(record).onConflictDoUpdate({
+          target: deliveriesTable.id,
+          set: record,
+        }).run();
 
         syncResult = {
           status: ghRes.status as any,

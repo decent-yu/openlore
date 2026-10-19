@@ -147,6 +147,7 @@ export class GitHubClient {
         return {
           status: 'unchanged',
           commitSha: headCommitSha,
+          commitUrl: `https://github.com/${owner}/${repo}/commit/${headCommitSha}`,
           changedPaths: [],
         };
       }

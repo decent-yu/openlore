@@ -1,5 +1,6 @@
 import { getPublishedWikiLinks, wikiLinkKey } from '../../modules/delivery/wiki-links.js';
 import fs from 'node:fs';
+import { z } from 'zod';
 import type { FastifyPluginAsync } from 'fastify';
 import type { LibraryArticle, LibraryResponse } from '@openlore/contracts';
 import { getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
@@ -27,8 +28,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const sourceId = (query.source_id || '').trim();
     const groupId = (query.group_id || '').trim();
     const search = (query.search || '').trim();
-    const page = Math.max(1, Number(query.page) || 1);
-    const pageSize = Math.max(1, Math.min(100, Number(query.page_size) || 12));
+    const page = z.coerce.number().int().min(1).default(1).parse(query.page);
+    const pageSize = z.coerce.number().int().min(1).max(100).default(12).parse(query.page_size);
     const offset = (page - 1) * pageSize;
 
     const now = new Date();

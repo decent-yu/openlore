@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { GitHubClient } from '../src/infrastructure/repositories/github/client.js';
 import { SafeHttpClient, isPrivateIp } from '../src/infrastructure/http/client.js';
 import { initDatabase } from '../src/infrastructure/persistence/sqlite/db.js';
 import { groupsService, normalizeRoutePath } from '../src/modules/groups/service.js';
@@ -109,6 +110,11 @@ describe('OpenLore Server Core Tests', () => {
     });
 
     it('parses repository URL and saves repository connection seamlessly', async () => {
+      const connection = vi.spyOn(GitHubClient, 'testConnection').mockResolvedValue({
+        ok: true,
+        defaultBranch: 'main',
+        message: 'Test repository',
+      });
       const { parseGitRepoUrl } = await import('../src/modules/settings/service.js');
       expect(parseGitRepoUrl('https://github.com/raven-ai-labs/openlore-knowledge-vault.git')).toEqual({
         owner: 'raven-ai-labs',
@@ -130,6 +136,8 @@ describe('OpenLore Server Core Tests', () => {
       expect(repo.owner).toBe('raven-ai-labs');
       expect(repo.repo).toBe('openlore-knowledge-vault');
       expect(repo.name).toBe('raven-ai-labs/openlore-knowledge-vault');
+      expect(repo.state).toBe('ready');
+      connection.mockRestore();
     });
 
     it('falls back to backup AI executor when primary fails', async () => {

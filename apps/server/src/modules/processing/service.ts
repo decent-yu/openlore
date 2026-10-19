@@ -10,6 +10,7 @@ import type {
 import { FallbackAIAdapter, getAIAdapterWithFallback } from '../../infrastructure/ai/fallback_runner.js';
 import { mediaAssetsArchiver } from '../../infrastructure/media_assets/archiver.js';
 import { getDb, getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
+import { executionLogs } from '../../infrastructure/ai/execution_logs.js';
 import { listPoolCandidates } from './candidates.js';
 import { assessmentMaterial, hasGroundedEvidence } from './assessment.js';
 import { skillsService } from '../skills/service.js';
@@ -103,6 +104,7 @@ export class ProcessingService {
     }
 
     counts.candidate = candidateArticles.length;
+    db.update(runsTable).set({ countsJson: JSON.stringify(counts) }).where(eq(runsTable.id, runId)).run();
 
     // AI assessment of the entire candidate set.
     const qualifiedList: Array<{
@@ -149,8 +151,9 @@ export class ProcessingService {
           const material = assessmentMaterial(cand.article.title || '', cand.content, {published_at:cand.article.publishedAt, sources:cand.matchedSources, completeness:cand.revision.bodyCompleteness, content_kind:cand.article.contentKind});
           const cacheKey = crypto.createHash('sha256').update(JSON.stringify([group.id,prompt,assessmentSkill.revision,material,group.ai_profile_id,activeTarget])).digest('hex');
           const cached = getSqliteDatabase().prepare('SELECT result_json FROM article_assessments WHERE cache_key=?').get(cacheKey) as {result_json:string} | undefined;
-          const aiRes = cached ? {status:'success',result:JSON.parse(cached.result_json),error:undefined} : await aiAdapter.execute({
-            jobId: `${runId}_${cand.article.id.slice(0, 8)}`,
+          let aiRes = cached ? {status:'success',result:JSON.parse(cached.result_json),error:undefined} : await aiAdapter.execute({
+            jobId: `${runId}_${cand.article.id}`,
+            runId, groupId: group.id, articleId: cand.article.id, articleTitle: cand.article.title || undefined,
             profileId: group.ai_profile_id!,
             taskType: 'assess',
             skillId: group.assessment_skill_id,
@@ -169,13 +172,29 @@ export class ProcessingService {
               },
               required: ['relevance', 'quality', 'reason', 'summary', 'evidence_refs'],
             },
-            timeoutMs: 30000,
           });
+
+          // Retry malformed evidence once with precise feedback; never relax admission.
+          if (!cached && aiRes.status === 'success' && aiRes.result && !hasGroundedEvidence(aiRes.result, cand.content)) {
+            executionLogs.invalidate('trace_id' in aiRes ? aiRes.trace_id : undefined, '审核引用未通过正文核验，已要求重新返回');
+            usedPrompt = `${prompt}\n\n上次返回的 evidence_refs 未通过原文核验。请重新读取 input/article.md，逐字复制至少一段完整原句（至少 16 字符）；保留原句措辞，不翻译或改写。重新返回完整 JSON。`;
+            aiRes = await aiAdapter.execute({
+              jobId: `${runId}_${cand.article.id}_evidence_retry`,
+              runId, groupId: group.id, articleId: cand.article.id, articleTitle: cand.article.title || undefined,
+              profileId: group.ai_profile_id!, taskType: 'assess',
+              skillId: group.assessment_skill_id, skillRevision: assessmentSkill.revision,
+              prompt: usedPrompt, material,
+              outputSchema: {type:'object',properties:{relevance:{type:'number'},quality:{type:'number'},reason:{type:'string'},summary:{type:'string'},tags:{type:'array',items:{type:'string'}},evidence_refs:{type:'array',items:{type:'string'}}},required:['relevance','quality','reason','summary','evidence_refs']},
+              });
+          }
 
           usedModel = 'model' in aiRes ? String(aiRes.model) : 'cached';
           executionDetails = 'execution' in aiRes ? aiRes.execution : undefined;
           if (aiRes.status !== 'success' || !aiRes.result || !Number.isFinite(aiRes.result.relevance) || !Number.isFinite(aiRes.result.quality) || typeof aiRes.result.summary !== 'string') throw new Error(aiRes.error?.message || '审核返回结果不完整');
-          if (!hasGroundedEvidence(aiRes.result, cand.content)) throw new Error('审核缺少可核验的正文证据');
+          if (!hasGroundedEvidence(aiRes.result, cand.content)) {
+            executionLogs.invalidate('trace_id' in aiRes ? aiRes.trace_id : undefined, '审核缺少可核验的正文证据');
+            throw new Error('审核缺少可核验的正文证据');
+          }
           evidence = aiRes.result.evidence_refs;
           if (!cached) getSqliteDatabase().prepare('INSERT OR REPLACE INTO article_assessments VALUES (?,?,?,?,?)').run(cacheKey,cand.article.id,group.id,JSON.stringify(aiRes.result),new Date().toISOString());
           if (aiRes.status === 'success' && aiRes.result) {

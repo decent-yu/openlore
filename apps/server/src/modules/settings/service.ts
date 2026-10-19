@@ -1,5 +1,6 @@
 import { WikiDisplayConfigSchema } from '@openlore/contracts';
 import crypto from 'node:crypto';
+import { z } from 'zod';
 import { ExecutorConfigSchema, WorkspaceSettingsSchema, type ExecutorConfig } from '@openlore/contracts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,6 +22,7 @@ import {
   groupsTable,
   notificationConnectionsTable,
   repositoryConnectionsTable,
+  reportPlansTable,
   workspaceSettingsTable,
 } from '../../infrastructure/persistence/sqlite/schema.js';
 import { PythonWorkerRunner } from '../../infrastructure/python/runner.js';
@@ -211,7 +213,7 @@ export class SettingsService {
       .all();
     if (inUseGroups.length > 0) {
       const names = inUseGroups.map((g) => g.name).join('、');
-      throw new Error(`无法删除：该仓库正被流水线任务「${names}」绑定使用，请先在流水线任务设置中更换仓库后再删除。`);
+      throw Object.assign(new Error(`无法删除：该仓库正被流水线任务「${names}」绑定使用，请先在流水线任务设置中更换仓库后再删除。`), {statusCode: 409});
     }
 
     const repo = db
@@ -254,15 +256,20 @@ export class SettingsService {
     const db = getDb();
     const id = data.id || `notify_${crypto.randomUUID().slice(0, 8)}`;
     const revision = `rev_${Date.now()}`;
-    const urlSecretRef = `secret_notify_${id}`;
+    const previous = db.select().from(notificationConnectionsTable).where(eq(notificationConnectionsTable.id, id)).get();
+    const name = z.string().trim().min(1, '请输入通知通道名称').parse(data.name ?? previous?.name);
+    const urlSecretRef = previous?.urlSecretRef || `secret_notify_${id}`;
+    const webhookUrl = z.string().trim().url('请输入有效的 Webhook 地址').refine(
+      value => /^https?:\/\//i.test(value), 'Webhook 仅支持 HTTP 或 HTTPS',
+    ).parse(data.webhookUrl?.trim() || secretsStore.getSecret(urlSecretRef));
 
     if (data.webhookUrl) {
-      secretsStore.setSecret(urlSecretRef, data.webhookUrl);
+      secretsStore.setSecret(urlSecretRef, webhookUrl);
     }
 
     const record = {
       id,
-      name: data.name,
+      name,
       revision,
       urlSecretRef,
       protocol: 'generic_json',
@@ -280,7 +287,7 @@ export class SettingsService {
 
     return {
       id,
-      name: data.name,
+      name,
       revision,
       url_secret_ref: urlSecretRef,
       protocol: 'generic_json',
@@ -290,6 +297,8 @@ export class SettingsService {
 
   async deleteNotificationConnection(id: string): Promise<{ ok: boolean }> {
     const db = getDb();
+    const plans = db.select().from(reportPlansTable).all().filter(plan => JSON.parse(plan.configurationJson).notification_connection_id === id);
+    if (plans.length) throw Object.assign(new Error(`无法删除：通知通道正被汇报方案「${plans.map(plan => plan.name).join('、')}」使用，请先更换方案的通知通道。`), {statusCode: 409});
     const notif = db
       .select()
       .from(notificationConnectionsTable)

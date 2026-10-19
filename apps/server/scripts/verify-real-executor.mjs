@@ -53,7 +53,7 @@ try{
  for(const [index,task]of research.entries())fs.writeFileSync(path.join(root,`research-${index+1}.md`),task.report_markdown);
  console.log('RESEARCH_RESULTS='+JSON.stringify(research.map((task)=>({status:task.status,length:task.report_markdown.length}))));
  if(!research.length)throw new Error('No research articles produced');
- await reportService.savePlan({id:'report-test',name:'Agent 工程测试汇报',pipeline_ids:['test-task'],notification_connection_id:'channel',skill_id:'batch-digest-generator',enabled:false});
+ await reportService.savePlan({id:'report-test',name:'Agent 工程测试汇报',pipeline_ids:['test-task'],notification_connection_id:'channel',enabled:false});
  const sent=await reportService.send('report-test');console.log('REPORT='+JSON.stringify(sent));
  if(!sent.ok)throw new Error(sent.message);
  const archived=JSON.parse(fs.readFileSync(path.join(root,'archive-files.json'),'utf8'));

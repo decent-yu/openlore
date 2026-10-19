@@ -119,8 +119,10 @@ export class ExecutionQueue {
           model: request.input.model || 'default',
           durationMs: Date.now() - started,
           error: {
-            code: 'worker_timeout',
-            message: '等待本机执行器或任务执行超时，请检查执行器在线状态',
+            code: row?.status === 'queued' ? 'worker_queue_timeout' : 'worker_timeout',
+            message: row?.status === 'queued'
+              ? `Worker 排队等待达到 ${request.config.queue_timeout_seconds} 秒上限，请检查执行器在线状态与并发占用`
+              : `Worker 调用未完成（执行上限 ${request.config.timeout_seconds} 秒，排队上限 ${request.config.queue_timeout_seconds} 秒），请检查 Worker 连接与任务状态`,
           },
         };
       }

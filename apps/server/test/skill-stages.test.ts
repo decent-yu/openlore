@@ -114,6 +114,9 @@ describe('Separate review and research Skills', () => {
     expect(result.researchArticleIds).toEqual([articleId]);
     expect(execute).toHaveBeenCalledTimes(1);
     const review = execute.mock.calls[0][0];
+    expect(review.runId).toBe('run');
+    expect(review.groupId).toBe(group.id);
+    expect(review.articleId).toBe(articleId);
     expect(review.skillId).toBe('review-only');
     expect(review.prompt).toContain('$review-only');
     expect(review.prompt).not.toContain('REVIEW_BASE_PROMPT');
@@ -123,9 +126,13 @@ describe('Separate review and research Skills', () => {
     const research = await researchService.runResearchOnArticle(
       group.id,
       articleId,
+      undefined,
+      'run',
     );
     expect(research.status).toBe('succeeded');
     const request = execute.mock.calls[1][0];
+    expect(request.runId).toBe('run');
+    expect(request.groupId).toBe(group.id);
     expect(request.skillId).toBe('research-only');
     expect(request.prompt).toContain('$research-only');
     expect(request.prompt).not.toContain('RESEARCH_BASE_PROMPT');

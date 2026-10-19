@@ -1,4 +1,4 @@
-import type { NotificationResult } from '@openlore/contracts';
+import { buildFeishuCard, type NotificationResult } from '@openlore/contracts';
 
 export interface WebhookPayload {
   event: 'collection.completed' | 'research.completed' | 'daily_push.completed';
@@ -7,6 +7,7 @@ export interface WebhookPayload {
   status: 'success' | 'partial' | 'failed';
   counts?: { selected: number; failed: number; deferred: number };
   summary: string;
+  card_title?: string;
   repository_url?: string;
   commit_sha?: string;
   document_path?: string;
@@ -23,11 +24,7 @@ export function formatWebhookMessage(webhookUrl: string, payload: WebhookPayload
   if (['open.feishu.cn', 'open.larksuite.com', 'open.xfchat.iflytek.com'].includes(hostname)) {
     return {
       msg_type: 'interactive',
-      card: {
-        config: { wide_screen_mode: true },
-        header: { title: { tag: 'plain_text', content: 'OpenLore · 技术知识汇报' }, template: 'blue' },
-        elements: [{ tag: 'div', text: { tag: 'lark_md', content: payload.summary } }],
-      },
+      card: buildFeishuCard(payload.card_title || payload.group?.name || 'OpenLore', payload.summary),
     };
   }
   return payload;

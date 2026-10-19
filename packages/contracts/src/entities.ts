@@ -170,6 +170,9 @@ export type Run = z.infer<typeof RunSchema>;
 export const PushDeliveryRecordSchema = z.object({
   id: z.string(),
   batch_id: z.string(),
+  ai_log_id: z.string().optional(),
+  report_plan_id: z.string().optional(),
+  pipeline_ids: z.array(z.string()).default([]),
   group_id: z.string(),
   status: z.string(),
   webhook_name: z.string().optional(),

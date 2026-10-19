@@ -14,6 +14,12 @@ async function serve() {
   const db = getSqliteDatabase();
   // A server restart invalidates in-flight leases. Retrying starts a new run from its saved inputs.
   db.transaction(() => {
+    const interruptedLogs = db.prepare("SELECT id,attempts_json FROM ai_execution_logs WHERE status='running'").all() as Array<{id:string;attempts_json:string}>;
+    for (const log of interruptedLogs) {
+      const now = new Date().toISOString();
+      const attempts = JSON.parse(log.attempts_json).map((attempt: any) => attempt.status === 'running' ? {...attempt,status:'interrupted',finished_at:now,duration_ms:Date.now()-Date.parse(attempt.started_at),error:{code:'server_restart',message:'服务重启，执行状态无法继续追踪'}} : attempt);
+      db.prepare("UPDATE ai_execution_logs SET status='interrupted',finished_at=?,duration_ms=CAST((julianday(?) - julianday(started_at))*86400000 AS INTEGER),error_message='服务重启导致调用中断',attempts_json=? WHERE id=?").run(now,now,JSON.stringify(attempts),log.id);
+    }
     const interrupted = db.prepare("SELECT id,group_id,output_json FROM runs WHERE status='running'").all() as Array<{id:string;group_id:string;output_json:string}>;
     for (const run of interrupted) {
       const output = JSON.parse(run.output_json || '{}');

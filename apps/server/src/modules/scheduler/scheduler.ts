@@ -341,6 +341,7 @@ export class AppScheduler {
                     group.id,
                     entry.article_id,
                     group.research_instructions,
+                    runId,
                   );
                   if (!task || task.status !== 'succeeded')
                     throw new Error(
@@ -477,6 +478,9 @@ export class AppScheduler {
       return {
         id: r.id,
         batch_id: r.batchId,
+        ai_log_id: meta.ai_log_id,
+        report_plan_id: meta.report_plan_id,
+        pipeline_ids: meta.pipeline_ids || [],
         group_id: r.groupId,
         status: r.status,
         webhook_name: meta.webhook_name || '群通知 Webhook',

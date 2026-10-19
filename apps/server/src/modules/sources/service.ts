@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { SourceOptionsSchema, type Source } from '@openlore/contracts';
 import { getDb, getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
@@ -57,16 +59,20 @@ export class SourcesService {
     options?: Record<string, unknown>;
   }): Promise<Source> {
     const db = getDb();
-    const id = data.id || `src_${Date.now()}`;
+    const id = data.id || `src_${crypto.randomUUID().slice(0, 12)}`;
     const previous = data.id ? await this.getSource(data.id) : null;
+    const name = z.string().trim().min(1, '请输入来源名称').parse(data.name ?? previous?.name);
+    const url = z.string().trim().url('请输入有效的来源地址').refine(
+      value => /^https?:\/\//i.test(value), '来源地址仅支持 HTTP 或 HTTPS',
+    ).parse(data.url ?? previous?.url);
     const options = SourceOptionsSchema.parse(data.options ?? previous?.options ?? {});
     const record = {
       id,
-      name: data.name,
-      url: data.url,
-      description: data.description || '',
-      capabilityId: data.capability_id || 'web_feed',
-      enabled: data.enabled !== undefined ? data.enabled : true,
+      name,
+      url,
+      description: data.description ?? previous?.description ?? '',
+      capabilityId: data.capability_id ?? previous?.capability_id ?? 'web_feed',
+      enabled: data.enabled ?? previous?.enabled ?? true,
       optionsJson: JSON.stringify(options),
       updatedAt: new Date().toISOString(),
     };
@@ -79,7 +85,7 @@ export class SourcesService {
       })
       .run();
 
-    if (previous && (previous.url !== data.url || JSON.stringify(previous.options) !== JSON.stringify(options))) {
+    if (previous && (previous.url !== url || JSON.stringify(previous.options) !== JSON.stringify(options))) {
       db.delete(sourceStatesTable).where(eq(sourceStatesTable.sourceId, id)).run();
       const { collectionService } = await import('../collection/service.js');
       await collectionService.revalidateSource(id);

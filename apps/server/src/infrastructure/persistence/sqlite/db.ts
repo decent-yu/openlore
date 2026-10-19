@@ -40,6 +40,15 @@ export function initDatabase(dbPath?: string): void {
   const sqlite = getSqliteDatabase(dbPath);
 
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS ai_execution_logs (
+      id TEXT PRIMARY KEY, job_id TEXT NOT NULL, run_id TEXT, group_id TEXT, report_plan_id TEXT,
+      article_id TEXT, article_title TEXT, task_type TEXT NOT NULL, skill_id TEXT,
+      started_at TEXT NOT NULL, finished_at TEXT, duration_ms INTEGER,
+      status TEXT NOT NULL, error_message TEXT,
+      input_json TEXT NOT NULL, output TEXT NOT NULL DEFAULT '', attempts_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS ai_execution_logs_run ON ai_execution_logs(run_id, started_at);
+    CREATE INDEX IF NOT EXISTS ai_execution_logs_started ON ai_execution_logs(started_at DESC);
     CREATE TABLE IF NOT EXISTS report_plans (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -331,6 +340,12 @@ export function initDatabase(dbPath?: string): void {
     attempts INTEGER NOT NULL DEFAULT 0, result_json TEXT,
     created_at INTEGER NOT NULL, deadline INTEGER NOT NULL
   ); CREATE INDEX IF NOT EXISTS ai_jobs_status ON ai_jobs(profile_id,status);`);
+  const logColumns = sqlite.pragma('table_info(ai_execution_logs)') as Array<{name:string}>;
+  if (!logColumns.some(column => column.name === 'report_plan_id')) {
+    sqlite.exec('ALTER TABLE ai_execution_logs ADD COLUMN report_plan_id TEXT');
+    sqlite.exec("UPDATE ai_execution_logs SET report_plan_id=group_id,group_id=NULL WHERE task_type='digest' AND run_id IS NULL");
+  }
+  sqlite.exec('CREATE INDEX IF NOT EXISTS ai_execution_logs_job ON ai_execution_logs(job_id,started_at)');
   const repositoryColumns = sqlite.pragma('table_info(repository_connections)') as Array<{name: string}>;
   for (const column of ['wiki_base_url', 'wiki_root_path']) {
     if (!repositoryColumns.some((item) => item.name === column)) sqlite.exec(`ALTER TABLE repository_connections ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);

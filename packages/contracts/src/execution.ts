@@ -7,7 +7,7 @@ export const ExecutorConfigSchema = z.object({
   skills_mode: z.enum(['synced', 'local']).default('synced'),
   config_profile: z.string().default(''),
   inherit_user_config: z.boolean().default(true),
-  timeout_seconds: z.number().int().min(10).max(3600).default(300),
+  timeout_seconds: z.number().int().min(10).max(3600).default(900),
   queue_timeout_seconds: z.number().int().min(10).max(86400).default(3600),
   retention_days: z.number().int().min(1).max(90).default(7),
   concurrency: z.number().int().min(1).max(4).default(1),
@@ -32,6 +32,11 @@ export const SkillBundleSchema = z.object({
 export type SkillBundle = z.infer<typeof SkillBundleSchema>;
 export const ExecutionInputSchema = z.object({
   jobId: z.string(),
+  runId: z.string().optional(),
+  groupId: z.string().optional(),
+  reportPlanId: z.string().optional(),
+  articleId: z.string().optional(),
+  articleTitle: z.string().optional(),
   profileId: z.string(),
   taskType: z.enum([
     'assess',
@@ -48,7 +53,6 @@ export const ExecutionInputSchema = z.object({
   material: z.string(),
   outputSchema: z.record(z.unknown()).optional(),
   model: z.string().optional(),
-  timeoutMs: z.number().positive().max(3600000).optional(),
 });
 export type ExecutionInput = z.infer<typeof ExecutionInputSchema>;
 export const ExecutionResultSchema = z.object({
@@ -64,11 +68,23 @@ export const ExecutionResultSchema = z.object({
   provider: z.string(),
   model: z.string(),
   durationMs: z.number(),
+  trace_id: z.string().optional(),
+  diagnostics: z.object({
+    stdout: z.string(),
+    stderr: z.string(),
+    exit_code: z.number().nullable(),
+    timed_out: z.boolean(),
+    timeout_seconds: z.number(),
+    output_truncated: z.boolean().default(false),
+    partial_document: z.string().optional(),
+  }).optional(),
   usage: z
     .object({
       promptTokens: z.number().optional(),
       completionTokens: z.number().optional(),
       totalTokens: z.number().optional(),
+      cachedTokens: z.number().optional(),
+      reasoningTokens: z.number().optional(),
     })
     .optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
@@ -80,6 +96,8 @@ export const ExecutionResultSchema = z.object({
       skill_revision: z.string().optional(),
       prompt: z.string(),
       mode: z.enum(['native', 'explicit-path']),
+      skill_instructions: z.string().optional(),
+      skill_files: z.array(z.string()).optional(),
     })
     .optional(),
 });

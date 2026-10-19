@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import {
   ReportPlanSchema,
   renderReportTemplate,
+  renderReportCardTitle,
   type ReportPlan,
   type ReportPreview,
   type RunOutput,
@@ -71,12 +72,12 @@ export class ReportService {
         .map((group) => group.id),
     );
     if (config.pipeline_ids.some((id) => !ids.has(id)))
-      throw new Error('所选流水线任务不存在，请重新选择');
+      throw Object.assign(new Error('所选流水线任务不存在，请重新选择'), { statusCode: 400 });
     if (
       config.enabled &&
       (!config.notification_connection_id || config.pipeline_ids.length === 0)
     )
-      throw new Error('启用定时汇报前，请选择任务和群通知通道');
+      throw Object.assign(new Error('启用定时汇报前，请选择任务和群通知通道'), { statusCode: 400 });
     if (
       config.notification_connection_id &&
       !db
@@ -90,7 +91,7 @@ export class ReportService {
         )
         .get()
     )
-      throw new Error('通知通道不存在');
+      throw Object.assign(new Error('通知通道不存在'), { statusCode: 400 });
     const now = new Date().toISOString();
     db.insert(reportPlansTable)
       .values({
@@ -133,6 +134,7 @@ export class ReportService {
       message: '',
       date,
       summary: '',
+      card_title: config.name,
       tasks: [],
       articles: [],
     };
@@ -219,12 +221,14 @@ export class ReportService {
       }
     }
     result.articles = [...articles.values()];
-    result.summary = renderReportTemplate(config.template, {
+    const templateValues = {
       report_name: config.name, date, task_count: result.tasks.length,
       article_count: result.articles.length,
       deep_count: result.articles.filter((article) => article.is_deep_analyzed).length,
       content: sections.join('\n\n'),
-    });
+    };
+    result.summary = renderReportTemplate(config.template, templateValues);
+    result.card_title = renderReportCardTitle(config.card_title_template, templateValues);
     if (result.state === 'waiting')
       result.message = '等待所选任务今天全部成功完成并归档后再汇报';
     else if (result.articles.length === 0) {
@@ -301,6 +305,7 @@ export class ReportService {
         event_id: batchId,
         status: 'success',
         summary,
+        card_title: preview.card_title,
         counts: { selected: preview.articles.length, failed: 0, deferred: 0 },
         articles: preview.articles,
       });
@@ -312,7 +317,7 @@ export class ReportService {
           targetKind: 'webhook',
           status: response.status,
           responseJson: JSON.stringify({
-            headline: `${config.name} · ${preview.date}`,
+            headline: preview.card_title,
             summary,
             webhook_name: connection.name,
             report_plan_id: config.id,

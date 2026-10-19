@@ -81,13 +81,24 @@ export class FeedService {
       if (gi.updatedAt) availableDatesSet.add(dateKey(gi.updatedAt));
     }
 
-    const availableDates = Array.from(availableDatesSet).sort().reverse();
-
-    const pool = listPoolCandidates(group.source_ids);
     const taskRuns = db.select().from(runsTable).where(eq(runsTable.groupId, group.id)).orderBy(desc(runsTable.startedAt)).all();
+    for (const run of taskRuns) {
+      if (run.status === 'succeeded') availableDatesSet.add(dateKey(run.finishedAt || run.startedAt));
+    }
+    const availableDates = Array.from(availableDatesSet).sort().reverse();
+    const pool = listPoolCandidates(group.source_ids);
     const currentRun = taskRuns.find((run) => run.status === 'running' || dateKey(run.finishedAt || run.startedAt) === targetDate);
     const finishedOnDate = taskRuns.filter((run) => run.status === 'succeeded' && dateKey(run.finishedAt || run.startedAt) === targetDate);
-    const archivedOutputs = new Map(finishedOnDate.flatMap((run) => RunOutputSchema.parse(JSON.parse(run.outputJson || '{}')).entries.map((entry) => [entry.article_id, entry] as const)));
+    const archivedOutputs = new Map<string, ReturnType<typeof RunOutputSchema.parse>['entries'][number]>();
+    const archivedCommits = new Map<string, string>();
+    for (const run of finishedOnDate) {
+      const output = RunOutputSchema.parse(JSON.parse(run.outputJson || '{}'));
+      for (const entry of output.entries) {
+        if (archivedOutputs.has(entry.article_id)) continue;
+        archivedOutputs.set(entry.article_id, entry);
+        if (output.commit_url) archivedCommits.set(entry.article_id, output.commit_url);
+      }
+    }
     // Get selected group items
     const rawGroupItems = db
       .select()
@@ -103,19 +114,12 @@ export class FeedService {
       (gi) => archivedOutputs.has(gi.articleId) || (finishedOnDate.some((run) => run.outputJson === '{}') && Boolean(gi.updatedAt) && dateKey(gi.updatedAt) === targetDate),
     );
     const hasRunToday = taskRuns.some((run) => run.status === 'succeeded' && dateKey(run.finishedAt || run.startedAt) === todayStr);
-    const groupItems = itemsOnDate.slice(0, group.max_selected || 10);
+    const groupItems = itemsOnDate;
 
     const deepArticles: DailyFeedArticle[] = [];
     const candidateArticles: DailyFeedArticle[] = [];
+    let completedResearch = 0;
     const wikiLinks = getPublishedWikiLinks(groupItems.map((item) => item.articleId), group.id);
-
-    // Latest delivery for commit sha/url
-    const latestDelivery = db
-      .select()
-      .from(deliveriesTable)
-      .where(eq(deliveriesTable.groupId, group.id))
-      .orderBy(desc(deliveriesTable.createdAt))
-      .get();
 
     for (const gi of groupItems) {
       const art = db.select().from(articlesTable).where(eq(articlesTable.id, gi.articleId)).get();
@@ -148,6 +152,15 @@ export class FeedService {
         .get();
 
       const isDeep = Boolean(gi.isDeepAnalyzed || (researchTask && researchTask.status === 'succeeded'));
+      if (isDeep) completedResearch++;
+      const researchDelivery = researchTask ? db.select().from(deliveriesTable).where(and(
+        eq(deliveriesTable.groupId, group.id),
+        eq(deliveriesTable.batchId, `research_${researchTask.id}`),
+        eq(deliveriesTable.targetKind, 'github'),
+      )).get() : undefined;
+      const archiveUrl = researchDelivery
+        ? (['updated', 'unchanged'].includes(researchDelivery.status) ? researchDelivery.commitUrl : null)
+        : archivedCommits.get(art.id);
 
       const wiki = wikiLinks.get(wikiLinkKey(group.id, art.id));
       const feedArticle: DailyFeedArticle = {
@@ -176,10 +189,10 @@ export class FeedService {
             }
           : null,
         delivery:
-          isDeep && latestDelivery
+          archiveUrl
             ? {
-                commit_sha: latestDelivery.commitSha,
-                commit_url: latestDelivery.commitUrl,
+                commit_sha: archiveUrl.split('/').pop(),
+                commit_url: archiveUrl,
               }
             : null,
       };
@@ -201,7 +214,7 @@ export class FeedService {
       stats: {
         pool_count: pool.length,
         total_selected_count: groupItems.length,
-        deep_analyzed_count: deepArticles.length,
+        deep_analyzed_count: completedResearch,
         candidate_remaining_count: pool.filter(article=>!article.processed).length,
       },
       deep_articles: deepArticles,
@@ -224,10 +237,9 @@ export class FeedService {
     );
 
     if (resTask && resTask.status === 'succeeded') {
-      try {
-        await deliveryService.deliverResearchReport(group, resTask);
-      } catch {
-        // delivery might be skipped if repo not configured
+      const archive = await deliveryService.deliverResearchReport(group, resTask);
+      if (archive.status === 'failed' || archive.status === 'conflict' || archive.errors.length) {
+        throw Object.assign(new Error(`研报已生成，GitHub 归档失败：${archive.errors.map(error => error.message).join('；') || archive.status}`), {statusCode: 502});
       }
 
       const db = getDb();

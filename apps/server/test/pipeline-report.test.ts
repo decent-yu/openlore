@@ -30,6 +30,7 @@ import {
 import { GenericWebhookSender } from '../src/infrastructure/notifications/generic_webhook/sender.js';
 import { GitHubClient } from '../src/infrastructure/repositories/github/client.js';
 import { secretsStore } from '../src/infrastructure/secrets/local_file/secrets_store.js';
+import * as aiAdapters from '../src/infrastructure/ai/fallback_runner.js';
 
 const entries: StructuredEntry[] = [1, 2].map((n) => ({
   article_id: `article-${n}`,
@@ -140,6 +141,7 @@ describe('Task execution and independent multi-task reports', () => {
       .mockResolvedValue(successfulDelivery());
     const run = await scheduler.triggerGroupRun('task');
     await vi.waitFor(() => expect(research).toHaveBeenCalledTimes(1));
+    expect(research.mock.calls[0][3]).toBe(run.id);
     expect((await scheduler.getRun(run.id))?.stage).toBe('research');
     expect(delivery).not.toHaveBeenCalled();
     finishResearch({
@@ -277,6 +279,21 @@ describe('Task execution and independent multi-task reports', () => {
         pipeline_ids: [],
       }),
     ).rejects.toThrow('请选择任务');
+  });
+  it('sends the exact template preview without using an AI executor',async()=>{
+    seedRun('scope-agent-run','agent','succeeded','article');
+    await report.savePlan({id:'digest-scope',name:'Digest scope',enabled:true,pipeline_ids:['agent'],notification_connection_id:'channel'});
+    const execute=vi.fn().mockResolvedValue({status:'success',provider:'test',model:'test',durationMs:1,result:'AI generated summary',trace_id:'ai-specific-digest-call'});
+    vi.spyOn(aiAdapters,'getAIAdapterWithFallback').mockReturnValue({execute,testConnection:async()=>({ok:true,message:'test'})});
+    vi.spyOn(secretsStore,'getSecret').mockReturnValue('https://example.com/webhook');
+    vi.spyOn(GenericWebhookSender,'send').mockResolvedValue({status:'sent'});
+    const preview=await report.preview('digest-scope');
+    expect((await report.send('digest-scope')).state).toBe('sent');
+    expect(execute).not.toHaveBeenCalled();
+    const push=(await new AppScheduler().listPushDeliveries()).find(push=>push.report_plan_id==='digest-scope');
+    expect(push).toMatchObject({pipeline_ids:['agent'],summary:preview.summary});
+    expect(push?.ai_log_id).toBeUndefined();
+    await report.deletePlan('digest-scope');
   });
   it('checks task schedules while a source request is still running and does not re-trigger within the minute', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });

@@ -26,7 +26,15 @@ export function assessmentMaterial(
   return `Metadata: ${JSON.stringify(metadata)}\nTitle: ${title}\n\n${body}`;
 }
 export function hasGroundedEvidence(result: any, material: string): boolean {
-  const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
+  // A quotation uses the visible anchor text, not the Markdown link destination.
+  const normalized = (text: string) => text
+    .replace(/\[([^\]\n]+)\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '$1')
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '$2')
+    .replace(/(`+)([^`]*?)\1/g, '$2')
+    .replace(/(?<!\w)(\*|_)(?=\S)([^\n]*?\S)\1(?!\w)/g, '$2')
+    .replace(/\\([\\`*_{}\[\]()#+\-.!>])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
   return (
     Array.isArray(result.evidence_refs) &&
     result.evidence_refs.length > 0 &&

@@ -33,6 +33,7 @@ export async function runProcess(
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  stderrTruncated: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const env = Object.fromEntries(
@@ -48,6 +49,7 @@ export async function runProcess(
     });
     let stdout = '',
       stderr = '',
+      stderrTruncated = false,
       timedOut = false,
       settled = false;
     const stop = () => {
@@ -88,7 +90,11 @@ export async function runProcess(
       stdout += data.toString();
     });
     child.stderr.on('data', (data) => {
-      stderr = (stderr + data.toString()).slice(-4000);
+      stderr += data.toString();
+      if (stderr.length > 512 * 1024) {
+        stderrTruncated = true;
+        stderr = stderr.slice(-512 * 1024);
+      }
     });
     child.stdin.on('error', () => {});
     child.on('error', (error) => {
@@ -102,7 +108,7 @@ export async function runProcess(
       if (!settled) {
         settled = true;
         finish();
-        resolve({ code, stdout, stderr, timedOut });
+        resolve({ code, stdout, stderr, timedOut, stderrTruncated });
       }
     });
     if (signal?.aborted) terminate();
@@ -147,6 +153,9 @@ export async function executeInWorkspace(
     { input, config } = request;
   const started = Date.now();
   let model = input.model || 'default';
+  let diagnostics: ExecutionResult['diagnostics'];
+  let execution: ExecutionResult['execution'];
+  let usage: ExecutionResult['usage'];
   const root = expand(
     config.workspace_root ||
       path.join(os.homedir(), '.openlore', 'executor-workspace'),
@@ -256,6 +265,11 @@ export async function executeInWorkspace(
       ];
       if (input.model) args.push('-m', input.model);
     }
+    execution = {
+      workspace, skill_id: bundle?.id, skill_revision: bundle?.revision, prompt, mode,
+      skill_instructions: bundle?.files.find(file => file.path === 'SKILL.md') ? Buffer.from(bundle.files.find(file => file.path === 'SKILL.md')!.content, 'base64').toString('utf8') : undefined,
+      skill_files: bundle?.files.map(file => file.path),
+    };
     const res = await runProcess(
       request.cli_path,
       args,
@@ -264,13 +278,18 @@ export async function executeInWorkspace(
       config.timeout_seconds * 1000,
       signal,
     );
-    const execution = {
-      workspace,
-      skill_id: bundle?.id,
-      skill_revision: bundle?.revision,
-      prompt,
-      mode,
-    } as const;
+    const diagnosticLimit = 512 * 1024;
+    diagnostics = {
+      stdout: res.stdout.slice(-diagnosticLimit), stderr: res.stderr,
+      exit_code: res.code, timed_out: res.timedOut, timeout_seconds: config.timeout_seconds,
+      output_truncated: res.stdout.length > diagnosticLimit || res.stderrTruncated,
+    };
+    if (res.timedOut) {
+      const document = path.join(workspace, 'output', input.taskType === 'digest' ? 'digest.md' : 'research.md');
+      if (fs.existsSync(document) && !fs.lstatSync(document).isSymbolicLink() && fs.statSync(document).size <= diagnosticLimit) {
+        diagnostics.partial_document = fs.readFileSync(document, 'utf8');
+      }
+    }
     fs.writeFileSync(path.join(workspace, 'events.log'), res.stdout);
     if (res.timedOut)
       return {
@@ -279,7 +298,8 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
-        error: { code: 'timeout', message: 'AI 执行超时' },
+        diagnostics,
+        error: { code: 'timeout', message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}` },
       };
     if (res.code !== 0)
       return {
@@ -288,6 +308,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        diagnostics,
         error: {
           code: 'cli_failed',
           message: `AI CLI 执行失败（退出码 ${res.code}），请检查执行机的 CLI 登录与配置`,
@@ -302,6 +323,18 @@ export async function executeInWorkspace(
         throw new Error('CLI 未生成有效结果文件');
       const text = fs.readFileSync(resultFile, 'utf8').trim();
       result = input.outputSchema ? JSON.parse(text) : text;
+      for (const line of res.stdout.split('\n')) {
+        try {
+          const event=JSON.parse(line);
+          if(event.type==='turn.completed' && event.usage) {
+            usage ||= {promptTokens:0,completionTokens:0,totalTokens:0,cachedTokens:0};
+            usage.promptTokens! += event.usage.input_tokens || 0;
+            usage.completionTokens! += event.usage.output_tokens || 0;
+            usage.cachedTokens! += event.usage.cached_input_tokens || 0;
+            usage.totalTokens! += (event.usage.input_tokens || 0)+(event.usage.output_tokens || 0);
+          }
+        } catch { /* Non-JSON CLI lines are retained in diagnostics. */ }
+      }
     } else {
       const envelope = JSON.parse(res.stdout);
       const models = Object.entries(envelope.stats?.models || {}) as Array<
@@ -313,6 +346,16 @@ export async function executeInWorkspace(
             (b[1].tokens?.total || b[1].api?.totalRequests || 0) -
             (a[1].tokens?.total || a[1].api?.totalRequests || 0),
         )[0][0];
+      if(models.some(([,metrics])=>metrics.tokens)) {
+        usage={promptTokens:0,completionTokens:0,totalTokens:0,cachedTokens:0,reasoningTokens:0};
+        for(const [,metrics] of models) {
+          usage.promptTokens! += metrics.tokens?.prompt || 0;
+          usage.completionTokens! += metrics.tokens?.candidates || 0;
+          usage.totalTokens! += metrics.tokens?.total || 0;
+          usage.cachedTokens! += metrics.tokens?.cached || 0;
+          usage.reasoningTokens! += metrics.tokens?.thoughts || 0;
+        }
+      }
       if (envelope.error) throw new Error('Gemini CLI returned an error');
       const response = envelope.response ?? envelope.text ?? envelope;
       result =
@@ -343,6 +386,8 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      diagnostics,
+      usage,
       artifacts: collectArtifacts(path.join(workspace, 'output')),
     };
   } catch (error: any) {
@@ -351,6 +396,7 @@ export async function executeInWorkspace(
       provider: request.provider,
       model,
       durationMs: Date.now() - started,
+      execution, diagnostics,
       error: { code: 'execution_failed', message: error.message },
     };
   } finally {

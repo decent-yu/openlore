@@ -9,3 +9,4 @@ export * from './api.js';
 export * from './prompts.js';
 
 export * from './execution.js';
+export * from './ai_logs.js';

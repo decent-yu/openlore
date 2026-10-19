@@ -345,6 +345,8 @@ it("saves each plan template and rejects missing content or unknown variables", 
     template,
   });
   expect(plan.template).toBe(template);
+  expect(plan.card_title_template).toBe("{{report_name}}");
+  expect((await reportService.preview("custom")).card_title).toBe("Wiki 日报");
   expect((await reportService.getPlan("custom")).template).toBe(template);
   expect((await reportService.preview("custom")).summary).toContain(
     `](${expected}/research)`,
@@ -383,6 +385,7 @@ it("sends the exact Wiki template preview without touching AI, skills or Runner 
     pipeline_ids: ["task"],
     notification_connection_id: "notify",
     template: "# {{report_name}}\n\n{{content}}\n\n研报 {{deep_count}} 篇",
+    card_title_template: "研发精选 · {{article_count}} 篇",
   });
   const preview = await reportService.preview("fixed");
   const aiCount = db
@@ -391,6 +394,8 @@ it("sends the exact Wiki template preview without touching AI, skills or Runner 
   const jobCount = db.prepare("SELECT count(*) count FROM ai_jobs").get();
   expect((await reportService.send("fixed")).state).toBe("sent");
   expect(sender.mock.calls[0][1].summary).toBe(preview.summary);
+  expect(preview.card_title).toBe("研发精选 · 1 篇");
+  expect(sender.mock.calls[0][1].card_title).toBe(preview.card_title);
   expect(sender.mock.calls[0][1].articles?.[0].url).toBe(
     `${expected}/research`,
   );
@@ -411,7 +416,35 @@ it("sends the exact Wiki template preview without touching AI, skills or Runner 
     ).response_json,
   );
   expect(record.summary).toBe(preview.summary);
+  expect(record.headline).toBe(preview.card_title);
   expect(record).not.toHaveProperty("ai_log_id");
   await reportService.send("fixed");
   expect(sender).toHaveBeenCalledTimes(1);
+});
+
+it("persists editable card titles and rejects invalid title variables without changing the plan", async () => {
+  const plan = await reportService.savePlan({
+    id: "title-plan",
+    name: "方案名称",
+    enabled: false,
+    pipeline_ids: ["task"],
+    card_title_template: "技术周报 · {{date}}",
+  });
+  expect((await reportService.getPlan("title-plan")).card_title_template).toBe(
+    plan.card_title_template,
+  );
+  expect((await reportService.preview("title-plan")).card_title).toMatch(
+    /^技术周报 · \d{4}-\d{2}-\d{2}$/,
+  );
+  for (const title of ["", "{{content}}", "标题\n第二行", "{{unknown}}"]) {
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/v1/reports/title-plan",
+      payload: { ...plan, card_title_template: title },
+    });
+    expect(response.statusCode).toBe(400);
+  }
+  expect((await reportService.getPlan("title-plan")).card_title_template).toBe(
+    "技术周报 · {{date}}",
+  );
 });
