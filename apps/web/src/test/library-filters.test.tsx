@@ -159,12 +159,13 @@ it("shows independent unreviewed, scored and archived states with counts", () =>
   expect(html).not.toContain("精选入围");
 });
 
-it("shows shared content quality, positioning and evidence, with a link to its initial-review log", () => {
+it("shows a compact review preview while reserving detailed evidence and logs for the dialog", () => {
   const html = renderToStaticMarkup(<MemoryRouter><LibraryAssessments timezone="UTC" review={{
     status: 'succeeded', error_message: null, log_id: 'review-log', assessed_at: '2026-10-19T03:00:00Z',
     result: {quality: 0, positioning: '数据库性能', summary: '问题、方法和局限', tags: ['数据库'], reason: '证据不足', evidence_refs: ['A complete original sentence from the article.']},
   }} /></MemoryRouter>);
-  for (const text of ['内容质量', '数据库性能', '问题、方法和局限', '证据不足', '查看初审记录', 'review-log']) expect(html).toContain(text);
+  for (const text of ['内容质量', '数据库性能', '查看审核详情']) expect(html).toContain(text);
+  for (const text of ['问题、方法和局限', '证据不足', '查看初审记录', 'review-log']) expect(html).not.toContain(text);
   expect(html).not.toContain('相关度');
   const none = renderToStaticMarkup(<LibraryAssessments timezone="UTC" review={null} />);
   expect(none).toContain('待初审');

@@ -40,6 +40,12 @@ import {
   CardTitle,
 } from "../../components/ui/card.js";
 import { Input } from "../../components/ui/input.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 import { api } from "../../lib/api.js";
 import { useDialog } from "../../lib/useDialog.js";
 
@@ -375,28 +381,40 @@ export function LibraryPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {articles.map((art) => (
             <Card
               key={art.id}
-              className="flex flex-col justify-between hover:shadow-xs transition-shadow"
+              className="flex flex-col hover:shadow-xs transition-shadow"
             >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1.5 flex-1 min-w-0">
-                    <CardTitle className="text-base font-semibold leading-snug line-clamp-2">
-                      {art.research?.wiki_url || art.wiki_url ? (
-                        <a
-                          href={art.research?.wiki_url || art.wiki_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:text-blue-700 hover:underline"
-                        >
-                          {art.title}
-                        </a>
-                      ) : (
-                        art.title
-                      )}
+                    <CardTitle className="text-base font-semibold leading-snug">
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {art.research?.wiki_url || art.wiki_url ? (
+                              <a
+                                href={art.research?.wiki_url || art.wiki_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block truncate hover:text-blue-700 hover:underline"
+                              >
+                                {art.title}
+                              </a>
+                            ) : (
+                              <span
+                                tabIndex={0}
+                                className="block truncate cursor-help"
+                              >
+                                {art.title}
+                              </span>
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent>{art.title}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </CardTitle>
                     <CardDescription className="text-xs flex items-center gap-2 text-neutral-500">
                       <span>{art.author || "未知作者"}</span>
@@ -506,36 +524,40 @@ export function LibraryPage() {
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-3 pt-1">
-                <LibraryAssessments review={art.review} timezone={timezone} />
+              <CardContent className="flex flex-1 flex-col gap-3 pt-1">
+                <LibraryAssessments
+                  review={art.review}
+                  timezone={timezone}
+                  articleTitle={art.title}
+                />
                 {/* Research Highlights */}
                 {art.research?.status === "succeeded" &&
-                art.research.questions &&
-                art.research.questions.length > 0 && (
-                  <div className="bg-purple-50/60 border border-purple-100 rounded-md p-2.5 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
-                      <span className="flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-purple-600" />
-                        调研重点：
-                      </span>
-                      {art.research.finished_at && (
-                        <span className="text-[10px] text-purple-400 font-normal">
-                          完成于{" "}
-                          {new Date(
-                            art.research.finished_at,
-                          ).toLocaleDateString()}
+                  art.research.questions &&
+                  art.research.questions.length > 0 && (
+                    <div className="bg-purple-50/60 border border-purple-100 rounded-md p-2.5 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          调研重点：
                         </span>
-                      )}
+                        {art.research.finished_at && (
+                          <span className="text-[10px] text-purple-400 font-normal">
+                            完成于{" "}
+                            {new Date(
+                              art.research.finished_at,
+                            ).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      <ul className="list-disc list-inside text-neutral-600 space-y-0.5 text-[11px]">
+                        {art.research.questions.slice(0, 2).map((q, idx) => (
+                          <li key={idx} className="line-clamp-1">
+                            {q}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <ul className="list-disc list-inside text-neutral-600 space-y-0.5 text-[11px]">
-                      {art.research.questions.slice(0, 2).map((q, idx) => (
-                        <li key={idx} className="line-clamp-1">
-                          {q}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                  )}
 
                 <WikiReadingLinks
                   articleUrl={art.wiki_url}
@@ -543,7 +565,7 @@ export function LibraryPage() {
                 />
 
                 {/* Bottom Actions */}
-                <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
+                <div className="mt-auto flex items-center justify-between pt-2 border-t border-neutral-100">
                   {art.canonical_url ? (
                     <a
                       href={art.canonical_url}
@@ -579,9 +601,11 @@ export function LibraryPage() {
                         ? "重新初审"
                         : art.review?.status === "failed"
                           ? "重试初审"
-                          : art.review
-                            ? "初审中"
-                            : "初审"}
+                          : art.review?.status === "queued"
+                            ? "排队中"
+                            : art.review?.status === "running"
+                              ? "审核中"
+                              : "初审"}
                     </Button>
                     {art.research?.status === "succeeded" ? (
                       <>
