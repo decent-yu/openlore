@@ -2,6 +2,7 @@ export * from './collection.js';
 export * from './python_protocol.js';
 export * from './processing.js';
 export * from './delivery.js';
+export * from './library-filters.js';
 export * from './settings.js';
 export * from './entities.js';
 export * from './api.js';
