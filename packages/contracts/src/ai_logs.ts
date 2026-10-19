@@ -18,6 +18,8 @@ export interface AIExecutionAttempt {
   validation_issues?: Array<{ path: string; code: string; message: string }>;
   session_id?: string;
   resumed?: boolean;
+  progress_state?: "queued" | "running";
+  queue_duration_ms?: number;
   progress_at?: string;
   last_output_at?: string;
   error?: ExecutionResult["error"];

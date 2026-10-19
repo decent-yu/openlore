@@ -76,6 +76,7 @@ export const ExecutionResultSchema = z.object({
   provider: z.string(),
   model: z.string(),
   durationMs: z.number(),
+  queue_duration_ms: z.number().nonnegative().optional(),
   trace_id: z.string().optional(),
   session: ExecutionSessionSchema.optional(),
   diagnostics: z
@@ -117,6 +118,8 @@ export type ExecutionResult = z.infer<typeof ExecutionResultSchema>;
 export const ExecutionProgressSchema = z.object({
   updated_at: z.string().datetime(),
   last_output_at: z.string().datetime().optional(),
+  state: z.enum(['queued', 'running']).optional(),
+  queue_duration_ms: z.number().nonnegative().optional(),
   execution: ExecutionResultSchema.shape.execution,
   diagnostics: ExecutionResultSchema.shape.diagnostics,
 });

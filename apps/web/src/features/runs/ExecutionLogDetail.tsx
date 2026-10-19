@@ -352,7 +352,10 @@ export function ExecutionLogDetail({
                         <span
                           className={`rounded px-2 py-1 text-xs ${color(attempt.status)}`}
                         >
-                          {statusNames[attempt.status] || attempt.status}
+                          {attempt.status === "running" &&
+                          attempt.progress_state === "queued"
+                            ? "排队中"
+                            : statusNames[attempt.status] || attempt.status}
                         </span>
                       </div>
                       <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
@@ -368,6 +371,10 @@ export function ExecutionLogDetail({
                             )[attempt.transport] || attempt.transport,
                           本次执行时限: `${attempt.timeout_seconds} 秒（${attempt.timeout_seconds / 60} 分钟）`,
                           排队等待上限: `${attempt.queue_timeout_seconds} 秒`,
+                          已等待槽位:
+                            attempt.queue_duration_ms === undefined
+                              ? "未记录"
+                              : duration(attempt.queue_duration_ms),
                           开始: time(attempt.started_at),
                           结束: time(attempt.finished_at),
                           耗时:

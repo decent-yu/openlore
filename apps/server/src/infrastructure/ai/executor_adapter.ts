@@ -15,6 +15,7 @@ import { skillsService } from '../../modules/skills/service.js';
 import { readSkillBundle, scanSkillDirectory } from './skill_bundle.js';
 import { executionQueue } from '../../modules/executors/queue.js';
 import { getSqliteDatabase } from '../persistence/sqlite/db.js';
+import { executionSlots } from './execution_slots.js';
 
 export function shellQuote(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
@@ -30,6 +31,9 @@ export class ExecutorAdapter implements AIAdapter {
     input: AITaskInput,
     onProgress?: (progress: ExecutionProgress) => void,
   ): Promise<AIResult> {
+    const started = Date.now();
+    let release: (() => void) | undefined;
+    let queueDuration: number | undefined;
     try {
       let bundle: SkillBundle | undefined;
       if (input.skillId) {
@@ -73,6 +77,21 @@ export class ExecutorAdapter implements AIAdapter {
         cli_path: this.cliPath,
       };
       let result: AIResult;
+      if (this.config.transport !== 'worker') {
+        const queuedAt = Date.now();
+        onProgress?.({ updated_at: new Date().toISOString(), state: 'queued' });
+        release = await executionSlots.acquire(
+          this.profileId,
+          this.config.concurrency,
+          this.config.queue_timeout_seconds,
+        );
+        queueDuration = Date.now() - queuedAt;
+        onProgress?.({
+          updated_at: new Date().toISOString(),
+          state: 'running',
+          queue_duration_ms: queueDuration,
+        });
+      }
       if (this.config.transport === 'worker')
         result = await executionQueue.wait(
           executionQueue.enqueue(this.profileId, request),
@@ -85,15 +104,20 @@ export class ExecutorAdapter implements AIAdapter {
           onProgress,
         );
       else result = await executeInWorkspace(request, undefined, onProgress);
-      return result;
+      return this.config.transport === 'worker'
+        ? result
+        : { ...result, queue_duration_ms: queueDuration };
     } catch (error: any) {
       return {
-        status: 'failed',
+        status: error.code === 'executor_queue_timeout' ? 'timeout' : 'failed',
         provider: this.provider,
         model: input.model || 'default',
-        durationMs: 0,
-        error: { code: 'executor_error', message: error.message },
+        durationMs: Date.now() - started,
+        queue_duration_ms: queueDuration,
+        error: { code: error.code || 'executor_error', message: error.message },
       };
+    } finally {
+      release?.();
     }
   }
   async ssh(

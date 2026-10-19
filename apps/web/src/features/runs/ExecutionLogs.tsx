@@ -201,6 +201,10 @@ export function ExecutionLogs({
               <span>
                 {log.attempts.at(-1)?.executor_name || "正在准备"} · 时限{" "}
                 {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒
+                {log.status === "running" &&
+                log.attempts.at(-1)?.progress_state === "queued"
+                  ? " · 等待执行槽位"
+                  : ""}
               </span>
             </div>
             {log.error_message && (

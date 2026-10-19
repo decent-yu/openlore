@@ -113,30 +113,44 @@ export class ArticleReviewsService {
     if (this.draining) return this.draining;
     this.draining = this.drain().finally(() => {
       this.draining = null;
+      if (this.nextQueued()) return this.processPending();
     });
     return this.draining;
   }
 
+  private nextQueued(): ReviewRow | undefined {
+    return getSqliteDatabase()
+      .prepare(
+        `SELECT r.* FROM article_reviews r
+      JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash
+      WHERE r.status='queued' ORDER BY r.created_at,r.article_id LIMIT 1`,
+      )
+      .get() as ReviewRow | undefined;
+  }
+
   private async drain(): Promise<void> {
     const db = getSqliteDatabase();
+    const active = new Set<Promise<void>>();
     while (true) {
-      // Old revisions must never replace the current article's assessment.
-      const row = db
-        .prepare(
-          `SELECT r.* FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash
-        WHERE r.status='queued' ORDER BY r.created_at,r.article_id LIMIT 1`,
+      const adapter = getAIAdapterWithFallback() as FallbackAIAdapter | null;
+      const capacity =
+        adapter?.targets?.[0]?.target.execution?.concurrency || 1;
+      while (active.size < capacity) {
+        const row = this.nextQueued();
+        if (!row) break;
+        if (
+          !db
+            .prepare(
+              "UPDATE article_reviews SET status='running' WHERE article_id=? AND revision_hash=? AND status='queued'",
+            )
+            .run(row.article_id, row.revision_hash).changes
         )
-        .get() as ReviewRow | undefined;
-      if (!row) return;
-      if (
-        !db
-          .prepare(
-            "UPDATE article_reviews SET status='running' WHERE article_id=? AND revision_hash=? AND status='queued'",
-          )
-          .run(row.article_id, row.revision_hash).changes
-      )
-        continue;
-      await this.review(row);
+          continue;
+        const work = this.review(row).finally(() => active.delete(work));
+        active.add(work);
+      }
+      if (!active.size) return;
+      await Promise.race(active);
     }
   }
 

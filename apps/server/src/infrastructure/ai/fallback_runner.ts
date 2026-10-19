@@ -90,6 +90,10 @@ export class FallbackAIAdapter implements AIAdapter {
               execution: progress.execution,
               diagnostics: progress.diagnostics,
               session_id: progress.execution?.session_id || attempt.session_id,
+              ...(progress.state ? { progress_state: progress.state } : {}),
+              ...(progress.queue_duration_ms !== undefined
+                ? { queue_duration_ms: progress.queue_duration_ms }
+                : {}),
             });
             executionLogs.attempts(traceId, attempts);
             onProgress?.(progress);
@@ -114,6 +118,8 @@ export class FallbackAIAdapter implements AIAdapter {
         model: result.model,
         error: result.error,
         usage: result.usage,
+        queue_duration_ms:
+          result.queue_duration_ms ?? attempt.queue_duration_ms,
         execution: result.execution || attempt.execution,
         diagnostics: result.diagnostics || attempt.diagnostics,
         session_id: result.session?.id || attempt.session_id,

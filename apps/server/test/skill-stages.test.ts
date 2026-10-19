@@ -7,6 +7,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { ExecutorConfigSchema } from "@openlore/contracts";
 import {
   initDatabase,
   getSqliteDatabase,
@@ -267,7 +268,7 @@ it("records invalid evidence without restarting a non-resumable executor, then s
   expect(getArticleReviews([id]).get(id)).toMatchObject({
     status: "failed",
     result: null,
-    error_message: expect.stringContaining('evidence_refs[0]'),
+    error_message: expect.stringContaining("evidence_refs[0]"),
   });
   const logs = (
     await app.inject("/api/v1/execution-logs?task_type=assess&status=problem")
@@ -338,4 +339,69 @@ it("does not change an old score into a current-revision review and validates ma
   expect(db.prepare("SELECT count(*) n FROM article_reviews").get()).toEqual({
     n: 0,
   });
+});
+
+it("uses the configured review concurrency without a slow first article blocking the third or duplicate execution", async () => {
+  const adapter = ai.getAIAdapterWithFallback() as ai.FallbackAIAdapter;
+  adapter.targets[0].target.execution = ExecutorConfigSchema.parse({
+    concurrency: 2,
+  });
+  for (const n of [2, 3])
+    collectionService.persistContentItem({
+      ...item(),
+      source_item_id: `article-${n}`,
+      canonical_url: `https://example.com/article-${n}`,
+    });
+  const pending: Array<(result: AIResult) => void> = [];
+  execute.mockImplementation(
+    () => new Promise((resolve) => pending.push(resolve)),
+  );
+  const draining = articleReviewsService.processPending();
+  try {
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(
+      getSqliteDatabase()
+        .prepare(
+          "SELECT count(*) n FROM article_reviews WHERE status='running'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    const runningIds = execute.mock.calls.map(([input]) => input.articleId!);
+    expect(articleReviewsService.enqueue(runningIds)).toBe(0);
+    expect(
+      runningIds.every(
+        (articleId) => getArticleReviews([articleId]).get(articleId)?.log_id,
+      ),
+    ).toBe(true);
+    pending[1]({
+      status: "success",
+      provider: "mock",
+      model: "mock",
+      durationMs: 1,
+      result: assessment,
+    });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    expect(
+      new Set(execute.mock.calls.map(([input]) => input.articleId)).size,
+    ).toBe(3);
+  } finally {
+    for (const resolve of pending)
+      resolve({
+        status: "success",
+        provider: "mock",
+        model: "mock",
+        durationMs: 1,
+        result: assessment,
+      });
+    await draining;
+  }
+});
+
+it("does not strand work enqueued while an empty drain is finishing", async () => {
+  getSqliteDatabase().exec("DELETE FROM article_reviews");
+  const draining = articleReviewsService.processPending();
+  articleReviewsService.enqueue([id]);
+  await draining;
+  expect(getArticleReviews([id]).get(id)?.status).toBe("succeeded");
+  expect(execute).toHaveBeenCalledTimes(1);
 });

@@ -119,6 +119,8 @@ export class ExecutionQueue {
   ): Promise<ExecutionResult> {
     const started = Date.now();
     const waitingUntil = started + request.config.queue_timeout_seconds * 1000;
+    let queueDuration: number | undefined;
+    onProgress?.({ updated_at: new Date().toISOString(), state: 'queued' });
     let previousProgress = '';
     while (true) {
       const row = getSqliteDatabase()
@@ -133,7 +135,18 @@ export class ExecutionQueue {
         );
       }
       if (row?.status === 'completed')
-        return ExecutionResultSchema.parse(JSON.parse(row.result_json));
+        return {
+          ...ExecutionResultSchema.parse(JSON.parse(row.result_json)),
+          queue_duration_ms: queueDuration,
+        };
+      if (row?.status === 'running' && queueDuration === undefined) {
+        queueDuration = Date.now() - started;
+        onProgress?.({
+          updated_at: new Date().toISOString(),
+          state: 'running',
+          queue_duration_ms: queueDuration,
+        });
+      }
       if (
         !row ||
         ['failed', 'expired', 'cancelled'].includes(row.status) ||
