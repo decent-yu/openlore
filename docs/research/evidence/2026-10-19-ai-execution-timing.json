@@ -1,0 +1,261 @@
+{
+  "recorded_at": "2026-10-19T09:59:37.556068+00:00",
+  "baseline_commit": "feb577b",
+  "cli_version": "0.60.0",
+  "article_title": "Release: llm-tools-datasette 0.1.1",
+  "constraints": {
+    "file_based_skills": true,
+    "cli_timeout_seconds": 900,
+    "business_code_modified": false,
+    "global_cli_configuration_modified": false
+  },
+  "observed_business_calls": [
+    {
+      "job_id": "review_a0be903b-a303-4f6f-b1fd-86016d077a48",
+      "status": "invalid_output",
+      "started_at": "2026-10-19T09:23:36.963Z",
+      "finished_at": "2026-10-19T09:37:37.576Z",
+      "duration_ms": 840614,
+      "attempts": [
+        {
+          "index": 1,
+          "executor_name": "Local Gemini",
+          "provider": "gemini_cli",
+          "model": "gemini-3.8-flash",
+          "started_at": "2026-10-19T09:23:36.965Z",
+          "finished_at": "2026-10-19T09:37:37.576Z",
+          "duration_ms": 840611,
+          "status": "success",
+          "usage": {
+            "promptTokens": 93200,
+            "completionTokens": 2063,
+            "totalTokens": 103601,
+            "cachedTokens": 39006,
+            "reasoningTokens": 0
+          },
+          "error": null
+        }
+      ],
+      "quality": 10
+    },
+    {
+      "job_id": "review_a0be903b-a303-4f6f-b1fd-86016d077a48_evidence_retry",
+      "status": "success",
+      "started_at": "2026-10-19T09:37:37.577Z",
+      "finished_at": "2026-10-19T09:53:13.942Z",
+      "duration_ms": 936365,
+      "attempts": [
+        {
+          "index": 1,
+          "executor_name": "Local Gemini",
+          "provider": "gemini_cli",
+          "model": "default",
+          "started_at": "2026-10-19T09:37:37.577Z",
+          "finished_at": "2026-10-19T09:52:37.638Z",
+          "duration_ms": 900061,
+          "status": "timeout",
+          "usage": null,
+          "error": {
+            "code": "timeout",
+            "message": "AI 执行达到 900 秒上限，CLI 尚未结束，已终止本次执行"
+          }
+        },
+        {
+          "index": 2,
+          "executor_name": "Local Codex",
+          "provider": "codex_cli",
+          "model": "default",
+          "started_at": "2026-10-19T09:52:37.639Z",
+          "finished_at": "2026-10-19T09:53:13.941Z",
+          "duration_ms": 36302,
+          "status": "success",
+          "usage": {
+            "promptTokens": 69518,
+            "completionTokens": 985,
+            "totalTokens": 70503,
+            "cachedTokens": 45312
+          },
+          "error": null
+        }
+      ],
+      "quality": 2
+    }
+  ],
+  "direct_cli_trials": [
+    {
+      "case": "same-prompt",
+      "started_at": "2026-10-19T09:46:44.637812+00:00",
+      "timeout_seconds": 900,
+      "prompt_sha256": "7683d7ea7cd42d9f26226fa6360f2b12eed0eb160e3e4475e00fa28583db5da5",
+      "material_sha256": "80fdeb3f2fdffcdc70d173c5a96c05c4dc459028c46a54d5f0bb2a093a536d81",
+      "session_id": "5bec360e-cc69-4047-a961-a756a271a5e1",
+      "initial_model": "auto",
+      "first_stdout_seconds": 3.163,
+      "first_tool_seconds": 372.683,
+      "first_answer_seconds": null,
+      "terminal_seconds": null,
+      "elapsed_seconds": 772.693,
+      "exit_code": 0,
+      "timed_out": null,
+      "stderr_signals": {
+        "policy_denied": 2,
+        "policy_failed": 0,
+        "policy_generation_failed": 0,
+        "rate_limit": 0,
+        "network_reset": 0,
+        "socket_hang_up": 0,
+        "export_timeout": 0,
+        "deprecated_telemetry": 1,
+        "missing_ripgrep": 1,
+        "invalid_hook": 1
+      },
+      "terminal": null,
+      "events": [
+        {
+          "elapsed_seconds": 3.163,
+          "type": "init",
+          "timestamp": "2026-10-19T09:46:47.800Z"
+        },
+        {
+          "elapsed_seconds": 3.164,
+          "type": "message",
+          "timestamp": "2026-10-19T09:46:47.801Z"
+        },
+        {
+          "elapsed_seconds": 372.683,
+          "type": "tool_use",
+          "timestamp": "2026-10-19T09:52:57.322Z",
+          "tool": "read_file",
+          "tool_id": "read_file__call_968598",
+          "file_path": ".agents/skills/tech-article-extractor/SKILL.md"
+        },
+        {
+          "elapsed_seconds": 372.684,
+          "type": "tool_use",
+          "timestamp": "2026-10-19T09:52:57.323Z",
+          "tool": "read_file",
+          "tool_id": "read_file__call_968604",
+          "file_path": "input/article.md"
+        },
+        {
+          "elapsed_seconds": 402.719,
+          "type": "tool_result",
+          "timestamp": "2026-10-19T09:53:27.358Z",
+          "tool_id": "read_file__call_968598",
+          "status": "error",
+          "error": {
+            "type": "policy_violation",
+            "message": "Tool execution denied by policy."
+          }
+        },
+        {
+          "elapsed_seconds": 402.721,
+          "type": "tool_result",
+          "timestamp": "2026-10-19T09:53:27.359Z",
+          "tool_id": "read_file__call_968604",
+          "status": "error",
+          "error": {
+            "type": "policy_violation",
+            "message": "Tool execution denied by policy."
+          }
+        }
+      ],
+      "stopped_reason": "User deferred Gemini investigation; stopped the owned benchmark without changing executor timeout settings.",
+      "stopped_at": "2026-10-19T09:59:37.464999+00:00",
+      "completed_task": false
+    },
+    {
+      "case": "short-dialogue",
+      "started_at": "2026-10-19T09:53:09.644180+00:00",
+      "timeout_seconds": 900,
+      "prompt_sha256": "03b565bbb909320847220427ffea5f918e07eb22e794fe1254760bf4297964c8",
+      "material_sha256": "80fdeb3f2fdffcdc70d173c5a96c05c4dc459028c46a54d5f0bb2a093a536d81",
+      "session_id": "36ef33ad-f47a-41e9-8f34-8249e65bdaa6",
+      "initial_model": "auto",
+      "first_stdout_seconds": 3.233,
+      "first_tool_seconds": null,
+      "first_answer_seconds": 54.15,
+      "terminal_seconds": 54.298,
+      "elapsed_seconds": 55.271,
+      "exit_code": 0,
+      "timed_out": null,
+      "stderr_signals": {
+        "policy_denied": 0,
+        "policy_failed": 0,
+        "policy_generation_failed": 0,
+        "rate_limit": 0,
+        "network_reset": 0,
+        "socket_hang_up": 0,
+        "export_timeout": 0,
+        "deprecated_telemetry": 1,
+        "missing_ripgrep": 1,
+        "invalid_hook": 1
+      },
+      "terminal": {
+        "type": "result",
+        "timestamp": "2026-10-19T09:54:03.942Z",
+        "status": "success",
+        "stats": {
+          "total_tokens": 14212,
+          "input_tokens": 13244,
+          "output_tokens": 45,
+          "cached": 0,
+          "input": 13244,
+          "duration_ms": 51065,
+          "tool_calls": 0,
+          "models": {
+            "gemini-3.1-flash-lite": {
+              "total_tokens": 1811,
+              "input_tokens": 998,
+              "output_tokens": 44,
+              "cached": 0,
+              "input": 998
+            },
+            "gemini-3.8-flash": {
+              "total_tokens": 12401,
+              "input_tokens": 12246,
+              "output_tokens": 1,
+              "cached": 0,
+              "input": 12246
+            }
+          }
+        }
+      },
+      "events": [
+        {
+          "elapsed_seconds": 3.233,
+          "type": "init",
+          "timestamp": "2026-10-19T09:53:12.877Z"
+        },
+        {
+          "elapsed_seconds": 3.234,
+          "type": "message",
+          "timestamp": "2026-10-19T09:53:12.877Z"
+        },
+        {
+          "elapsed_seconds": 54.298,
+          "type": "result",
+          "timestamp": "2026-10-19T09:54:03.942Z"
+        }
+      ],
+      "answer": "OK"
+    }
+  ],
+  "environment": {
+    "model_selection": "auto",
+    "security_enable_conseca": true,
+    "telemetry_enabled": true,
+    "telemetry_protocol": "grpc",
+    "telemetry_collector": "remote_configured",
+    "hook_integrations": ["Orca", "Superset", "ai-otel"],
+    "extra_node_options_present": false,
+    "explicit_http_https_all_proxy_environment_present": false
+  },
+  "limitations": [
+    "Single observation per direct CLI case, not p50/p95.",
+    "Original business retry overlapped the beginning of the same-prompt trial.",
+    "Short dialogue overlapped the same-prompt trial; provider-side concurrency or routing effects were not isolated.",
+    "Raw source website was not re-fetched; missing content is confirmed in supplied material, not attributed to a specific extractor defect.",
+    "No global settings were disabled, so network, model routing, Hooks and telemetry effects were not isolated."
+  ]
+}
