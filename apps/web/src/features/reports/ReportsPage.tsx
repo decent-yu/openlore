@@ -3,10 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Clock, Pencil, Plus, Send, Trash2, X } from 'lucide-react';
-import type { ReportPlan } from '@openlore/contracts';
+import { DEFAULT_REPORT_TEMPLATE, ReportTemplateSchema, type ReportPlan } from '@openlore/contracts';
 import { Button } from '../../components/ui/button.js';
 import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
+import { ReportTemplateEditor } from './ReportTemplateEditor.js';
 
 const statuses: Record<string, string> = {
   succeeded: '已完成归档',
@@ -23,7 +24,7 @@ const empty: Draft = {
   schedule_cron: '0 9 * * *',
   timezone: 'Asia/Shanghai',
   notification_connection_id: null,
-  skill_id: 'batch-digest-generator',
+  template: DEFAULT_REPORT_TEMPLATE,
   pipeline_ids: [],
 };
 export function ReportsPage() {
@@ -42,10 +43,6 @@ export function ReportsPage() {
   const { data: channels = [] } = useQuery({
     queryKey: ['notifs'],
     queryFn: api.listNotifs,
-  });
-  const { data: skills = [] } = useQuery({
-    queryKey: ['skills'],
-    queryFn: () => api.listSkills(),
   });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [previewId, setPreviewId] = useState('');
@@ -200,7 +197,7 @@ export function ReportsPage() {
                 <Clock className="h-3 w-3" />
                 {plan.schedule_cron} · {plan.timezone}
               </p>
-              <p>简报 Skill：{plan.skill_id || '结构化汇总'}</p>
+              <p>可配置模板 · 程序生成 · 无 AI 调用</p>
             </div>
             <div className="flex items-center justify-between border-t border-neutral-100 pt-3">
               <Button
@@ -279,8 +276,7 @@ export function ReportsPage() {
             </div>
           )}
           <p className="text-[11px] text-neutral-500">
-            预览为结构化结果。发送时由本方案的简报 Skill
-            汇总；同一方案当天成功发送后不重复发送。
+            预览即按模板生成的待发送正文，不调用 AI。数据未变化时，发送内容与此预览一致；同一方案当天成功发送后不重复发送。
           </p>
         </section>
       )}
@@ -368,38 +364,7 @@ export function ReportsPage() {
                 </p>
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
-                <h4 className="text-sm font-semibold">2 · 生成汇报简报</h4>
-                <label className="block text-xs font-medium text-neutral-600">
-                  简报 Skill
-                  <select
-                    className="mt-1.5 h-9 w-full rounded-md border bg-white px-3 text-xs"
-                    value={draft.skill_id}
-                    onChange={(event) => update('skill_id', event.target.value)}
-                  >
-                    <option value="">使用结构化任务汇总</option>
-                    {skills
-                      .filter(
-                        (skill) =>
-                          skill.type === 'digest' ||
-                          skill.id === draft.skill_id,
-                      )
-                      .map((skill) => (
-                        <option key={skill.id} value={skill.id}>
-                          {skill.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <details className="rounded border bg-white p-3">
-                  <summary className="cursor-pointer text-[11px] text-blue-700">
-                    查看简报 Skill Prompt
-                  </summary>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-neutral-600">
-                    {skills.find((skill) => skill.id === draft.skill_id)
-                      ?.system_prompt ||
-                      '按任务分组展示文章标题、导读与归档链接。'}
-                  </pre>
-                </details>
+                <ReportTemplateEditor value={draft.template} reportName={draft.name} taskNames={tasks.filter((task) => draft.pipeline_ids.includes(task.id)).map((task) => task.name)} onChange={(value) => update('template', value)} />
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <h4 className="text-sm font-semibold">3 · 推送到群</h4>
@@ -484,7 +449,7 @@ export function ReportsPage() {
                 >
                   取消
                 </Button>
-                <Button type="submit" disabled={save.isPending}>
+                <Button type="submit" disabled={save.isPending || !ReportTemplateSchema.safeParse(draft.template).success}>
                   {save.isPending ? '保存中…' : '保存方案'}
                 </Button>
               </div>

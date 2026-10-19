@@ -19,17 +19,12 @@ describe('OpenLore Server Core Tests', () => {
   describe('Skills Dynamic Loading & Parsing', () => {
     it('discovers and loads skills from project skills/ directory', async () => {
       const skills = await skillsService.listSkills();
-      expect(skills.length).toBeGreaterThanOrEqual(3);
+      expect(skills.length).toBeGreaterThanOrEqual(2);
 
       const techExtractor = skills.find((s) => s.id === 'tech-article-extractor');
       expect(techExtractor).toBeDefined();
       expect(techExtractor?.type).toBe('extraction');
       expect(techExtractor?.system_prompt).toContain('evidence_refs');
-
-      const batchDigest = skills.find((s) => s.id === 'batch-digest-generator');
-      expect(batchDigest).toBeDefined();
-      expect(batchDigest?.type).toBe('digest');
-      expect(batchDigest?.system_prompt).toContain('批次全局综述');
 
       const deepResearch = skills.find((s) => s.id === 'deep-research-expert');
       expect(deepResearch).toBeDefined();
@@ -41,9 +36,6 @@ describe('OpenLore Server Core Tests', () => {
       const skill = await skillsService.getSkill('tech-article-extractor');
       expect(skill).toBeDefined();
       expect(skill?.id).toBe('tech-article-extractor');
-
-      const digestSkill = await skillsService.getSkill('batch-digest-generator');
-      expect(digestSkill?.id).toBe('batch-digest-generator');
 
       const researchSkill = await skillsService.getSkill('deep-research-expert');
       expect(researchSkill?.id).toBe('deep-research-expert');

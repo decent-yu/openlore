@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { DEFAULT_REPORT_TEMPLATE, ReportTemplateSchema } from './report-template.js';
+export { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_VARIABLES, ReportTemplateSchema, renderReportTemplate } from './report-template.js';
 import { ExecutorConfigSchema } from './execution.js';
 
 export const AIProfileSchema = z.object({
@@ -61,7 +63,7 @@ export const ReportSettingsSchema = z.object({
   schedule_cron: z.string().default('0 9 * * *'),
   timezone: z.string().default('Asia/Shanghai'),
   notification_connection_id: z.string().nullable().default(null),
-  skill_id: z.string().default('batch-digest-generator'),
+  template: ReportTemplateSchema.default(DEFAULT_REPORT_TEMPLATE),
   pipeline_ids: z.array(z.string()).default([]),
 });
 export type ReportSettings = z.infer<typeof ReportSettingsSchema>;

@@ -82,7 +82,6 @@ describe('Task execution and independent multi-task reports', () => {
       enabled: true,
       pipeline_ids: ['agent', 'frontend'],
       notification_connection_id: 'channel',
-      skill_id: '',
       timezone: 'Asia/Shanghai',
     });
   });
@@ -471,7 +470,6 @@ describe('Task execution and independent multi-task reports', () => {
       enabled: true,
       pipeline_ids: ['agent'],
       notification_connection_id: 'channel',
-      skill_id: '',
     });
     await report.savePlan({
       id: 'plan-b',
@@ -479,7 +477,6 @@ describe('Task execution and independent multi-task reports', () => {
       enabled: true,
       pipeline_ids: ['frontend'],
       notification_connection_id: 'channel-b',
-      skill_id: '',
     });
     seedRun('agent-ready', 'agent', 'succeeded', 'agent-article');
     seedRun('frontend-working', 'frontend', 'running', 'frontend-article');

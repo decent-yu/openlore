@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
 import {
   ReportPlanSchema,
+  renderReportTemplate,
   type ReportPlan,
   type ReportPreview,
   type RunOutput,
@@ -18,8 +19,6 @@ import {
 import { calendarDayBounds } from '../../infrastructure/time/calendar.js';
 import { GenericWebhookSender } from '../../infrastructure/notifications/generic_webhook/sender.js';
 import { secretsStore } from '../../infrastructure/secrets/local_file/secrets_store.js';
-import { getAIAdapterWithFallback } from '../../infrastructure/ai/fallback_runner.js';
-import { skillsService } from '../skills/service.js';
 import { validateCron } from '../../infrastructure/time/cron.js';
 
 export class ReportService {
@@ -220,7 +219,12 @@ export class ReportService {
       }
     }
     result.articles = [...articles.values()];
-    result.summary = `# ${config.name} · ${date}\n\n汇总 ${result.tasks.length} 个流水线任务，共 ${result.articles.length} 篇精选。\n\n${sections.join('\n\n')}`;
+    result.summary = renderReportTemplate(config.template, {
+      report_name: config.name, date, task_count: result.tasks.length,
+      article_count: result.articles.length,
+      deep_count: result.articles.filter((article) => article.is_deep_analyzed).length,
+      content: sections.join('\n\n'),
+    });
     if (result.state === 'waiting')
       result.message = '等待所选任务今天全部成功完成并归档后再汇报';
     else if (result.articles.length === 0) {
@@ -288,33 +292,7 @@ export class ReportService {
           state: 'sent',
           message: '今天这些任务的汇报已发送，未重复推送',
         };
-      let summary = preview.summary;
-      const adapter = getAIAdapterWithFallback();
-      const skill = config.skill_id
-        ? await skillsService.getSkill(config.skill_id, 'default')
-        : null;
-      if (adapter && skill) {
-        try {
-          const response = await adapter.execute({
-            jobId: batchId,
-            profileId: 'default',
-            taskType: 'digest',
-            skillId: skill.id,
-            skillRevision: skill.revision,
-            prompt: `$${skill.id}
-请使用此 Skill 汇总 input/article.md 中的任务结果。\n请按任务汇总已归档结果，保留原文链接与任务名称，不添加材料外的事实。输出 Markdown。`,
-            material: preview.summary,
-            timeoutMs: 60000,
-          });
-          const markdown =
-            typeof response.result === 'string'
-              ? response.result
-              : response.result?.markdown;
-          if (response.status === 'success' && markdown) summary = markdown;
-        } catch {
-          /* Use the structured summary when the optional AI summarizer fails. */
-        }
-      }
+      const summary = preview.summary;
       const deepCount = preview.articles.filter(
         (article) => article.is_deep_analyzed,
       ).length;

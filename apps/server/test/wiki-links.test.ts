@@ -22,6 +22,9 @@ import {
 } from "../src/modules/delivery/wiki-links.js";
 import { createServer } from "../src/http/server.js";
 import { GitHubClient } from "../src/infrastructure/repositories/github/client.js";
+import * as aiAdapters from "../src/infrastructure/ai/fallback_runner.js";
+import { GenericWebhookSender } from "../src/infrastructure/notifications/generic_webhook/sender.js";
+import { secretsStore } from "../src/infrastructure/secrets/local_file/secrets_store.js";
 
 const base = "https://wiki.mua5201314.com/raven/openlore-knowledge-vault";
 const directory = "20261015-02/01-deno-is-joining-cloudflare";
@@ -329,4 +332,86 @@ it("upgrades existing repository records without losing them, and initializes re
     wiki_base_url: "",
     wiki_root_path: "",
   });
+});
+
+it("saves each plan template and rejects missing content or unknown variables", async () => {
+  const template =
+    "# {{report_name}} / {{date}}\n\n{{content}}\n\n共 {{article_count}} 篇。";
+  const plan = await reportService.savePlan({
+    id: "custom",
+    name: "Wiki 日报",
+    enabled: false,
+    pipeline_ids: ["task"],
+    template,
+  });
+  expect(plan.template).toBe(template);
+  expect((await reportService.getPlan("custom")).template).toBe(template);
+  expect((await reportService.preview("custom")).summary).toContain(
+    `](${expected}/research)`,
+  );
+  for (const invalid of ["没有文章清单", "{{unknown}}\n{{content}}"]) {
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/v1/reports/custom",
+      payload: { ...plan, template: invalid },
+    });
+    expect(response.statusCode).toBe(400);
+  }
+  expect((await reportService.getPlan("custom")).template).toBe(template);
+});
+
+it("sends the exact Wiki template preview without touching AI, skills or Runner jobs", async () => {
+  const db = getSqliteDatabase();
+  db.prepare(
+    "INSERT INTO notification_connections(id,name,revision,url_secret_ref) VALUES ('notify','Test channel','v1','test-webhook')",
+  ).run();
+  vi.spyOn(secretsStore, "getSecret").mockReturnValue(
+    "https://example.com/webhook",
+  );
+  const ai = vi
+    .spyOn(aiAdapters, "getAIAdapterWithFallback")
+    .mockImplementation(() => {
+      throw new Error("Reports must not use AI");
+    });
+  const sender = vi
+    .spyOn(GenericWebhookSender, "send")
+    .mockResolvedValue({ status: "sent" });
+  await reportService.savePlan({
+    id: "fixed",
+    name: "Wiki 日报",
+    enabled: true,
+    pipeline_ids: ["task"],
+    notification_connection_id: "notify",
+    template: "# {{report_name}}\n\n{{content}}\n\n研报 {{deep_count}} 篇",
+  });
+  const preview = await reportService.preview("fixed");
+  const aiCount = db
+    .prepare("SELECT count(*) count FROM ai_execution_logs")
+    .get();
+  const jobCount = db.prepare("SELECT count(*) count FROM ai_jobs").get();
+  expect((await reportService.send("fixed")).state).toBe("sent");
+  expect(sender.mock.calls[0][1].summary).toBe(preview.summary);
+  expect(sender.mock.calls[0][1].articles?.[0].url).toBe(
+    `${expected}/research`,
+  );
+  expect(ai).not.toHaveBeenCalled();
+  expect(
+    db.prepare("SELECT count(*) count FROM ai_execution_logs").get(),
+  ).toEqual(aiCount);
+  expect(db.prepare("SELECT count(*) count FROM ai_jobs").get()).toEqual(
+    jobCount,
+  );
+  const record = JSON.parse(
+    (
+      db
+        .prepare(
+          "SELECT response_json FROM deliveries WHERE target_kind='webhook'",
+        )
+        .get() as { response_json: string }
+    ).response_json,
+  );
+  expect(record.summary).toBe(preview.summary);
+  expect(record).not.toHaveProperty("ai_log_id");
+  await reportService.send("fixed");
+  expect(sender).toHaveBeenCalledTimes(1);
 });

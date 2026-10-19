@@ -137,7 +137,7 @@ export function SettingsPage() {
     mutationFn: api.saveRepo,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repos'] });
-      for (const queryKey of ['daily-feed', 'library', 'reports', 'report-preview']) queryClient.invalidateQueries({ queryKey: [queryKey] });
+      for (const queryKey of ['daily-feed', 'library', 'reports', 'reportPreview']) queryClient.invalidateQueries({ queryKey: [queryKey] });
       setRepoModal((prev) => ({ ...prev, open: false }));
     },
   });
