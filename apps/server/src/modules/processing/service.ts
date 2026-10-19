@@ -151,11 +151,13 @@ export class ProcessingService {
         material: JSON.stringify(batch),
         outputSchema: {
           type: "object",
+          additionalProperties: false,
           properties: {
             selected: {
               type: "array",
               items: {
                 type: "object",
+                additionalProperties: false,
                 properties: {
                   article_id: { type: "string" },
                   reason: { type: "string" },

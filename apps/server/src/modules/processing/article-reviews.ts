@@ -167,6 +167,7 @@ export class ArticleReviewsService {
         }),
         outputSchema: {
           type: "object",
+          additionalProperties: false,
           properties: {
             quality: { type: "number", minimum: 0, maximum: 100 },
             positioning: { type: "string" },

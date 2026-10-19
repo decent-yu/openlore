@@ -113,6 +113,10 @@ it("compares the entire reviewed pool in one AI call, excluding archived, busy a
   );
   expect(execute).toHaveBeenCalledTimes(1);
   expect(execute.mock.calls[0][0].taskType).toBe("select");
+  expect(execute.mock.calls[0][0].outputSchema).toMatchObject({
+    additionalProperties: false,
+    properties: { selected: { items: { additionalProperties: false } } },
+  });
   expect(JSON.parse(execute.mock.calls[0][0].material)).toHaveLength(50);
   expect(result.entries.map((entry) => entry.article_id)).toEqual([
     ids[49],

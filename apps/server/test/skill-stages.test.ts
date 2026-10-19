@@ -128,6 +128,10 @@ it("reviews new admitted articles independently and reuses the shared result for
   expect(getArticleReviews([id]).get(id)?.result).toEqual(assessment);
   const review = execute.mock.calls[0][0];
   expect(review.taskType).toBe("assess");
+  expect(review.outputSchema).toMatchObject({
+    additionalProperties: false,
+    required: ["quality", "positioning", "summary", "tags", "reason", "evidence_refs"],
+  });
   expect(review.groupId).toBeUndefined();
   expect(review.prompt).not.toContain("Agent systems");
   expect(review.material).toContain(evidence);
