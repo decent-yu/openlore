@@ -346,9 +346,6 @@ export function PipelinesPage() {
                       update("schedule_cron", event.target.value)
                     }
                   />
-                  <span className="mt-1 block text-[11px] font-normal text-neutral-400">
-                    0 8 * * * 表示每天 08:00
-                  </span>
                 </label>
                 <label className="space-y-1.5 text-xs font-medium text-neutral-700">
                   AI 执行器
@@ -371,7 +368,8 @@ export function PipelinesPage() {
               <label className="block text-xs font-medium text-neutral-700">
                 关注领域与定位
                 <textarea
-                  className="mt-1.5 min-h-28 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
+                  rows={2}
+                  className="mt-1.5 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
                   value={form.description}
                   onChange={(event) =>
                     update("description", event.target.value)
