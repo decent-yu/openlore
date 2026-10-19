@@ -13,12 +13,12 @@ export const feedRoutes: FastifyPluginAsync = async (fastify) => {
       article_id: string;
       source?: 'user_interest' | 'ai_daily_auto';
     };
-    return feedService.researchArticle(body.group_id, body.article_id, body.source || 'user_interest');
+    return feedService.researchArticle(body.group_id, body.article_id);
   });
 
   fastify.post('/articles/:id/interest', async (request) => {
     const { id } = request.params as { id: string };
     const body = (request.body as { interested?: boolean; group_id?: string }) || {};
-    return feedService.toggleArticleInterest(id, body.interested, body.group_id);
+    return feedService.toggleArticleInterest(id, body.interested);
   });
 };

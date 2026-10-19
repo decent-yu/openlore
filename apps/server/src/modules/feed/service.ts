@@ -1,308 +1,240 @@
-import { getPublishedWikiLinks, wikiLinkKey } from '../delivery/wiki-links.js';
-import fs from 'node:fs';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { RunOutputSchema, type DailyFeedArticle, type Group } from '@openlore/contracts';
-import { getDb } from '../../infrastructure/persistence/sqlite/db.js';
+import crypto from "node:crypto";
+import { desc, eq } from "drizzle-orm";
+import type { DailyFeedArticle, Group } from "@openlore/contracts";
 import {
-  articleRevisionsTable,
+  getDb,
+  getSqliteDatabase,
+} from "../../infrastructure/persistence/sqlite/db.js";
+import {
   articlesTable,
-  deliveriesTable,
-  groupItemsTable,
-  groupsTable,
-  researchTasksTable,
-  sourceItemsTable,
   runsTable,
-} from '../../infrastructure/persistence/sqlite/schema.js';
-import { deliveryService } from '../delivery/service.js';
-import { groupsService } from '../groups/service.js';
-import { researchService } from '../research/service.js';
-import { calendarDayBounds } from '../../infrastructure/time/calendar.js';
-import { listPoolCandidates } from '../processing/candidates.js';
-import { settingsService } from '../settings/service.js';
+} from "../../infrastructure/persistence/sqlite/schema.js";
+import { groupsService } from "../groups/service.js";
+import { researchService } from "../research/service.js";
+import { deliveryService } from "../delivery/service.js";
+import {
+  claimResearchArticle,
+  releaseResearchClaims,
+} from "../research/state.js";
+import { settingsService } from "../settings/service.js";
+import { getPublishedWikiLinks, wikiLinkKey } from "../delivery/wiki-links.js";
+import { listPoolCandidates } from "../processing/candidates.js";
 
 export interface DailyFeedResponse {
   group: Group | null;
   groups: Array<{ id: string; name: string }>;
   date: string;
   has_run_today: boolean;
-  current_run?: { id: string; status: string; stage: string; error_message?: string | null };
-
+  current_run?: {
+    id: string;
+    status: string;
+    stage: string;
+    error_message?: string | null;
+  };
   available_dates: string[];
   stats: {
     pool_count: number;
-    total_selected_count: number;
     deep_analyzed_count: number;
-    candidate_remaining_count: number;
+    pending_count: number;
   };
   deep_articles: DailyFeedArticle[];
-  candidate_articles: DailyFeedArticle[];
 }
-
 export class FeedService {
-  async getDailyFeed(groupId?: string, dateStr?: string): Promise<DailyFeedResponse> {
-    const db = getDb();
-    const allGroups = await groupsService.listGroups();
-    const now = new Date();
-    const settings = await settingsService.getSettings();
-    const dateKey = (date: string | Date) => new Intl.DateTimeFormat('en-CA', { timeZone: settings.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(date));
-    const todayStr = dateKey(now);
-    const targetDate = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : todayStr;
-
-    if (allGroups.length === 0) {
-      return {
-        group: null,
-        groups: [],
-        date: targetDate,
-        has_run_today: false,
-        available_dates: [todayStr],
-        stats: {
-          pool_count: 0,
-          total_selected_count: 0,
-          deep_analyzed_count: 0,
-          candidate_remaining_count: 0,
-        },
-        deep_articles: [],
-        candidate_articles: [],
-      };
-    }
-
-    const group = (groupId ? allGroups.find((g) => g.id === groupId) : allGroups[0]) || allGroups[0];
-
-    // Compute available dates from group_items and runs
-    const availableDatesSet = new Set<string>();
-    availableDatesSet.add(todayStr);
-
-    const allGroupItems = db
-      .select({ updatedAt: groupItemsTable.updatedAt })
-      .from(groupItemsTable)
-      .where(and(eq(groupItemsTable.groupId, group.id), eq(groupItemsTable.decision, 'selected')))
-      .all();
-    for (const gi of allGroupItems) {
-      if (gi.updatedAt) availableDatesSet.add(dateKey(gi.updatedAt));
-    }
-
-    const taskRuns = db.select().from(runsTable).where(eq(runsTable.groupId, group.id)).orderBy(desc(runsTable.startedAt)).all();
-    for (const run of taskRuns) {
-      if (run.status === 'succeeded') availableDatesSet.add(dateKey(run.finishedAt || run.startedAt));
-    }
-    const availableDates = Array.from(availableDatesSet).sort().reverse();
-    const pool = listPoolCandidates(group.source_ids);
-    const currentRun = taskRuns.find((run) => run.status === 'running' || dateKey(run.finishedAt || run.startedAt) === targetDate);
-    const finishedOnDate = taskRuns.filter((run) => run.status === 'succeeded' && dateKey(run.finishedAt || run.startedAt) === targetDate);
-    const archivedOutputs = new Map<string, ReturnType<typeof RunOutputSchema.parse>['entries'][number]>();
-    const archivedCommits = new Map<string, string>();
-    for (const run of finishedOnDate) {
-      const output = RunOutputSchema.parse(JSON.parse(run.outputJson || '{}'));
-      for (const entry of output.entries) {
-        if (archivedOutputs.has(entry.article_id)) continue;
-        archivedOutputs.set(entry.article_id, entry);
-        if (output.commit_url) archivedCommits.set(entry.article_id, output.commit_url);
-      }
-    }
-    // Get selected group items
-    const rawGroupItems = db
+  async getDailyFeed(
+    groupId?: string,
+    dateStr?: string,
+  ): Promise<DailyFeedResponse> {
+    const groups = await groupsService.listGroups();
+    const { timezone } = await settingsService.getSettings();
+    const dateKey = (value: string | Date) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(value));
+    const today = dateKey(new Date());
+    const date =
+      dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : today;
+    const group =
+      groups.find((item) => item.id === groupId) || groups[0] || null;
+    const response: DailyFeedResponse = {
+      group,
+      groups: groups.map(({ id, name }) => ({ id, name })),
+      date,
+      has_run_today: false,
+      available_dates: [today],
+      stats: { pool_count: 0, deep_analyzed_count: 0, pending_count: 0 },
+      deep_articles: [],
+    };
+    if (!group) return response;
+    const db = getSqliteDatabase();
+    const runs = getDb()
       .select()
-      .from(groupItemsTable)
-      .where(and(eq(groupItemsTable.groupId, group.id), eq(groupItemsTable.decision, 'selected')))
-      .orderBy(desc(groupItemsTable.updatedAt))
+      .from(runsTable)
+      .where(eq(runsTable.groupId, group.id))
+      .orderBy(desc(runsTable.startedAt))
       .all();
-
-    // Keep archived selections available on their original delivery date.
-    const validGroupItems = rawGroupItems.filter((gi) => db.select({id:articlesTable.id}).from(articlesTable).where(eq(articlesTable.id,gi.articleId)).get());
-
-    const itemsOnDate = validGroupItems.filter(
-      (gi) => archivedOutputs.has(gi.articleId) || (finishedOnDate.some((run) => run.outputJson === '{}') && Boolean(gi.updatedAt) && dateKey(gi.updatedAt) === targetDate),
+    const current = runs.find(
+      (run) =>
+        run.status === "running" ||
+        dateKey(run.finishedAt || run.startedAt) === date,
     );
-    const hasRunToday = taskRuns.some((run) => run.status === 'succeeded' && dateKey(run.finishedAt || run.startedAt) === todayStr);
-    const groupItems = itemsOnDate;
-
-    const deepArticles: DailyFeedArticle[] = [];
-    const candidateArticles: DailyFeedArticle[] = [];
-    let completedResearch = 0;
-    const wikiLinks = getPublishedWikiLinks(groupItems.map((item) => item.articleId), group.id);
-
-    for (const gi of groupItems) {
-      const art = db.select().from(articlesTable).where(eq(articlesTable.id, gi.articleId)).get();
-      if (!art) continue;
-
-      const savedOutput = archivedOutputs.get(art.id);
-      let summary = savedOutput?.summary || gi.reason || '';
-      if (!summary && art.latestRevision) {
-        const rev = db
-          .select()
-          .from(articleRevisionsTable)
-          .where(eq(articleRevisionsTable.revisionHash, art.latestRevision))
-          .get();
-        if (rev && fs.existsSync(rev.contentRef)) {
-          summary = fs.readFileSync(rev.contentRef, 'utf-8').slice(0, 200).replace(/[#*`\n]/g, ' ').trim();
+    response.current_run = current
+      ? {
+          id: current.id,
+          status: current.status,
+          stage: current.stage,
+          error_message: current.errorMessage,
         }
-      }
-
-      // Check research task
-      const researchTask = db
+      : undefined;
+    const pool = listPoolCandidates(group.source_ids);
+    response.stats.pool_count = pool.length;
+    response.stats.pending_count = pool.filter(
+      (item) => !item.processed && !item.busy,
+    ).length;
+    const tasks = (await researchService.listResearchTasks(group.id))
+      .filter((task) => task.status === "succeeded" && task.archived_at)
+      .sort((a, b) => b.archived_at!.localeCompare(a.archived_at!));
+    response.available_dates = [
+      ...new Set([today, ...tasks.map((task) => dateKey(task.archived_at!))]),
+    ]
+      .sort()
+      .reverse();
+    response.has_run_today =
+      tasks.some((task) => dateKey(task.archived_at!) === today) ||
+      runs.some(
+        (run) =>
+          run.status === "succeeded" &&
+          dateKey(run.finishedAt || run.startedAt) === today,
+      );
+    const seen = new Set<string>();
+    const dated = tasks.filter(
+      (task) =>
+        dateKey(task.archived_at!) === date &&
+        !seen.has(task.article_id) &&
+        Boolean(seen.add(task.article_id)),
+    );
+    const links = getPublishedWikiLinks(
+      dated.map((task) => task.article_id),
+      group.id,
+    );
+    for (const task of dated) {
+      const article = getDb()
         .select()
-        .from(researchTasksTable)
-        .where(
-          and(
-            eq(researchTasksTable.groupId, group.id),
-            eq(researchTasksTable.articleId, art.id),
-          ),
-        )
-        .orderBy(desc(researchTasksTable.createdAt))
+        .from(articlesTable)
+        .where(eq(articlesTable.id, task.article_id))
         .get();
-
-      const isDeep = Boolean(gi.isDeepAnalyzed || (researchTask && researchTask.status === 'succeeded'));
-      if (isDeep) completedResearch++;
-      const researchDelivery = researchTask ? db.select().from(deliveriesTable).where(and(
-        eq(deliveriesTable.groupId, group.id),
-        eq(deliveriesTable.batchId, `research_${researchTask.id}`),
-        eq(deliveriesTable.targetKind, 'github'),
-      )).get() : undefined;
-      const archiveUrl = researchDelivery
-        ? (['updated', 'unchanged'].includes(researchDelivery.status) ? researchDelivery.commitUrl : null)
-        : archivedCommits.get(art.id);
-
-      const wiki = wikiLinks.get(wikiLinkKey(group.id, art.id));
-      const feedArticle: DailyFeedArticle = {
-        wiki_url: wiki?.article_url,
-        id: art.id,
-        title: art.title || 'Untitled',
-        slug: art.id,
-        author: art.author,
-        original_url: art.canonicalUrl,
-        published_at: art.publishedAt,
-        summary: summary || '暂无摘要描述',
-        tags: [group.name.split(' ')[0] || 'Tech'],
+      if (!article) continue;
+      const wiki = links.get(wikiLinkKey(group.id, article.id));
+      const delivery = db
+        .prepare(
+          `SELECT d.commit_sha,d.commit_url FROM deliveries d
+        LEFT JOIN artifact_bundles b ON b.batch_id=d.batch_id
+        WHERE d.group_id=? AND d.target_kind='github' AND d.status IN ('updated','unchanged')
+        AND (d.batch_id=? OR (b.bundle_json IS NOT NULL AND EXISTS (
+          SELECT 1 FROM json_each(b.bundle_json,'$.entries') e WHERE json_extract(e.value,'$.article_id')=?)))
+        ORDER BY d.created_at DESC,d.rowid DESC LIMIT 1`,
+        )
+        .get(group.id, `research_${task.id}`, article.id) as
+        { commit_sha: string | null; commit_url: string | null } | undefined;
+      const assessment = db
+        .prepare(
+          "SELECT result_json FROM article_assessments WHERE article_id=? AND group_id=? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(article.id, group.id) as { result_json: string } | undefined;
+      let summary = "";
+      if (assessment) {
+        try {
+          summary = JSON.parse(assessment.result_json).summary || "";
+        } catch {}
+      }
+      response.deep_articles.push({
+        id: article.id,
+        title: article.title || "Untitled",
+        slug: task.article_slug,
+        author: article.author,
+        original_url: article.canonicalUrl,
+        published_at: article.publishedAt,
+        summary,
+        tags: [group.name],
         group_id: group.id,
         group_name: group.name,
-        is_deep_analyzed: isDeep,
-        user_interested: Boolean(art.userInterested),
-        selection_source: gi.selectionSource || 'ai_daily_auto',
-        research: researchTask
-          ? {
-              id: researchTask.id,
-              status: researchTask.status,
-              report_markdown: researchTask.reportMarkdown,
-              wiki_url: researchTask.status === 'succeeded' ? wiki?.research_url : undefined,
-              questions: JSON.parse(researchTask.questionsJson || '[]'),
-              evidence: JSON.parse(researchTask.evidenceJson || '[]'),
-            }
-          : null,
-        delivery:
-          archiveUrl
-            ? {
-                commit_sha: archiveUrl.split('/').pop(),
-                commit_url: archiveUrl,
-              }
-            : null,
-      };
-
-      if (isDeep && deepArticles.length < (group.deep_analysis_count ?? 3)) {
-        deepArticles.push(feedArticle);
-      } else {
-        candidateArticles.push(feedArticle);
-      }
+        is_deep_analyzed: true,
+        user_interested: Boolean(article.userInterested),
+        selection_source: "research",
+        wiki_url: wiki?.article_url,
+        research: {
+          id: task.id,
+          status: task.status,
+          report_markdown: task.report_markdown,
+          wiki_url: wiki?.research_url,
+          questions: task.questions,
+          evidence: task.evidence,
+        },
+        delivery: delivery?.commit_url
+          ? { commit_sha: delivery.commit_sha, commit_url: delivery.commit_url }
+          : undefined,
+      });
     }
-
-    return {
-      group,
-      groups: allGroups.map((g) => ({ id: g.id, name: g.name })),
-      date: targetDate,
-      has_run_today: hasRunToday,
-      current_run: currentRun ? { id: currentRun.id, status: currentRun.status, stage: currentRun.stage, error_message: currentRun.errorMessage } : undefined,
-      available_dates: availableDates,
-      stats: {
-        pool_count: pool.length,
-        total_selected_count: groupItems.length,
-        deep_analyzed_count: completedResearch,
-        candidate_remaining_count: pool.filter(article=>!article.processed).length,
-      },
-      deep_articles: deepArticles,
-      candidate_articles: candidateArticles,
-    };
+    response.stats.deep_analyzed_count = response.deep_articles.length;
+    return response;
   }
 
-  async researchArticle(
-    groupId: string,
-    articleId: string,
-    source: 'user_interest' | 'ai_daily_auto' = 'user_interest',
-  ) {
+  async researchArticle(groupId: string, articleId: string) {
     const group = await groupsService.getGroup(groupId);
-    if (!group) throw new Error(`Group not found: ${groupId}`);
-
-    const resTask = await researchService.runResearchOnArticle(
-      groupId,
-      articleId,
-      group.research_instructions,
-    );
-
-    if (resTask && resTask.status === 'succeeded') {
-      const archive = await deliveryService.deliverResearchReport(group, resTask);
-      if (archive.status === 'failed' || archive.status === 'conflict' || archive.errors.length) {
-        throw Object.assign(new Error(`研报已生成，GitHub 归档失败：${archive.errors.map(error => error.message).join('；') || archive.status}`), {statusCode: 502});
-      }
-
-      const db = getDb();
-      const now = new Date().toISOString();
-
-      // Automatically mark as interested since user requested deep research
-      db.update(articlesTable)
-        .set({ userInterested: true, updatedAt: now })
+    if (!group) throw new Error("流水线任务不存在");
+    const owner = `manual_${crypto.randomUUID()}`;
+    if (!claimResearchArticle(articleId, groupId, owner, true))
+      throw Object.assign(new Error("文章正在调研，请稍候"), {
+        statusCode: 409,
+      });
+    try {
+      const task = await researchService.runResearchOnArticle(
+        groupId,
+        articleId,
+        group.research_instructions,
+        undefined,
+        owner,
+      );
+      if (task.status !== "succeeded") return task;
+      const archive = await deliveryService.deliverResearchReport(group, task);
+      if (
+        !["updated", "unchanged"].includes(archive.status) ||
+        archive.errors.length
+      )
+        throw Object.assign(
+          new Error(
+            `研报已生成，GitHub 归档失败：${archive.errors.map((error) => error.message).join("；") || archive.status}`,
+          ),
+          { statusCode: 502 },
+        );
+      getDb()
+        .update(articlesTable)
+        .set({ userInterested: true, updatedAt: new Date().toISOString() })
         .where(eq(articlesTable.id, articleId))
         .run();
-
-      db.update(groupItemsTable)
-        .set({
-          isDeepAnalyzed: true,
-          selectionSource: source,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(groupItemsTable.groupId, groupId),
-            eq(groupItemsTable.articleId, articleId),
-          ),
-        )
-        .run();
+      return (await researchService.listResearchTasks(groupId)).find(
+        (item) => item.id === task.id,
+      )!;
+    } finally {
+      releaseResearchClaims(owner);
     }
-
-    return resTask;
   }
-
-  async toggleArticleInterest(
-    articleId: string,
-    interested?: boolean,
-    groupId?: string,
-  ) {
+  async toggleArticleInterest(articleId: string, interested?: boolean) {
     const db = getDb();
-    const art = db.select().from(articlesTable).where(eq(articlesTable.id, articleId)).get();
-    if (!art) throw new Error(`Article not found: ${articleId}`);
-
-    const newInterested = interested !== undefined ? interested : !art.userInterested;
-    const now = new Date().toISOString();
-
+    const article = db
+      .select()
+      .from(articlesTable)
+      .where(eq(articlesTable.id, articleId))
+      .get();
+    if (!article) throw new Error("文章不存在");
+    const value = interested ?? !article.userInterested;
     db.update(articlesTable)
-      .set({ userInterested: newInterested, updatedAt: now })
+      .set({ userInterested: value, updatedAt: new Date().toISOString() })
       .where(eq(articlesTable.id, articleId))
       .run();
-
-    if (groupId) {
-      db.update(groupItemsTable)
-        .set({
-          selectionSource: newInterested ? 'user_interest' : 'ai_daily_auto',
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(groupItemsTable.groupId, groupId),
-            eq(groupItemsTable.articleId, articleId),
-          ),
-        )
-        .run();
-    }
-
-    return { ok: true, article_id: articleId, user_interested: newInterested };
+    return { ok: true, article_id: articleId, user_interested: value };
   }
 }
-
 export const feedService = new FeedService();

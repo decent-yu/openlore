@@ -58,7 +58,6 @@ describe('Separate review and research Skills', () => {
       research_skill_id: 'research-only',
       repository_connection_id: 'repo',
       base_path: 'docs/skills',
-      max_selected: 1,
       deep_analysis_count: 1,
     });
     articleId = await collectionService.persistContentItem({
@@ -79,6 +78,7 @@ describe('Separate review and research Skills', () => {
     });
   });
   beforeEach(() => {
+    getSqliteDatabase().exec('DELETE FROM research_claims; DELETE FROM research_tasks');
     getSqliteDatabase().exec(
       'DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM article_assessments',
     );
@@ -111,7 +111,7 @@ describe('Separate review and research Skills', () => {
     const group = (await groupsService.getGroup('task'))!;
     const result = await processingService.runProcessingForGroup(group, 'run');
     expect(result.entries).toHaveLength(1);
-    expect(result.researchArticleIds).toEqual([articleId]);
+    expect(result.entries.map(entry=>entry.article_id)).toEqual([articleId]);
     expect(execute).toHaveBeenCalledTimes(1);
     const review = execute.mock.calls[0][0];
     expect(review.runId).toBe('run');
@@ -150,7 +150,7 @@ describe('Separate review and research Skills', () => {
     await expect(processingService.runProcessingForGroup((await groupsService.getGroup('task'))!,'ungrounded')).rejects.toThrow('正文证据');
     execute.mockResolvedValue({status:'success',provider:'mock',model:'mock',durationMs:0,result:{relevance:95,quality:55,reason:'No implementation evidence',summary:'Announcement',evidence_refs:['Engineering evidence and code']}});
     const result=await processingService.runProcessingForGroup((await groupsService.getGroup('task'))!,'low-quality');
-    expect(result.counts.selected).toBe(0);
+    expect(result.counts.planned).toBe(0);
     expect(getSqliteDatabase().prepare("SELECT decision FROM group_items WHERE article_id=?").get(articleId)).toEqual({decision:'excluded'});
   });
 

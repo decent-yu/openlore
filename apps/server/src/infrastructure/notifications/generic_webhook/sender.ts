@@ -5,7 +5,7 @@ export interface WebhookPayload {
   event_id: string;
   group?: { id: string; name: string };
   status: 'success' | 'partial' | 'failed';
-  counts?: { selected: number; failed: number; deferred: number };
+  counts?: { published: number; failed: number; deferred: number };
   summary: string;
   card_title?: string;
   repository_url?: string;

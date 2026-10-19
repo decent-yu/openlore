@@ -20,11 +20,8 @@ async function serve() {
       const attempts = JSON.parse(log.attempts_json).map((attempt: any) => attempt.status === 'running' ? {...attempt,status:'interrupted',finished_at:now,duration_ms:Date.now()-Date.parse(attempt.started_at),error:{code:'server_restart',message:'服务重启，执行状态无法继续追踪'}} : attempt);
       db.prepare("UPDATE ai_execution_logs SET status='interrupted',finished_at=?,duration_ms=CAST((julianday(?) - julianday(started_at))*86400000 AS INTEGER),error_message='服务重启导致调用中断',attempts_json=? WHERE id=?").run(now,now,JSON.stringify(attempts),log.id);
     }
-    const interrupted = db.prepare("SELECT id,group_id,output_json FROM runs WHERE status='running'").all() as Array<{id:string;group_id:string;output_json:string}>;
-    for (const run of interrupted) {
-      const output = JSON.parse(run.output_json || '{}');
-      for (const entry of output.entries || []) db.prepare("DELETE FROM group_items WHERE group_id=? AND article_id=? AND decision='selected'").run(run.group_id,entry.article_id);
-    }
+    db.prepare("UPDATE research_tasks SET status='failed',error_message='服务重启，调研已中断',finished_at=? WHERE status='running'").run(new Date().toISOString());
+    db.prepare('DELETE FROM research_claims').run();
     db.prepare("UPDATE runs SET status='failed',error_message='服务重启导致任务中断，请重新运行',finished_at=? WHERE status='running'").run(new Date().toISOString());
     db.prepare("UPDATE ai_jobs SET status='cancelled',lease_token=NULL WHERE status IN ('queued','running')").run();
   })();

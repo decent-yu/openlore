@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const DecisionSchema = z.object({
   article_id: z.string(),
   revision: z.string(),
-  decision: z.enum(['selected', 'excluded', 'pending', 'deferred']),
+  decision: z.enum(['qualified', 'excluded']),
   reason: z.string(),
   matched_source_ids: z.array(z.string()).default([]),
   scores: z
@@ -54,7 +54,7 @@ export const ProcessingRequestSchema = z.object({
   skill_revision: z.string().default('v1'),
   prompt_revision: z.string().default('v1'),
   budget: z.object({
-    selected_limit: z.number().int().positive().default(10),
+    research_limit: z.number().int().nonnegative().default(3),
     deadline: z.string().optional(),
   }),
 });

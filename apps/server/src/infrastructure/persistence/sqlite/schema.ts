@@ -83,9 +83,7 @@ export const groupsTable = sqliteTable('groups', {
   basePath: text('base_path').notNull(),
   scheduleCron: text('schedule_cron').notNull().default('0 8 * * *'),
   timezone: text('timezone').notNull().default('Asia/Shanghai'),
-  maxSelected: integer('max_selected').notNull().default(10),
   deepAnalysisCount: integer('deep_analysis_count').notNull().default(3),
-  enableResearch: integer('enable_research', { mode: 'boolean' }).notNull().default(true),
   researchInstructions: text('research_instructions').notNull().default(''),
   assessmentSkillId: text('assessment_skill_id').notNull().default('tech-article-extractor'),
   researchSkillId: text('research_skill_id').notNull().default('deep-research-expert'),
@@ -145,7 +143,7 @@ export const groupItemsTable = sqliteTable('group_items', {
   articleId: text('article_id').notNull(),
   revisionHash: text('revision_hash').notNull(),
   rulesRevision: text('rules_revision').notNull(),
-  decision: text('decision').notNull(), // 'selected' | 'excluded' | 'pending' | 'deferred'
+  decision: text('decision').notNull(), // 'qualified' | 'excluded'
   reason: text('reason').notNull().default(''),
   scoresJson: text('scores_json'),
   matchedSourceIdsJson: text('matched_source_ids_json').notNull().default('[]'),
@@ -208,6 +206,8 @@ export const researchTasksTable = sqliteTable('research_tasks', {
   evidenceJson: text('evidence_json').notNull().default('[]'),
   executionJson: text('execution_json').notNull().default('{}'),
   model: text('model'),
+  archivedAt: text('archived_at'),
+  requestHash: text('request_hash').notNull().default(''),
   reportMarkdown: text('report_markdown').notNull().default(''),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   finishedAt: text('finished_at'),

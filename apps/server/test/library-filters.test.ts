@@ -69,12 +69,19 @@ beforeEach(() => {
   const mark = db.prepare(
     "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,is_deep_analyzed) VALUES (?,'task',?,'rev','v1',?,?)",
   );
-  mark.run("selected", "selected", "selected", 0);
+  mark.run("selected", "selected", "qualified", 0);
+  db.prepare("UPDATE group_items SET scores_json=? WHERE id=?").run(
+    '{"relevance":85,"quality":85}',
+    "selected",
+  );
   mark.run("deep", "deep", "selected", 1);
   mark.run("excluded", "excluded", "excluded", 0);
   mark.run("deferred", "deferred", "deferred", 0);
   db.prepare(
-    "INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status) VALUES ('research','task','research-only','rev','succeeded')",
+    "INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('research','task','research-only','rev','succeeded','2026-10-19T03:00:00Z')",
+  ).run();
+  db.prepare(
+    "INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('deep','task','deep','rev','succeeded','2026-10-19T03:00:00Z')",
   ).run();
   for (const id of ["unselected", "selected", "deep"])
     db.prepare(
@@ -95,25 +102,23 @@ it("partitions all articles into unselected, selected without research, and comp
   const all = await list();
   expect(all.filter_meta).toMatchObject({
     total_count: 8,
-    unselected_count: 5,
-    selected_count: 1,
+    scored_count: 1,
     deep_count: 2,
     interested_count: 2,
   });
-  expect(ids(await list("status_filter=unselected"))).toEqual([
+  expect(ids(await list("status_filter=unreviewed"))).toEqual([
     "deferred",
     "excluded",
     "old",
     "tomorrow",
     "unselected",
   ]);
-  expect(ids(await list("status_filter=selected"))).toEqual(["selected"]);
+  expect(ids(await list("status_filter=scored"))).toEqual(["selected"]);
   expect(ids(await list("status_filter=deep"))).toEqual([
     "deep",
     "research-only",
   ]);
   expect(all.items.find((item) => item.id === "deep")).toMatchObject({
-    is_selected: false,
     is_deep_analyzed: true,
   });
 });
@@ -127,11 +132,11 @@ it("intersects the independent interest flag with every article state", async ()
     "deep",
   ]);
   expect(
-    ids(await list("interested_only=true&status_filter=unselected")),
+    ids(await list("interested_only=true&status_filter=unreviewed")),
   ).toEqual(["unselected"]);
-  expect(
-    ids(await list("interested_only=true&status_filter=selected")),
-  ).toEqual([]);
+  expect(ids(await list("interested_only=true&status_filter=scored"))).toEqual(
+    [],
+  );
 });
 
 it("filters discovery and publication independently and combines them by intersection", async () => {
@@ -199,8 +204,7 @@ it("includes both selected date endpoints and supports a single local calendar d
 it("computes state counters within the active date scope and preserves pagination totals", async () => {
   const data = await list("time_range=today&status_filter=deep&page_size=1");
   expect(data.filter_meta).toMatchObject({
-    unselected_count: 1,
-    selected_count: 1,
+    scored_count: 1,
     deep_count: 1,
   });
   expect(data.pagination).toMatchObject({ total_count: 1, total_pages: 1 });
@@ -212,8 +216,7 @@ it("intersects source, group and search scopes for both counts and results", asy
   expect(ids(data)).toEqual(["deep", "selected"]);
   expect(data.filter_meta).toMatchObject({
     total_count: 2,
-    unselected_count: 0,
-    selected_count: 1,
+    scored_count: 1,
     deep_count: 1,
   });
   expect(ids(await list("source_id=source&search=Deep"))).toEqual(["deep"]);
@@ -293,18 +296,21 @@ it("splits unselected articles by effective scoring and keeps scores for selecte
     }),
     "2026-10-19T03:01:00Z",
   );
-  const all = await list("status_filter=unselected");
+  const all = await list();
   expect(all.filter_meta).toMatchObject({
-    unselected_count: 5,
     unreviewed_count: 2,
-    scored_count: 3,
+    scored_count: 4,
   });
-  expect(
-    ids(await list("status_filter=unselected&review_filter=unreviewed")),
-  ).toEqual(["old", "tomorrow"]);
-  expect(
-    ids(await list("status_filter=unselected&review_filter=scored")),
-  ).toEqual(["deferred", "excluded", "unselected"]);
+  expect(ids(await list("status_filter=unreviewed"))).toEqual([
+    "old",
+    "tomorrow",
+  ]);
+  expect(ids(await list("status_filter=scored"))).toEqual([
+    "deferred",
+    "excluded",
+    "selected",
+    "unselected",
+  ]);
   const cached = all.items.find((item) => item.id === "unselected")!;
   expect(cached.assessments).toEqual([
     {
@@ -318,7 +324,7 @@ it("splits unselected articles by effective scoring and keeps scores for selecte
     },
   ]);
   expect(
-    (await list("status_filter=selected")).items[0].assessments[0].overall,
+    (await list("status_filter=scored")).items[0].assessments[0].overall,
   ).toBe(90.5);
   expect(
     (await list("status_filter=deep")).items.find((item) => item.id === "deep")
@@ -347,7 +353,7 @@ it("does not treat malformed, incomplete or failed calls as scored and accepts g
   ).run();
   expect((await list()).filter_meta).toMatchObject({
     unreviewed_count: 5,
-    scored_count: 0,
+    scored_count: 1,
   });
   db.prepare("UPDATE group_items SET scores_json=? WHERE article_id=?").run(
     '{"relevance":0,"quality":0}',
@@ -357,9 +363,11 @@ it("does not treat malformed, incomplete or failed calls as scored and accepts g
     "invalid-json",
     "deferred",
   );
-  const data = await list("status_filter=unselected&review_filter=scored");
-  expect(ids(data)).toEqual(["excluded"]);
-  expect(data.items[0].assessments[0]).toMatchObject({
+  const data = await list("status_filter=scored");
+  expect(ids(data)).toEqual(["excluded", "selected"]);
+  expect(
+    data.items.find((item) => item.id === "excluded")!.assessments[0],
+  ).toMatchObject({
     relevance: 0,
     quality: 0,
     overall: 0,
@@ -385,23 +393,22 @@ it("keeps latest valid scores per pipeline separate and uses the pipeline scope 
       time,
     );
   }
-  const all = await list("status_filter=unselected&review_filter=scored");
+  const all = await list("status_filter=scored");
   expect(
-    all.items[0].assessments.map((a) => [a.group_id, a.relevance]),
+    all.items
+      .find((item) => item.id === "excluded")!
+      .assessments.map((a) => [a.group_id, a.relevance]),
   ).toEqual([
     ["other", 90],
     ["task", 80],
   ]);
-  const scoped = await list(
-    "group_id=task&status_filter=unselected&review_filter=scored",
-  );
-  expect(ids(scoped)).toEqual(["excluded"]);
+  const scoped = await list("group_id=task&status_filter=scored");
+  expect(ids(scoped)).toEqual(["excluded", "selected"]);
   expect(scoped.items[0].assessments).toHaveLength(1);
   expect(scoped.items[0].assessments[0].group_id).toBe("task");
   expect(scoped.filter_meta).toMatchObject({
-    unselected_count: 2,
     unreviewed_count: 1,
-    scored_count: 1,
+    scored_count: 2,
   });
 });
 
@@ -415,18 +422,16 @@ it("combines review filters with date, source, interest and pagination without c
     "2026-10-19T03:00:00Z",
   );
   const data = await list(
-    "time_range=today&source_id=source&status_filter=unselected&review_filter=scored&interested_only=true&page_size=1",
+    "time_range=today&source_id=source&status_filter=scored&interested_only=true&page_size=1",
   );
   expect(ids(data)).toEqual(["unselected"]);
   expect(data.pagination.total_count).toBe(1);
   expect(data.filter_meta).toMatchObject({
-    unselected_count: 1,
     unreviewed_count: 0,
-    scored_count: 1,
-    selected_count: 1,
+    scored_count: 2,
     deep_count: 1,
   });
   expect(
-    (await app.inject("/api/v1/library?review_filter=failed")).statusCode,
+    (await app.inject("/api/v1/library?status_filter=failed")).statusCode,
   ).toBe(400);
 });

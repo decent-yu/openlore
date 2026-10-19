@@ -42,9 +42,7 @@ export class GroupsService {
         source_ids: rules.map((r) => r.sourceId),
         schedule_cron: r.scheduleCron,
         timezone: r.timezone,
-        max_selected: r.maxSelected,
         deep_analysis_count: r.deepAnalysisCount ?? 3,
-        enable_research: Boolean(r.enableResearch),
         research_instructions: r.researchInstructions,
       assessment_skill_id: r.assessmentSkillId,
       research_skill_id: r.researchSkillId,
@@ -81,9 +79,7 @@ export class GroupsService {
       source_ids: rules.map((r) => r.sourceId),
       schedule_cron: r.scheduleCron,
       timezone: r.timezone,
-      max_selected: r.maxSelected,
       deep_analysis_count: r.deepAnalysisCount ?? 3,
-      enable_research: Boolean(r.enableResearch),
       research_instructions: r.researchInstructions,
       assessment_skill_id: r.assessmentSkillId,
       research_skill_id: r.researchSkillId,
@@ -132,9 +128,7 @@ export class GroupsService {
     source_ids?: string[];
     schedule_cron?: string;
     timezone?: string;
-    max_selected?: number;
     deep_analysis_count?: number;
-    enable_research?: boolean;
     research_instructions?: string;
     assessment_skill_id?: string;
     research_skill_id?: string;
@@ -143,7 +137,6 @@ export class GroupsService {
     validateCron(data.schedule_cron || '0 8 * * *');
     new Intl.DateTimeFormat('en', { timeZone: data.timezone || 'Asia/Shanghai' });
     const id = data.id || `group_${crypto.randomUUID().slice(0, 8)}`;
-    if (data.max_selected !== undefined && (!Number.isInteger(data.max_selected) || data.max_selected < 1)) throw new Error('精选篇数必须为正整数');
     if (data.deep_analysis_count !== undefined && (!Number.isInteger(data.deep_analysis_count) || data.deep_analysis_count < 0)) throw new Error('深度调研篇数不能为负数');
     const normalizedPath = normalizeRoutePath(data.base_path);
     await this.validateRoute(data.repository_connection_id, normalizedPath, id);
@@ -161,9 +154,7 @@ export class GroupsService {
       basePath: normalizedPath,
       scheduleCron: data.schedule_cron || '0 8 * * *',
       timezone: data.timezone || 'Asia/Shanghai',
-      maxSelected: data.max_selected || 10,
       deepAnalysisCount: data.deep_analysis_count !== undefined ? data.deep_analysis_count : 3,
-      enableResearch: data.enable_research !== undefined ? data.enable_research : true,
       researchInstructions: data.research_instructions || '',
       assessmentSkillId: data.assessment_skill_id || 'tech-article-extractor',
       researchSkillId: data.research_skill_id || 'deep-research-expert',

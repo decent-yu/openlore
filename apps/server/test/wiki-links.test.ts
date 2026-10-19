@@ -73,7 +73,7 @@ beforeEach(async () => {
     "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,is_deep_analyzed) VALUES ('item','task','article','rev','v1','selected',1)",
   ).run();
   db.prepare(
-    "INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,report_markdown) VALUES ('research','task','article','rev','succeeded','# Research')",
+    "INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,report_markdown,archived_at) VALUES ('research','task','article','rev','succeeded','# Research',CURRENT_TIMESTAMP)",
   ).run();
   db.prepare(
     "INSERT INTO collections(id,group_id,date_sequence) VALUES ('collection','task','20261015-02')",

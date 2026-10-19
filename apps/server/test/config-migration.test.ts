@@ -14,6 +14,20 @@ beforeAll(() => {
   process.env.OPENLORE_DATA_DIR = dataDir;
   initDatabase();
 });
+
+it('removes the old selection quota and distinguishes acknowledged reports from generated-only content',()=>{
+ const db=getSqliteDatabase();
+ db.exec("ALTER TABLE groups ADD COLUMN max_selected INTEGER DEFAULT 10; ALTER TABLE groups ADD COLUMN enable_research INTEGER DEFAULT 1; ALTER TABLE research_tasks DROP COLUMN archived_at; ALTER TABLE research_tasks DROP COLUMN request_hash");
+ db.prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,finished_at) VALUES ('acknowledged','agent','one','rev','succeeded','2020-01-01T00:00:00Z'),('generated-only','agent','two','rev','succeeded','2020-01-01T00:00:00Z')").run();
+ db.prepare("INSERT INTO deliveries(id,group_id,batch_id,target_kind,status,updated_at) VALUES ('receipt','agent','research_acknowledged','github','updated','2020-01-02T00:00:00Z')").run();
+ initDatabase();
+ const columns=(db.pragma('table_info(groups)') as Array<{name:string}>).map(c=>c.name);
+ expect(columns).not.toContain('max_selected');expect(columns).not.toContain('enable_research');
+ expect(db.prepare("SELECT archived_at FROM research_tasks WHERE id='acknowledged'").get()).toEqual({archived_at:'2020-01-02T00:00:00.000Z'});
+ expect(db.prepare("SELECT archived_at FROM research_tasks WHERE id='generated-only'").get()).toEqual({archived_at:null});
+ initDatabase();
+ expect(db.prepare("SELECT archived_at FROM research_tasks WHERE id='generated-only'").get()).toEqual({archived_at:null});
+});
 afterAll(() => {
   getSqliteDatabase().close();
   fs.rmSync(dataDir, { recursive: true, force: true });

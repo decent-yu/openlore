@@ -30,18 +30,19 @@ describe('All unprocessed pool articles participate', () => {
       body:{value:'Agent engineering and evaluation',format:'text',completeness:'full'},attachments:[],fetched_at:new Date().toISOString(),fetch_method:'test',issues:[]}));
     const db=getSqliteDatabase();
     db.prepare("INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision) VALUES ('already','another-group',?,'r','v','selected')").run(ids[48]);
-    db.prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status) VALUES ('deep','another-group',?,'r','succeeded')").run(ids[49]);
+    db.prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('deep','another-group',?,'r','succeeded','2026-10-19T00:00:00Z')").run(ids[49]);
     db.prepare("INSERT INTO source_items(id,source_id,article_id) VALUES ('second-link','second-source',?)").run(ids[0]);
     db.transaction(()=>{for(let i=0;i<1000;i++) db.prepare("INSERT INTO collection_candidates(source_id,item_id,article_id,item_json,rule_revision,status,updated_at) VALUES ('source',?,?,'{}','v','history',?)").run(`rejected${i}`,`not-an-article${i}`,new Date().toISOString());})();
   });
   afterAll(()=>{vi.restoreAllMocks();getSqliteDatabase().close();if(previousDataDir===undefined)delete process.env.OPENLORE_DATA_DIR;else process.env.OPENLORE_DATA_DIR=previousDataDir;fs.rmSync(dir,{recursive:true,force:true});});
-  it('assesses all 48 remaining articles once before selecting 10, without date/status gates or candidate caps',async()=>{
-    const group=await groupsService.saveGroup({id:'group',name:'Agent Engineering',repository_connection_id:'repo',base_path:'docs/agents',max_selected:10,deep_analysis_count:3,source_ids:['source','second-source']});
+  it('assesses all 49 remaining articles before taking the top 3 for research, without date/status gates or candidate caps',async()=>{
+    const group=await groupsService.saveGroup({id:'group',name:'Agent Engineering',repository_connection_id:'repo',base_path:'docs/agents',deep_analysis_count:3,source_ids:['source','second-source']});
     const result=await processingService.runProcessingForGroup(group,'full-pool');
-    expect(execute).toHaveBeenCalledTimes(48);
-    expect(result.counts).toEqual({observed:50,already_processed:2,candidate:48,selected:10,excluded:0,deferred:38});
-    expect(new Set(execute.mock.calls.map(([input])=>input.material.match(/Title: Article (\d+)/)?.[1])).size).toBe(48);
-    expect(result.entries.some(entry=>entry.article_id===ids[47])).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(49);
+    expect(result.counts).toEqual({observed:50,already_processed:1,candidate:49,planned: 3,excluded:0,deferred:46});
+    expect(new Set(execute.mock.calls.map(([input])=>input.material.match(/Title: Article (\d+)/)?.[1])).size).toBe(49);
+    expect(result.entries).toHaveLength(3);
+    expect(result.entries.every(entry=>Number(entry.title.split(' ')[1])>=42)).toBe(true);
     expect(group).not.toHaveProperty('lookback_days');
     expect(listPoolCandidates([])).toHaveLength(50);
     expect(listPoolCandidates(['second-source']).map(row=>row.id)).toEqual([ids[0]]);

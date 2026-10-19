@@ -1,3 +1,5 @@
+import { feedService } from "../../modules/feed/service.js";
+import { completedResearchSql } from "../../modules/research/state.js";
 import {
   LIBRARY_ASSESSMENTS_CTE,
   getLibraryAssessments,
@@ -11,7 +13,6 @@ import { LibraryQuerySchema, type LibraryTimeRange } from "@openlore/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import type { LibraryArticle, LibraryResponse } from "@openlore/contracts";
 import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
-import { researchService } from "../../modules/research/service.js";
 import { settingsService } from "../../modules/settings/service.js";
 import {
   calendarDayBounds,
@@ -35,10 +36,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const today = calendarDayBounds(now, timezone);
     const threeDaysIso = new Date(now.getTime() - 3 * 86400000).toISOString();
     const nowEnd = new Date(now.getTime() + 1).toISOString();
-    const selection =
-      "EXISTS (SELECT 1 FROM group_items gi WHERE gi.article_id=a.id AND gi.decision='selected')";
-    const deep =
-      "(EXISTS (SELECT 1 FROM group_items gi WHERE gi.article_id=a.id AND gi.is_deep_analyzed=1) OR EXISTS (SELECT 1 FROM research_tasks rt WHERE rt.article_id=a.id AND rt.status='succeeded'))";
+    const deep = completedResearchSql("a.id");
     const scope: string[] = [];
     const scopeParams: string[] = groupId ? [groupId] : [];
     if (sourceId) {
@@ -58,7 +56,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       scopeParams.push(`%${search}%`, `%${search}%`);
     }
     const scopedPool = `WITH ${LIBRARY_ASSESSMENTS_CTE}, pool AS (
-      SELECT a.*, ${selection} AS selected_flag, ${deep} AS deep_flag,
+      SELECT a.*, ${deep} AS deep_flag,
         EXISTS (SELECT 1 FROM library_assessments sa WHERE sa.article_id=a.id ${groupId ? "AND sa.group_id=?" : ""}) AS assessed_flag
       FROM articles a
     ), scoped AS (SELECT * FROM pool a ${scope.length ? "WHERE " + scope.join(" AND ") : ""})`;
@@ -131,32 +129,24 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const stateCounts = sqlite
       .prepare(
         `${scopedPool} SELECT
-      COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag THEN 1 END) AS unselected_count,
-      COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag AND NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
-      COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag AND a.assessed_flag THEN 1 END) AS scored_count,
-      COUNT(CASE WHEN a.selected_flag AND NOT a.deep_flag THEN 1 END) AS selected_count,
+      COUNT(CASE WHEN NOT a.deep_flag AND NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
+      COUNT(CASE WHEN NOT a.deep_flag AND a.assessed_flag THEN 1 END) AS scored_count,
       COUNT(CASE WHEN a.deep_flag THEN 1 END) AS deep_count,
       COUNT(CASE WHEN a.user_interested=1 THEN 1 END) AS interested_count
       FROM scoped a ${timeWhere}`,
       )
       .get(...scopeParams, ...timeParams) as {
-      unselected_count: number;
       unreviewed_count: number;
       scored_count: number;
-      selected_count: number;
       deep_count: number;
       interested_count: number;
     };
     const filterMeta = { ...timeCounts, ...stateCounts };
     const clauses = [...timeClauses];
-    if (query.status_filter === "unselected") {
-      clauses.push("NOT a.selected_flag AND NOT a.deep_flag");
-      if (query.review_filter === "unreviewed")
-        clauses.push("NOT a.assessed_flag");
-      if (query.review_filter === "scored") clauses.push("a.assessed_flag");
-    }
-    if (query.status_filter === "selected")
-      clauses.push("a.selected_flag AND NOT a.deep_flag");
+    if (query.status_filter === "unreviewed")
+      clauses.push("NOT a.deep_flag AND NOT a.assessed_flag");
+    if (query.status_filter === "scored")
+      clauses.push("NOT a.deep_flag AND a.assessed_flag");
     if (query.status_filter === "deep") clauses.push("a.deep_flag");
     if (query.interested_only) clauses.push("a.user_interested=1");
     const whereSql = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
@@ -172,7 +162,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const pageRows = sqlite
       .prepare(
         `${scopedPool} SELECT a.*,
-      (a.selected_flag AND NOT a.deep_flag) AS is_selected, a.deep_flag AS is_deep_analyzed
+      a.deep_flag AS is_deep_analyzed
       FROM scoped a ${whereSql}
       ORDER BY julianday(a.published_at) DESC, julianday(a.created_at) DESC, a.id LIMIT ? OFFSET ?
     `,
@@ -189,7 +179,6 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       updated_at: string | null;
       latest_revision: string | null;
       user_interested: number;
-      is_selected: number;
       is_deep_analyzed: number;
     }>;
 
@@ -218,6 +207,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
         questions: string[];
         evidence: any[];
         finished_at: string | null;
+        archived_at: string | null;
       }
     >();
 
@@ -320,7 +310,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       const researchRows = sqlite
         .prepare(
           `
-          SELECT id, article_id, group_id, status, questions_json, evidence_json, report_markdown, finished_at
+          SELECT id, article_id, group_id, status, questions_json, evidence_json, report_markdown, finished_at, archived_at
           FROM research_tasks
           WHERE article_id IN (${placeholders}) ${groupId ? "AND group_id=?" : ""}
           ORDER BY created_at DESC, rowid DESC
@@ -335,6 +325,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
         evidence_json: string;
         report_markdown: string;
         finished_at: string | null;
+        archived_at: string | null;
       }>;
 
       for (const rr of researchRows) {
@@ -358,13 +349,14 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
             status: rr.status,
             report_markdown: rr.report_markdown || "",
             wiki_url:
-              rr.status === "succeeded"
+              rr.status === "succeeded" && rr.archived_at
                 ? wikiLinks.get(wikiLinkKey(rr.group_id, rr.article_id))
                     ?.research_url
                 : undefined,
             questions,
             evidence,
             finished_at: rr.finished_at,
+            archived_at: rr.archived_at,
           });
         }
       }
@@ -384,7 +376,6 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       latest_revision: r.latest_revision,
       sources: sourcesByArticleId.get(r.id) || [],
       groups: groupsByArticleId.get(r.id) || [],
-      is_selected: Boolean(r.is_selected),
       is_deep_analyzed: Boolean(r.is_deep_analyzed),
       user_interested: Boolean(r.user_interested),
       wiki_url:
@@ -414,10 +405,6 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/library/:id/research", async (request) => {
     const { id } = request.params as { id: string };
     const body = request.body as { group_id: string; instructions?: string };
-    return researchService.runResearchOnArticle(
-      body.group_id,
-      id,
-      body.instructions,
-    );
+    return feedService.researchArticle(body.group_id, id);
   });
 };

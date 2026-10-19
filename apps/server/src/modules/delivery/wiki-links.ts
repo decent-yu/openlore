@@ -63,7 +63,7 @@ export function getPublishedWikiLinks(
   const reports = db
     .prepare(
       `
-    SELECT t.group_id, t.article_id, t.status, d.status AS publication_status
+    SELECT t.group_id, t.article_id, t.status, t.archived_at, d.status AS publication_status
     FROM research_tasks t
     LEFT JOIN deliveries d ON d.batch_id='research_' || t.id AND d.group_id=t.group_id AND d.target_kind='github'
     WHERE t.article_id IN (${placeholders})
@@ -74,6 +74,7 @@ export function getPublishedWikiLinks(
     group_id: string;
     article_id: string;
     status: string;
+    archived_at: string | null;
     publication_status: string | null;
   }>;
   const latestReports = new Map<string, (typeof reports)[number]>();
@@ -112,7 +113,7 @@ export function getPublishedWikiLinks(
     const report = latestReports.get(key);
     if (
       articlePath &&
-      report?.status === "succeeded" &&
+      report?.status === "succeeded" && report.archived_at &&
       (!report.publication_status ||
         ["updated", "unchanged"].includes(report.publication_status))
     ) {

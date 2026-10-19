@@ -1,7 +1,8 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { and, desc, eq } from 'drizzle-orm';
+import { markResearchArchived } from "../research/state.js";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { and, desc, eq } from "drizzle-orm";
 import type {
   ArtifactBundle,
   ArtifactBundleAsset,
@@ -11,33 +12,38 @@ import type {
   RepositorySyncResult,
   ResearchTask,
   StructuredEntry,
-} from '@openlore/contracts';
-import { getAppPaths } from '../../infrastructure/config/paths.js';
-import { getDb } from '../../infrastructure/persistence/sqlite/db.js';
+} from "@openlore/contracts";
+import { getAppPaths } from "../../infrastructure/config/paths.js";
+import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
 import {
+  articlesTable,
+  articleRevisionsTable,
   articleLocationsTable,
   artifactBundlesTable,
   collectionsTable,
   deliveriesTable,
   mediaAssetsTable,
   repositoryConnectionsTable,
-} from '../../infrastructure/persistence/sqlite/schema.js';
-import { GitHubClient } from '../../infrastructure/repositories/github/client.js';
-import { secretsStore } from '../../infrastructure/secrets/local_file/secrets_store.js';
+} from "../../infrastructure/persistence/sqlite/schema.js";
+import { GitHubClient } from "../../infrastructure/repositories/github/client.js";
+import { secretsStore } from "../../infrastructure/secrets/local_file/secrets_store.js";
 
 export class DeliveryService {
-  async allocateCollectionSequence(groupId: string, timezone: string = 'Asia/Shanghai'): Promise<{ collectionId: string; dateSequence: string }> {
+  async allocateCollectionSequence(
+    groupId: string,
+    timezone: string = "Asia/Shanghai",
+  ): Promise<{ collectionId: string; dateSequence: string }> {
     const db = getDb();
     const now = new Date();
     // Format YYYYMMDD in group timezone
-    const yyyymmdd = new Intl.DateTimeFormat('en-CA', {
+    const yyyymmdd = new Intl.DateTimeFormat("en-CA", {
       timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     })
       .format(now)
-      .replace(/-/g, '');
+      .replace(/-/g, "");
 
     // Count existing collections for this day and group
     const todayCols = db
@@ -48,7 +54,7 @@ export class DeliveryService {
       .filter((c) => c.dateSequence.startsWith(yyyymmdd));
 
     const nextSeqNum = todayCols.length + 1;
-    const dateSequence = `${yyyymmdd}-${String(nextSeqNum).padStart(2, '0')}`;
+    const dateSequence = `${yyyymmdd}-${String(nextSeqNum).padStart(2, "0")}`;
     const collectionId = `col_${crypto.randomUUID().slice(0, 12)}`;
 
     db.insert(collectionsTable)
@@ -80,10 +86,10 @@ export class DeliveryService {
       const emptyBundle: ArtifactBundle = {
         group_id: group.id,
         run_id: runId,
-        collection_id: '',
+        collection_id: "",
         batch_id: batchId,
         snapshot_ref: `snap_${runId}`,
-        kind: 'collection',
+        kind: "collection",
         entries: [],
         assets: [],
         files: [],
@@ -91,7 +97,7 @@ export class DeliveryService {
       return {
         bundle: emptyBundle,
         syncResult: {
-          status: 'unchanged',
+          status: "unchanged",
           changed_paths: [],
           errors: [],
         },
@@ -99,22 +105,23 @@ export class DeliveryService {
     }
 
     // 1. Allocate collection date sequence (e.g. 20261015-01)
-    const { collectionId, dateSequence } = await this.allocateCollectionSequence(
-      group.id,
-      group.timezone,
-    );
+    const { collectionId, dateSequence } =
+      await this.allocateCollectionSequence(group.id, group.timezone);
 
     const bundleFiles: ArtifactBundleFile[] = [];
     const bundleAssets: ArtifactBundleAsset[] = [];
-    const articleEntries: ArtifactBundle['entries'] = [];
+    const articleEntries: ArtifactBundle["entries"] = [];
 
     // Map manifest locations
-    const manifestArticleLocations: Record<string, { collection_id: string; directory: string; slug: string }> = {};
+    const manifestArticleLocations: Record<
+      string,
+      { collection_id: string; directory: string; slug: string }
+    > = {};
 
     // 2. Process each article
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      const order = String(i + 1).padStart(2, '0');
+      const order = String(i + 1).padStart(2, "0");
       const articleDirName = `${order}-${entry.slug}`;
       const articleRelDir = `${dateSequence}/${articleDirName}`;
       const articleFullPath = `${basePath}/${articleRelDir}`;
@@ -145,14 +152,18 @@ export class DeliveryService {
         })
         .run();
 
-      const research = researchTasks.find((task) => task.article_id === entry.article_id);
+      const research = researchTasks.find(
+        (task) => task.article_id === entry.article_id,
+      );
       // Build article.md
       const articleMdContent =
         `# ${entry.title}\n\n` +
-        `> **来源**: [${entry.original_url || '原文链接'}](${entry.original_url || '#'})  \n` +
-        `> **作者**: ${entry.author || '未知'} | **发布时间**: ${entry.published_at || '未知'}  \n` +
-        (research ? `> **深度调研**: [查看专题调研报告](research.md)  \n` : '') +
-        `> **标签**: ${entry.tags.join(', ')}\n\n` +
+        `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
+        `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
+        (research
+          ? `> **深度调研**: [查看专题调研报告](research.md)  \n`
+          : "") +
+        `> **标签**: ${entry.tags.join(", ")}\n\n` +
         `---\n\n` +
         `## AI 导读\n\n` +
         `${entry.summary}\n\n` +
@@ -160,22 +171,33 @@ export class DeliveryService {
         `## 原文整理\n\n` +
         `${entry.organized_markdown}\n`;
 
-      const artMdSha = crypto.createHash('sha256').update(articleMdContent).digest('hex');
+      const artMdSha = crypto
+        .createHash("sha256")
+        .update(articleMdContent)
+        .digest("hex");
       bundleFiles.push({
         path: `${articleFullPath}/article.md`,
-        content_bytes: Buffer.from(articleMdContent, 'utf-8').toString('base64'),
-        encoding: 'utf-8',
+        content_bytes: Buffer.from(articleMdContent, "utf-8").toString(
+          "base64",
+        ),
+        encoding: "utf-8",
         sha256: artMdSha,
-        media_type: 'text/markdown',
+        media_type: "text/markdown",
       });
 
       if (research) {
         bundleFiles.push({
           path: `${articleFullPath}/research.md`,
-          content_bytes: Buffer.from(research.report_markdown, 'utf-8').toString('base64'),
-          encoding: 'utf-8',
-          sha256: crypto.createHash('sha256').update(research.report_markdown).digest('hex'),
-          media_type: 'text/markdown',
+          content_bytes: Buffer.from(
+            research.report_markdown,
+            "utf-8",
+          ).toString("base64"),
+          encoding: "utf-8",
+          sha256: crypto
+            .createHash("sha256")
+            .update(research.report_markdown)
+            .digest("hex"),
+          media_type: "text/markdown",
         });
       }
 
@@ -192,8 +214,8 @@ export class DeliveryService {
           const assetFilePath = `${articleFullPath}/${asset.localPath}`;
           bundleFiles.push({
             path: assetFilePath,
-            content_bytes: fileBuf.toString('base64'),
-            encoding: 'binary',
+            content_bytes: fileBuf.toString("base64"),
+            encoding: "binary",
             sha256: asset.sha256,
             media_type: asset.mimeType,
           });
@@ -214,23 +236,30 @@ export class DeliveryService {
     const batchReadmeContent =
       `# 任务批次：${dateSequence}\n\n` +
       `生成时间：${new Date().toISOString()}  \n` +
-      `本批共包含 ${entries.length} 篇精选文章：\n\n` +
+      `本批共包含 ${entries.length} 篇调研文章：\n\n` +
       entries
         .map(
           (e, idx) =>
-            `- [${e.title}](${String(idx + 1).padStart(2, '0')}-${e.slug}/article.md)` +
-            (researchTasks.some((task) => task.article_id === e.article_id) ? ` ([调研报告](${String(idx + 1).padStart(2, '0')}-${e.slug}/research.md))` : ''),
+            `- [${e.title}](${String(idx + 1).padStart(2, "0")}-${e.slug}/article.md)` +
+            (researchTasks.some((task) => task.article_id === e.article_id)
+              ? ` ([调研报告](${String(idx + 1).padStart(2, "0")}-${e.slug}/research.md))`
+              : ""),
         )
-        .join('\n') +
-      '\n';
+        .join("\n") +
+      "\n";
 
-    const batchReadmeSha = crypto.createHash('sha256').update(batchReadmeContent).digest('hex');
+    const batchReadmeSha = crypto
+      .createHash("sha256")
+      .update(batchReadmeContent)
+      .digest("hex");
     bundleFiles.push({
       path: `${basePath}/${dateSequence}/README.md`,
-      content_bytes: Buffer.from(batchReadmeContent, 'utf-8').toString('base64'),
-      encoding: 'utf-8',
+      content_bytes: Buffer.from(batchReadmeContent, "utf-8").toString(
+        "base64",
+      ),
+      encoding: "utf-8",
       sha256: batchReadmeSha,
-      media_type: 'text/markdown',
+      media_type: "text/markdown",
     });
 
     // 5. Root group README.md
@@ -240,15 +269,23 @@ export class DeliveryService {
       `## 历史任务批次\n\n` +
       `- [批次 ${dateSequence}](${dateSequence}/README.md)（${entries.length} 篇文章）\n`;
 
-    const groupReadmeSha = crypto.createHash('sha256').update(groupReadmeContent).digest('hex');
+    const groupReadmeSha = crypto
+      .createHash("sha256")
+      .update(groupReadmeContent)
+      .digest("hex");
     bundleFiles.push({
       path: `${basePath}/README.md`,
-      content_bytes: Buffer.from(groupReadmeContent, 'utf-8').toString('base64'),
-      encoding: 'utf-8',
+      content_bytes: Buffer.from(groupReadmeContent, "utf-8").toString(
+        "base64",
+      ),
+      encoding: "utf-8",
       sha256: groupReadmeSha,
-      media_type: 'text/markdown',
+      media_type: "text/markdown",
     });
 
+    // Retries may encounter the same media path; send one final version per repository path.
+    const uniqueFiles = new Map(bundleFiles.map((file) => [file.path, file]));
+    bundleFiles.splice(0, bundleFiles.length, ...uniqueFiles.values());
     // 6. Manifest .openlore/manifest.json
     const manifest: Manifest = {
       group_id: group.id,
@@ -263,20 +300,25 @@ export class DeliveryService {
           {
             sha256: f.sha256,
             media_type: f.media_type,
-            size: f.content_bytes ? Buffer.from(f.content_bytes, 'base64').length : 0,
+            size: f.content_bytes
+              ? Buffer.from(f.content_bytes, "base64").length
+              : 0,
           },
         ]),
       ),
     };
 
     const manifestJson = JSON.stringify(manifest, null, 2);
-    const manifestSha = crypto.createHash('sha256').update(manifestJson).digest('hex');
+    const manifestSha = crypto
+      .createHash("sha256")
+      .update(manifestJson)
+      .digest("hex");
     bundleFiles.push({
       path: `${basePath}/.openlore/manifest.json`,
-      content_bytes: Buffer.from(manifestJson, 'utf-8').toString('base64'),
-      encoding: 'utf-8',
+      content_bytes: Buffer.from(manifestJson, "utf-8").toString("base64"),
+      encoding: "utf-8",
       sha256: manifestSha,
-      media_type: 'application/json',
+      media_type: "application/json",
     });
 
     // 7. Save artifact bundle
@@ -286,7 +328,7 @@ export class DeliveryService {
       collection_id: collectionId,
       batch_id: batchId,
       snapshot_ref: `snap_${runId}`,
-      kind: 'collection',
+      kind: "collection",
       entries: articleEntries,
       assets: bundleAssets,
       files: bundleFiles,
@@ -300,7 +342,7 @@ export class DeliveryService {
         collectionId,
         batchId,
         snapshotRef: `snap_${runId}`,
-        kind: 'collection',
+        kind: "collection",
         bundleJson: JSON.stringify(bundle),
         createdAt: new Date().toISOString(),
       })
@@ -308,7 +350,7 @@ export class DeliveryService {
 
     // 8. GitHub sync
     let syncResult: RepositorySyncResult = {
-      status: 'unchanged',
+      status: "unchanged",
       changed_paths: [],
       errors: [],
     };
@@ -316,13 +358,15 @@ export class DeliveryService {
     const repoConn = db
       .select()
       .from(repositoryConnectionsTable)
-      .where(eq(repositoryConnectionsTable.id, group.route.repository_connection_id))
+      .where(
+        eq(repositoryConnectionsTable.id, group.route.repository_connection_id),
+      )
       .get();
 
-    if (!repoConn) throw new Error('GitHub 归档失败：仓库连接不存在');
+    if (!repoConn) throw new Error("GitHub 归档失败：仓库连接不存在");
     if (repoConn) {
       const token = secretsStore.getSecret(repoConn.credentialRef);
-      if (!token) throw new Error('GitHub 归档失败：未配置仓库凭据');
+      if (!token) throw new Error("GitHub 归档失败：未配置仓库凭据");
       if (token) {
         const ghFiles = bundleFiles.map((f) => ({
           path: f.path,
@@ -347,9 +391,18 @@ export class DeliveryService {
           commit_url: ghRes.commitUrl,
           changed_paths: ghRes.changedPaths,
           errors: ghRes.errorMessage
-            ? [{ code: 'sync_error', message: ghRes.errorMessage, retryable: true }]
+            ? [
+                {
+                  code: "sync_error",
+                  message: ghRes.errorMessage,
+                  retryable: true,
+                },
+              ]
             : [],
         };
+
+        if (["updated", "unchanged"].includes(ghRes.status))
+          markResearchArchived(researchTasks.map((task) => task.id));
 
         // Record delivery
         db.insert(deliveriesTable)
@@ -357,7 +410,7 @@ export class DeliveryService {
             id: `del_${crypto.randomUUID().slice(0, 12)}`,
             groupId: group.id,
             batchId,
-            targetKind: 'github',
+            targetKind: "github",
             status: ghRes.status,
             commitSha: ghRes.commitSha,
             commitUrl: ghRes.commitUrl,
@@ -392,29 +445,77 @@ export class DeliveryService {
       .get();
 
     if (!loc) {
-      throw Object.assign(new Error('文章尚未建立归档位置，请先运行所属流水线完成归档'), { statusCode: 409 });
+      const article = db
+        .select()
+        .from(articlesTable)
+        .where(eq(articlesTable.id, task.article_id))
+        .get();
+      const revision = db
+        .select()
+        .from(articleRevisionsTable)
+        .where(
+          and(
+            eq(articleRevisionsTable.articleId, task.article_id),
+            eq(
+              articleRevisionsTable.revisionHash,
+              article?.latestRevision || "",
+            ),
+          ),
+        )
+        .get();
+      if (!article || !revision || !fs.existsSync(revision.contentRef))
+        throw new Error("归档失败：文章正文文件缺失");
+      return (
+        await this.buildAndDeliverBatch({
+          group,
+          runId: `research_${task.id}`,
+          researchTasks: [task],
+          entries: [
+            {
+              article_id: article.id,
+              revision: article.latestRevision || "",
+              slug: task.article_slug,
+              title: article.title || task.article_title,
+              original_url: article.canonicalUrl,
+              author: article.author,
+              published_at: article.publishedAt,
+              tags: [],
+              summary: "",
+              organized_markdown: fs.readFileSync(revision.contentRef, "utf8"),
+              asset_refs: [],
+              evidence_refs: [],
+              limitations: [],
+            },
+          ],
+        })
+      ).syncResult;
     }
 
     const researchPath = `${basePath}/${loc.directory}/research.md`;
     const reportMdContent = task.report_markdown;
-    const reportSha = crypto.createHash('sha256').update(reportMdContent).digest('hex');
+    const reportSha = crypto
+      .createHash("sha256")
+      .update(reportMdContent)
+      .digest("hex");
 
     const repoConn = db
       .select()
       .from(repositoryConnectionsTable)
-      .where(eq(repositoryConnectionsTable.id, group.route.repository_connection_id))
+      .where(
+        eq(repositoryConnectionsTable.id, group.route.repository_connection_id),
+      )
       .get();
 
     let syncResult: RepositorySyncResult = {
-      status: 'unchanged',
+      status: "unchanged",
       changed_paths: [],
       errors: [],
     };
 
-    if (!repoConn) throw new Error('GitHub 归档失败：仓库连接不存在');
+    if (!repoConn) throw new Error("GitHub 归档失败：仓库连接不存在");
     if (repoConn) {
       const token = secretsStore.getSecret(repoConn.credentialRef);
-      if (!token) throw new Error('GitHub 归档失败：未配置仓库凭据');
+      if (!token) throw new Error("GitHub 归档失败：未配置仓库凭据");
       if (token) {
         const assets = db
           .select()
@@ -422,11 +523,16 @@ export class DeliveryService {
           .where(eq(mediaAssetsTable.articleId, task.article_id))
           .all();
 
-        const filesToSync: { path: string; content: string; encoding: 'utf-8' | 'binary'; sha256: string }[] = [
+        const filesToSync: {
+          path: string;
+          content: string;
+          encoding: "utf-8" | "binary";
+          sha256: string;
+        }[] = [
           {
             path: researchPath,
-            content: Buffer.from(reportMdContent, 'utf-8').toString('base64'),
-            encoding: 'utf-8',
+            content: Buffer.from(reportMdContent, "utf-8").toString("base64"),
+            encoding: "utf-8",
             sha256: reportSha,
           },
         ];
@@ -436,8 +542,8 @@ export class DeliveryService {
             const fileBuf = fs.readFileSync(asset.blobRef);
             filesToSync.push({
               path: `${basePath}/${loc.directory}/${asset.localPath}`,
-              content: fileBuf.toString('base64'),
-              encoding: 'binary',
+              content: fileBuf.toString("base64"),
+              encoding: "binary",
               sha256: asset.sha256,
             });
           }
@@ -449,15 +555,20 @@ export class DeliveryService {
           branch: repoConn.defaultBranch,
           token,
           basePath,
-          files: filesToSync,
+          files: [
+            ...new Map(filesToSync.map((file) => [file.path, file])).values(),
+          ],
           commitMessage: `docs(research): add in-depth research for ${loc.slug}`,
         });
+
+        if (["updated", "unchanged"].includes(ghRes.status))
+          markResearchArchived([task.id]);
 
         const record = {
           id: `research_delivery_${task.id}`,
           groupId: group.id,
           batchId: `research_${task.id}`,
-          targetKind: 'github',
+          targetKind: "github",
           status: ghRes.status,
           commitSha: ghRes.commitSha || null,
           commitUrl: ghRes.commitUrl || null,
@@ -466,10 +577,13 @@ export class DeliveryService {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        db.insert(deliveriesTable).values(record).onConflictDoUpdate({
-          target: deliveriesTable.id,
-          set: record,
-        }).run();
+        db.insert(deliveriesTable)
+          .values(record)
+          .onConflictDoUpdate({
+            target: deliveriesTable.id,
+            set: record,
+          })
+          .run();
 
         syncResult = {
           status: ghRes.status as any,
@@ -477,7 +591,13 @@ export class DeliveryService {
           commit_url: ghRes.commitUrl,
           changed_paths: ghRes.changedPaths,
           errors: ghRes.errorMessage
-            ? [{ code: 'sync_error', message: ghRes.errorMessage, retryable: true }]
+            ? [
+                {
+                  code: "sync_error",
+                  message: ghRes.errorMessage,
+                  retryable: true,
+                },
+              ]
             : [],
         };
       }

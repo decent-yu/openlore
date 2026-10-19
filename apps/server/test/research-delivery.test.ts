@@ -38,5 +38,5 @@ it('reports archive failure and preserves the generated report for recovery',asy
   vi.spyOn(researchService,'runResearchOnArticle').mockResolvedValue(task);
   await expect(feedService.researchArticle('task','article')).rejects.toThrow('Repository rejected archive');
   expect((await researchService.listResearchTasks('task'))[0].report_markdown).toBe('Generated research');
-  expect((await feedService.getDailyFeed('task')).deep_articles[0].delivery).toBeNull();
+  expect((await feedService.getDailyFeed('task')).deep_articles[0].delivery).toBeUndefined();
 });

@@ -49,7 +49,7 @@ const counts = {
   observed: 2,
   already_processed: 0,
   candidate: 2,
-  selected: 2,
+  planned: 2,
   excluded: 0,
   deferred: 0,
 };
@@ -87,7 +87,7 @@ describe('Task execution and independent multi-task reports', () => {
     });
   });
   beforeEach(() => {
-    getSqliteDatabase().exec('DELETE FROM runs; DELETE FROM deliveries');
+    getSqliteDatabase().exec('DELETE FROM runs; DELETE FROM deliveries; DELETE FROM research_tasks; DELETE FROM articles; DELETE FROM research_claims');
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -121,8 +121,7 @@ describe('Task execution and independent multi-task reports', () => {
     const collect = vi.spyOn(collectionService, 'discoverSource');
     const push = vi.spyOn(GenericWebhookSender, 'send');
     vi.spyOn(processingService, 'runProcessingForGroup').mockResolvedValue({
-      entries,
-      researchArticleIds: ['article-1'],
+      entries: entries.slice(0,1),
       decisions: [],
       counts,
       aiLogs: [],
@@ -172,8 +171,7 @@ describe('Task execution and independent multi-task reports', () => {
   it('marks a GitHub failure as failed rather than reporting the task complete', async () => {
     const scheduler = new AppScheduler();
     vi.spyOn(processingService, 'runProcessingForGroup').mockResolvedValue({
-      entries,
-      researchArticleIds: ['article-1'],
+      entries: entries.slice(0,1),
       decisions: [],
       counts,
       aiLogs: [],
@@ -216,6 +214,11 @@ describe('Task execution and independent multi-task reports', () => {
     articleId: string,
   ) {
     const now = new Date().toISOString();
+    if(status==='succeeded') {
+      const db=getSqliteDatabase();
+      db.prepare('INSERT OR IGNORE INTO articles(id,title) VALUES (?,?)').run(articleId,articleId);
+      db.prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,report_markdown,archived_at) VALUES (?,?,?,'rev','succeeded','# Report',?)").run(`report_${id}`,groupId,articleId,now);
+    }
     getSqliteDatabase()
       .prepare(
         'INSERT INTO runs (id, group_id, snapshot_json, status, stage, started_at, finished_at, output_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -235,7 +238,7 @@ describe('Task execution and independent multi-task reports', () => {
               title: articleId,
               summary: 'Summary',
               document_url: 'https://github.com/example/docs/article.md',
-              is_deep_analyzed: groupId === 'agent',
+              is_deep_analyzed: true,
             },
           ],
         }),
@@ -257,6 +260,8 @@ describe('Task execution and independent multi-task reports', () => {
         "UPDATE runs SET status='succeeded', finished_at=? WHERE id='frontend-run'",
       )
       .run(new Date().toISOString());
+    getSqliteDatabase().prepare("INSERT OR IGNORE INTO articles(id,title) VALUES ('article','article')").run();
+    getSqliteDatabase().prepare("INSERT OR REPLACE INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('report_frontend','frontend','shared-article','rev','succeeded',?)").run(new Date().toISOString());
     const preview = await report.preview('daily');
     expect(preview.tasks).toHaveLength(2);
     expect(preview.articles).toHaveLength(1);
@@ -516,6 +521,8 @@ describe('Task execution and independent multi-task reports', () => {
         "UPDATE runs SET status='succeeded', finished_at=? WHERE id='frontend-working'",
       )
       .run(new Date().toISOString());
+    getSqliteDatabase().prepare("INSERT OR IGNORE INTO articles(id,title) VALUES ('frontend-article','frontend-article')").run();
+    getSqliteDatabase().prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('report-b','frontend','frontend-article','rev','succeeded',?)").run(new Date().toISOString());
     expect((await report.send('plan-b')).state).toBe('sent');
     expect(sender.mock.calls[1][0]).toBe('https://example.com/group-b');
     expect(

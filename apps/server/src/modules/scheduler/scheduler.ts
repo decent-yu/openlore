@@ -1,38 +1,40 @@
-import crypto from 'node:crypto';
-import { buildResearchPrompt, RunOutputSchema } from '@openlore/contracts';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import {
+  releaseResearchClaims,
+  markResearchArchived,
+} from "../research/state.js";
+import crypto from "node:crypto";
+import { buildResearchPrompt, RunOutputSchema } from "@openlore/contracts";
+import { and, desc, eq } from "drizzle-orm";
 import type {
   Group,
   PushDeliveryRecord,
   ResearchTask,
   Run,
   RunOutput,
-} from '@openlore/contracts';
+} from "@openlore/contracts";
 import {
   getDb,
   getSqliteDatabase,
-} from '../../infrastructure/persistence/sqlite/db.js';
+} from "../../infrastructure/persistence/sqlite/db.js";
 import {
   deliveriesTable,
-  groupItemsTable,
   groupsTable,
   runsTable,
   repositoryConnectionsTable,
   reportPlansTable,
-} from '../../infrastructure/persistence/sqlite/schema.js';
-import { collectionService } from '../collection/service.js';
-import { deliveryService } from '../delivery/service.js';
-import { groupsService } from '../groups/service.js';
+} from "../../infrastructure/persistence/sqlite/schema.js";
+import { collectionService } from "../collection/service.js";
+import { deliveryService } from "../delivery/service.js";
+import { groupsService } from "../groups/service.js";
 import {
   getAIAdapterWithFallback,
   FallbackAIAdapter,
-} from '../../infrastructure/ai/fallback_runner.js';
-import { processingService } from '../processing/service.js';
-import { researchService } from '../research/service.js';
-import { sourcesService } from '../sources/service.js';
-import { matchesCron } from '../../infrastructure/time/cron.js';
-import { skillsService } from '../skills/service.js';
-import { reportService } from '../reports/service.js';
+} from "../../infrastructure/ai/fallback_runner.js";
+import { processingService } from "../processing/service.js";
+import { researchService } from "../research/service.js";
+import { sourcesService } from "../sources/service.js";
+import { matchesCron } from "../../infrastructure/time/cron.js";
+import { reportService } from "../reports/service.js";
 
 type SseListener = (event: {
   entity_type: string;
@@ -43,7 +45,7 @@ type SseListener = (event: {
 export {
   matchesCron,
   matchesCronPart,
-} from '../../infrastructure/time/cron.js';
+} from "../../infrastructure/time/cron.js";
 
 export class AppScheduler {
   private timer: NodeJS.Timeout | null = null;
@@ -123,11 +125,11 @@ export class AppScheduler {
         continue;
       try {
         const result = await collectionService.discoverSource(source.id);
-        this.notifySse('source', source.id, result.status);
-        if (result.status !== 'failed') ids.push(source.id);
+        this.notifySse("source", source.id, result.status);
+        if (result.status !== "failed") ids.push(source.id);
       } catch (error: any) {
         await sourcesService.updateLastPolled(source.id, false, error.message);
-        this.notifySse('source', source.id, 'failed');
+        this.notifySse("source", source.id, "failed");
       }
     }
     return ids;
@@ -151,11 +153,11 @@ export class AppScheduler {
       }
       const db = getDb();
       for (const plan of await reportService.listPlans()) {
-        const day = new Intl.DateTimeFormat('en-CA', {
+        const day = new Intl.DateTimeFormat("en-CA", {
           timeZone: plan.timezone,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
         }).format(now);
         const pending = db
           .select()
@@ -176,13 +178,13 @@ export class AppScheduler {
             .run();
           const sending = (async () => {
             const result = await reportService.send(plan.id);
-            if (result.state !== 'waiting') {
+            if (result.state !== "waiting") {
               db.update(reportPlansTable)
                 .set({ pendingDate: null })
                 .where(eq(reportPlansTable.id, plan.id))
                 .run();
             }
-            this.notifySse('delivery', plan.id, result.state);
+            this.notifySse("delivery", plan.id, result.state);
           })()
             .catch(() => {})
             .finally(() => {
@@ -220,7 +222,7 @@ export class AppScheduler {
       .select()
       .from(runsTable)
       .where(
-        and(eq(runsTable.groupId, groupId), eq(runsTable.status, 'running')),
+        and(eq(runsTable.groupId, groupId), eq(runsTable.status, "running")),
       )
       .get();
 
@@ -241,34 +243,34 @@ export class AppScheduler {
         id: runId,
         groupId,
         snapshotJson: JSON.stringify(snapshot),
-        status: 'running',
-        stage: 'processing',
+        status: "running",
+        stage: "processing",
         countsJson: JSON.stringify({
           observed: 0,
           already_processed: 0,
           candidate: 0,
-          selected: 0,
+          planned: 0,
           excluded: 0,
           deferred: 0,
         }),
-        aiLogsJson: '[]',
+        aiLogsJson: "[]",
         startedAt: now,
       })
       .run();
 
-    this.notifySse('run', runId, 'running');
+    this.notifySse("run", runId, "running");
 
     // Run pipeline asynchronously so API returns 202 immediately
     this.executePipeline(runId, group).catch((err) => {
       db.update(runsTable)
         .set({
-          status: 'failed',
+          status: "failed",
           errorMessage: err.message,
           finishedAt: new Date().toISOString(),
         })
         .where(eq(runsTable.id, runId))
         .run();
-      this.notifySse('run', runId, 'failed');
+      this.notifySse("run", runId, "failed");
     });
 
     const runRecord = db
@@ -283,41 +285,38 @@ export class AppScheduler {
     const db = getDb();
     const setStage = (stage: string) => {
       db.update(runsTable).set({ stage }).where(eq(runsTable.id, runId)).run();
-      this.notifySse('run', runId, stage);
+      this.notifySse("run", runId, stage);
     };
-    // Tasks consume the pool only. Source fetching runs independently.
-    setStage('processing');
-    const result = await processingService.runProcessingForGroup(group, runId);
-    const output: RunOutput = {
-      entries: result.entries.map((entry) => ({
-        article_id: entry.article_id,
-        title: entry.title,
-        summary: entry.summary,
-        original_url: entry.original_url,
-        is_deep_analyzed: false,
-      })),
-    };
-    const logs = [...(result.aiLogs || [])];
-    db.update(runsTable)
-      .set({
-        countsJson: JSON.stringify(result.counts),
-        aiLogsJson: JSON.stringify(logs),
-        outputJson: JSON.stringify(output),
-      })
-      .where(eq(runsTable.id, runId))
-      .run();
-    let archived = false;
     try {
+      setStage("processing");
+      const result = await processingService.runProcessingForGroup(
+        group,
+        runId,
+      );
+      const output: RunOutput = {
+        entries: result.entries.map((entry) => ({
+          article_id: entry.article_id,
+          title: entry.title,
+          summary: entry.summary,
+          original_url: entry.original_url,
+          is_deep_analyzed: false,
+        })),
+      };
+      const logs = [...(result.aiLogs || [])];
+      const save = () =>
+        db
+          .update(runsTable)
+          .set({
+            countsJson: JSON.stringify(result.counts),
+            aiLogsJson: JSON.stringify(logs),
+            outputJson: JSON.stringify(output),
+          })
+          .where(eq(runsTable.id, runId))
+          .run();
+      save();
       const researchTasks: ResearchTask[] = [];
-      if (
-        group.enable_research &&
-        group.deep_analysis_count > 0 &&
-        result.entries.length > 0
-      ) {
-        setStage('research');
-        const researchEntries = result.entries.filter((entry) =>
-          result.researchArticleIds.includes(entry.article_id),
-        );
+      if (result.entries.length) {
+        setStage("research");
         const adapter = getAIAdapterWithFallback(
           group.ai_profile_id,
         ) as FallbackAIAdapter | null;
@@ -328,14 +327,14 @@ export class AppScheduler {
             adapter?.targets?.[0]?.target.execution?.concurrency || 1,
           ),
         );
-        let nextResearch = 0;
-        let researchError: unknown;
+        let next = 0;
+        let failure: unknown;
         await Promise.all(
           Array.from(
-            { length: Math.min(concurrency, researchEntries.length) },
+            { length: Math.min(concurrency, result.entries.length) },
             async () => {
-              while (!researchError && nextResearch < researchEntries.length) {
-                const entry = researchEntries[nextResearch++];
+              while (!failure && next < result.entries.length) {
+                const entry = result.entries[next++];
                 try {
                   const task = await researchService.runResearchOnArticle(
                     group.id,
@@ -343,61 +342,49 @@ export class AppScheduler {
                     group.research_instructions,
                     runId,
                   );
-                  if (!task || task.status !== 'succeeded')
+                  if (!task || task.status !== "succeeded")
                     throw new Error(
-                      `深度调研未完成：${entry.title}；${task?.error_message || '请检查 AI 执行器'}`,
+                      `深度调研未完成：${entry.title}；${task?.error_message || "请检查 AI 执行器"}`,
                     );
                   researchTasks.push(task);
-                  output.entries.find(
-                    (item) => item.article_id === entry.article_id,
-                  )!.is_deep_analyzed = true;
                   logs.push({
                     timestamp: new Date().toISOString(),
                     article_id: entry.article_id,
                     article_title: entry.title,
-                    task_type: 'research',
+                    task_type: "research",
                     skill_id: group.research_skill_id,
-                    model: task.model || 'research-engine',
+                    model: task.model || "research-engine",
                     execution: task.execution,
                     prompt_preview: buildResearchPrompt(
                       group.research_skill_id,
                       group.research_instructions,
                     ),
                     response_preview: task.report_markdown.slice(0, 600),
-                    status: 'succeeded',
+                    status: "succeeded",
                   });
-                  db.update(runsTable)
-                    .set({
-                      aiLogsJson: JSON.stringify(logs),
-                      outputJson: JSON.stringify(output),
-                    })
-                    .where(eq(runsTable.id, runId))
-                    .run();
+                  save();
                 } catch (error) {
-                  researchError = error;
+                  failure = error;
                 }
               }
             },
           ),
         );
-        if (researchError) throw researchError;
-      }
-
-      if (result.entries.length > 0) {
-        setStage('delivery');
+        if (failure) throw failure;
+        setStage("delivery");
         const delivery = await deliveryService.buildAndDeliverBatch({
           group,
           runId,
           entries: result.entries,
           researchTasks,
         });
-        if (!['updated', 'unchanged'].includes(delivery.syncResult.status))
+        if (!["updated", "unchanged"].includes(delivery.syncResult.status))
           throw new Error(
             delivery.syncResult.errors
               .map((error) => error.message)
-              .join('; ') || 'GitHub 归档失败',
+              .join("; ") || "GitHub 归档失败",
           );
-        archived = true;
+        markResearchArchived(researchTasks.map((task) => task.id));
         output.commit_url = delivery.syncResult.commit_url;
         const repo = db
           .select()
@@ -409,53 +396,28 @@ export class AppScheduler {
             ),
           )
           .get();
-        if (repo) {
-          for (const entry of output.entries) {
-            const location = delivery.bundle.entries.find(
-              (item) => item.article_id === entry.article_id,
-            );
-            if (location)
-              entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${[group.route.base_path, location.directory, 'article.md'].join('/').split('/').map(encodeURIComponent).join('/')}`;
-          }
-        }
-        for (const task of researchTasks) {
-          db.update(groupItemsTable)
-            .set({ isDeepAnalyzed: true })
-            .where(
-              and(
-                eq(groupItemsTable.groupId, group.id),
-                eq(groupItemsTable.articleId, task.article_id),
-              ),
-            )
-            .run();
+        for (const entry of output.entries) {
+          entry.is_deep_analyzed = true;
+          const location = delivery.bundle.entries.find(
+            (item) => item.article_id === entry.article_id,
+          );
+          if (repo && location)
+            entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${[group.route.base_path, location.directory, "research.md"].join("/").split("/").map(encodeURIComponent).join("/")}`;
         }
       }
       db.update(runsTable)
         .set({
-          status: 'succeeded',
-          stage: 'completed',
+          status: "succeeded",
+          stage: "completed",
           finishedAt: new Date().toISOString(),
+          aiLogsJson: JSON.stringify(logs),
           outputJson: JSON.stringify(output),
         })
         .where(eq(runsTable.id, runId))
         .run();
-      this.notifySse('run', runId, 'succeeded');
-    } catch (error) {
-      // Failed runs must not permanently consume the articles before successful archival.
-      if (!archived && result.entries.length > 0) {
-        db.delete(groupItemsTable)
-          .where(
-            and(
-              eq(groupItemsTable.groupId, group.id),
-              inArray(
-                groupItemsTable.articleId,
-                result.entries.map((entry) => entry.article_id),
-              ),
-            ),
-          )
-          .run();
-      }
-      throw error;
+      this.notifySse("run", runId, "succeeded");
+    } finally {
+      releaseResearchClaims(runId);
     }
   }
 
@@ -464,14 +426,14 @@ export class AppScheduler {
     const rows = db
       .select()
       .from(deliveriesTable)
-      .where(eq(deliveriesTable.targetKind, 'webhook'))
+      .where(eq(deliveriesTable.targetKind, "webhook"))
       .orderBy(desc(deliveriesTable.createdAt))
       .all();
 
     return rows.map((r) => {
       let meta: any = {};
       try {
-        meta = JSON.parse(r.responseJson || '{}');
+        meta = JSON.parse(r.responseJson || "{}");
       } catch {
         meta = { platform_response: r.responseJson };
       }
@@ -483,9 +445,9 @@ export class AppScheduler {
         pipeline_ids: meta.pipeline_ids || [],
         group_id: r.groupId,
         status: r.status,
-        webhook_name: meta.webhook_name || '群通知 Webhook',
-        headline: meta.headline || '每日精选早报',
-        summary: meta.summary || '',
+        webhook_name: meta.webhook_name || "群通知 Webhook",
+        headline: meta.headline || "每日研报",
+        summary: meta.summary || "",
         total_count: meta.total_count ?? 0,
         deep_count: meta.deep_count ?? 0,
         candidate_count: meta.candidate_count ?? 0,
@@ -507,12 +469,12 @@ export class AppScheduler {
       group_name: groupName,
       status: r.status,
       stage: r.stage,
-      counts: JSON.parse(r.countsJson || '{}'),
+      counts: JSON.parse(r.countsJson || "{}"),
       started_at: r.startedAt,
       finished_at: r.finishedAt,
       error_message: r.errorMessage,
       ai_logs: aiLogs,
-      output: RunOutputSchema.parse(JSON.parse(r.outputJson || '{}')),
+      output: RunOutputSchema.parse(JSON.parse(r.outputJson || "{}")),
     };
   }
 
@@ -531,7 +493,7 @@ export class AppScheduler {
     const groupNameMap = new Map(groups.map((g) => [g.id, g.name]));
 
     return rows.map((r) =>
-      this.formatRun(r, groupNameMap.get(r.groupId) || 'Unknown Group'),
+      this.formatRun(r, groupNameMap.get(r.groupId) || "Unknown Group"),
     );
   }
 
@@ -544,7 +506,7 @@ export class AppScheduler {
       .from(groupsTable)
       .where(eq(groupsTable.id, r.groupId))
       .get();
-    return this.formatRun(r, g?.name || 'Unknown Group');
+    return this.formatRun(r, g?.name || "Unknown Group");
   }
 }
 

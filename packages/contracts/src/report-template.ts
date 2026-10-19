@@ -4,7 +4,7 @@ export const REPORT_TEMPLATE_VARIABLES = {
   report_name: "汇报名称",
   date: "汇报日期",
   task_count: "流水线任务数",
-  article_count: "精选文章数",
+  article_count: "已归档研报数",
   deep_count: "深度调研篇数",
   content: "按任务分组的文章清单（含 Wiki 链接）",
 } as const;
@@ -30,7 +30,7 @@ export const ReportCardTitleTemplateSchema = z
   );
 export const DEFAULT_REPORT_TEMPLATE = `日期：{{date}}
 
-汇总 {{task_count}} 个流水线任务，共 {{article_count}} 篇精选（{{deep_count}} 篇深度调研）。
+汇总 {{task_count}} 个流水线任务，共 {{article_count}} 篇已归档研报。
 
 {{content}}`;
 

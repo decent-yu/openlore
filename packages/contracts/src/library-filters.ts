@@ -9,17 +9,11 @@ export const LibraryTimeRangeSchema = z.enum([
 export type LibraryTimeRange = z.infer<typeof LibraryTimeRangeSchema>;
 export const LibraryStatusFilterSchema = z.enum([
   "all",
-  "unselected",
-  "selected",
+  "unreviewed",
+  "scored",
   "deep",
 ]);
 export type LibraryStatusFilter = z.infer<typeof LibraryStatusFilterSchema>;
-export const LibraryReviewFilterSchema = z.enum([
-  "all",
-  "unreviewed",
-  "scored",
-]);
-export type LibraryReviewFilter = z.infer<typeof LibraryReviewFilterSchema>;
 const date = z.string().date("请选择有效日期（YYYY-MM-DD）").optional();
 
 export const LibraryQuerySchema = z
@@ -31,7 +25,6 @@ export const LibraryQuerySchema = z
     published_from: date,
     published_to: date,
     status_filter: LibraryStatusFilterSchema.default("all"),
-    review_filter: LibraryReviewFilterSchema.default("all"),
     interested_only: z
       .enum(["true", "false"])
       .default("false")
@@ -81,7 +74,6 @@ export interface LibraryFilterParams {
   published_from?: string;
   published_to?: string;
   status_filter?: LibraryStatusFilter;
-  review_filter?: LibraryReviewFilter;
   interested_only?: boolean;
   source_id?: string;
   group_id?: string;

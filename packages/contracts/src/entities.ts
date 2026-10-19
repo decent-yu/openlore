@@ -48,9 +48,7 @@ export const GroupSchema = z.object({
   source_ids: z.array(z.string()).default([]),
   schedule_cron: z.string().default('0 8 * * *'),
   timezone: z.string().default('Asia/Shanghai'),
-  max_selected: z.number().int().positive().default(10),
   deep_analysis_count: z.number().int().nonnegative().default(3),
-  enable_research: z.boolean().default(true),
   research_instructions: z.string().default(''),
   ai_profile_id: z.string().nullable().optional(),
   assessment_skill_id: z.string().default('tech-article-extractor'),
@@ -114,7 +112,7 @@ export const RunCountsSchema = z.object({
   observed: z.number().int().default(0),
   already_processed: z.number().int().default(0),
   candidate: z.number().int().default(0),
-  selected: z.number().int().default(0),
+  planned: z.number().int().default(0),
   excluded: z.number().int().default(0),
   deferred: z.number().int().default(0),
 });
@@ -216,6 +214,7 @@ export const ResearchTaskSchema = z.object({
   report_markdown: z.string().default(''),
   created_at: z.string(),
   finished_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   error_message: z.string().nullable().optional(),
 });
 export type ResearchTask = z.infer<typeof ResearchTaskSchema>;
@@ -254,7 +253,6 @@ export const LibraryArticleSchema = z.object({
       }),
     )
     .default([]),
-  is_selected: z.boolean().default(false),
   is_deep_analyzed: z.boolean().default(false),
   user_interested: z.boolean().default(false),
   body_snippet: z.string().default(''),
@@ -267,6 +265,7 @@ export const LibraryArticleSchema = z.object({
       questions: z.array(z.string()).default([]),
       evidence: z.array(z.any()).default([]),
       finished_at: z.string().nullable().optional(),
+      archived_at: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
@@ -287,10 +286,8 @@ export const LibraryResponseSchema = z.object({
     three_days_count: z.number(),
     published_today_count: z.number(),
     published_three_days_count: z.number(),
-    unselected_count: z.number(),
     unreviewed_count: z.number(),
     scored_count: z.number(),
-    selected_count: z.number(),
     deep_count: z.number(),
     interested_count: z.number(),
   }),

@@ -135,9 +135,7 @@ export function initDatabase(dbPath?: string): void {
       base_path TEXT NOT NULL,
       schedule_cron TEXT NOT NULL DEFAULT '0 8 * * *',
       timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-      max_selected INTEGER NOT NULL DEFAULT 10,
       deep_analysis_count INTEGER NOT NULL DEFAULT 3,
-      enable_research INTEGER NOT NULL DEFAULT 1,
       research_instructions TEXT NOT NULL DEFAULT '',
       ai_profile_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -245,6 +243,9 @@ export function initDatabase(dbPath?: string): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS research_claims (
+      article_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, owner_id TEXT NOT NULL, created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS research_tasks (
       id TEXT PRIMARY KEY,
       group_id TEXT NOT NULL,
@@ -253,6 +254,8 @@ export function initDatabase(dbPath?: string): void {
       status TEXT NOT NULL DEFAULT 'queued',
       questions_json TEXT NOT NULL DEFAULT '[]',
       evidence_json TEXT NOT NULL DEFAULT '[]',
+      archived_at TEXT,
+      request_hash TEXT NOT NULL DEFAULT '',
       report_markdown TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       finished_at TEXT,
@@ -353,6 +356,29 @@ export function initDatabase(dbPath?: string): void {
   migratePipelineConfiguration(sqlite);
   migrateStageSkillsAndReports(sqlite);
   migrateCollectionQuality(sqlite);
+  const pipelineColumns = sqlite.pragma('table_info(groups)') as Array<{name: string}>;
+  for (const column of ['max_selected', 'enable_research']) {
+    if (pipelineColumns.some(item => item.name === column)) sqlite.exec(`ALTER TABLE groups DROP COLUMN ${column}`);
+  }
+  const reportColumns = sqlite.pragma('table_info(research_tasks)') as Array<{name: string}>;
+  if (!reportColumns.some(item => item.name === 'archived_at')) {
+    sqlite.exec('ALTER TABLE research_tasks ADD COLUMN archived_at TEXT');
+    // Preserve only reports supported by an acknowledged GitHub publication, not generation alone.
+    sqlite.exec(`UPDATE research_tasks SET archived_at=(
+      SELECT strftime('%Y-%m-%dT%H:%M:%fZ',d.updated_at) FROM deliveries d
+      LEFT JOIN artifact_bundles b ON b.batch_id=d.batch_id AND b.group_id=d.group_id
+      WHERE d.target_kind='github' AND d.group_id=research_tasks.group_id AND d.status IN ('updated','unchanged')
+        AND julianday(d.updated_at)>=julianday(COALESCE(research_tasks.finished_at,research_tasks.created_at))
+        AND (d.batch_id='research_'||research_tasks.id OR (json_valid(b.bundle_json) AND EXISTS (
+          SELECT 1 FROM json_each(b.bundle_json,'$.entries') e JOIN json_each(b.bundle_json,'$.files') f
+          WHERE json_extract(e.value,'$.article_id')=research_tasks.article_id
+          AND json_extract(f.value,'$.path') LIKE '%/'||json_extract(e.value,'$.directory')||'/research.md'
+        ))) ORDER BY d.updated_at DESC LIMIT 1
+    ) WHERE status='succeeded'`);
+  }
+  if (!reportColumns.some(item => item.name === 'request_hash')) sqlite.exec("ALTER TABLE research_tasks ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''");
+  sqlite.exec("UPDATE group_items SET decision='qualified' WHERE decision IN ('selected','deferred')");
+
 
 }
 

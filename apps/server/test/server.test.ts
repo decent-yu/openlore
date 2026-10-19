@@ -280,8 +280,8 @@ describe('OpenLore Server Core Tests', () => {
       const feedData = resFeed.json();
       expect(feedData.stats).toBeDefined();
       expect(Array.isArray(feedData.deep_articles)).toBe(true);
-      expect(Array.isArray(feedData.candidate_articles)).toBe(true);
-      expect(feedData.stats.total_selected_count).toBeLessThanOrEqual(feedData.group?.max_selected || 10);
+      expect(feedData).not.toHaveProperty('candidate_articles');
+      expect(feedData.stats.deep_analyzed_count).toBe(feedData.deep_articles.length);
       if (feedData.deep_articles.length > 0) {
         expect(feedData.deep_articles[0].group_id).toBeDefined();
         expect(feedData.deep_articles[0].group_name).toBeDefined();
