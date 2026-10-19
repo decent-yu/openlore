@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { WikiDisplayConfigSchema } from './wiki.js';
+export { WikiDisplayConfigSchema, buildWikiUrl } from './wiki.js';
 
 export const RepositoryConnectionSchema = z.object({
   id: z.string(),
@@ -8,6 +10,7 @@ export const RepositoryConnectionSchema = z.object({
   repo: z.string(),
   default_branch: z.string(),
   credential_ref: z.string(),
+  ...WikiDisplayConfigSchema.shape,
   state: z.enum([
     'ready',
     'invalid_credential',

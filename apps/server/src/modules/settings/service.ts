@@ -1,3 +1,4 @@
+import { WikiDisplayConfigSchema } from '@openlore/contracts';
 import crypto from 'node:crypto';
 import { ExecutorConfigSchema, WorkspaceSettingsSchema, type ExecutorConfig } from '@openlore/contracts';
 import fs from 'node:fs';
@@ -85,6 +86,8 @@ export class SettingsService {
       repo: r.repo,
       default_branch: r.defaultBranch,
       credential_ref: r.credentialRef,
+      wiki_base_url: r.wikiBaseUrl,
+      wiki_root_path: r.wikiRootPath,
       state: r.state as any,
     }));
   }
@@ -97,6 +100,8 @@ export class SettingsService {
     repo?: string;
     defaultBranch?: string;
     token?: string;
+    wikiBaseUrl?: string;
+    wikiRootPath?: string;
   }): Promise<RepositoryConnection> {
     let owner = data.owner || '';
     let repo = data.repo || '';
@@ -118,6 +123,11 @@ export class SettingsService {
     const id = data.id || `repo_${crypto.randomUUID().slice(0, 8)}`;
     const revision = `rev_${Date.now()}`;
     const credentialRef = `secret_repo_${id}`;
+    const existing = db.select().from(repositoryConnectionsTable).where(eq(repositoryConnectionsTable.id, id)).get();
+    const wiki = WikiDisplayConfigSchema.parse({
+      wiki_base_url: data.wikiBaseUrl ?? existing?.wikiBaseUrl ?? '',
+      wiki_root_path: data.wikiRootPath ?? existing?.wikiRootPath ?? '',
+    });
 
     if (data.token) {
       secretsStore.setSecret(credentialRef, data.token);
@@ -148,6 +158,8 @@ export class SettingsService {
       repo,
       defaultBranch,
       credentialRef,
+      wikiBaseUrl: wiki.wiki_base_url,
+      wikiRootPath: wiki.wiki_root_path,
       state,
       updatedAt: new Date().toISOString(),
     };
@@ -168,6 +180,7 @@ export class SettingsService {
       repo,
       default_branch: defaultBranch,
       credential_ref: credentialRef,
+      ...wiki,
       state: state as any,
     };
   }

@@ -62,6 +62,8 @@ export function initDatabase(dbPath?: string): void {
       repo TEXT NOT NULL,
       default_branch TEXT NOT NULL,
       credential_ref TEXT NOT NULL,
+      wiki_base_url TEXT NOT NULL DEFAULT '',
+      wiki_root_path TEXT NOT NULL DEFAULT '',
       state TEXT NOT NULL DEFAULT 'ready',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -329,6 +331,10 @@ export function initDatabase(dbPath?: string): void {
     attempts INTEGER NOT NULL DEFAULT 0, result_json TEXT,
     created_at INTEGER NOT NULL, deadline INTEGER NOT NULL
   ); CREATE INDEX IF NOT EXISTS ai_jobs_status ON ai_jobs(profile_id,status);`);
+  const repositoryColumns = sqlite.pragma('table_info(repository_connections)') as Array<{name: string}>;
+  for (const column of ['wiki_base_url', 'wiki_root_path']) {
+    if (!repositoryColumns.some((item) => item.name === column)) sqlite.exec(`ALTER TABLE repository_connections ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
+  }
   migratePipelineConfiguration(sqlite);
   migrateStageSkillsAndReports(sqlite);
   migrateCollectionQuality(sqlite);

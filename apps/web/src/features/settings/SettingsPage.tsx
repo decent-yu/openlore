@@ -19,7 +19,8 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
+import { WikiDisplayConfigSchema, ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
+import { RepositoryWikiFields } from './RepositoryWikiFields.js';
 import { ExecutorFields } from './ExecutorFields.js';
 import type { AIProfile, NotificationConnection, RepositoryConnection } from '@openlore/contracts';
 import { Badge } from '../../components/ui/badge.js';
@@ -84,6 +85,8 @@ export function SettingsPage() {
     name: string;
     branch: string;
     token: string;
+    wikiBaseUrl: string;
+    wikiRootPath: string;
   }>({
     open: false,
     mode: 'create',
@@ -91,6 +94,8 @@ export function SettingsPage() {
     name: '',
     branch: 'main',
     token: '',
+    wikiBaseUrl: '',
+    wikiRootPath: 'docs',
   });
 
   const [aiModal, setAiModal] = useState<{
@@ -132,6 +137,7 @@ export function SettingsPage() {
     mutationFn: api.saveRepo,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repos'] });
+      for (const queryKey of ['daily-feed', 'library', 'reports', 'report-preview']) queryClient.invalidateQueries({ queryKey: [queryKey] });
       setRepoModal((prev) => ({ ...prev, open: false }));
     },
   });
@@ -204,6 +210,8 @@ export function SettingsPage() {
     },
   });
 
+  const wikiConfig = WikiDisplayConfigSchema.safeParse({ wiki_base_url: repoModal.wikiBaseUrl, wiki_root_path: repoModal.wikiRootPath });
+
   // Modal Handlers
   const openCreateRepoModal = () => {
     setRepoModal({
@@ -213,6 +221,8 @@ export function SettingsPage() {
       name: '',
       branch: 'main',
       token: '',
+      wikiBaseUrl: '',
+      wikiRootPath: 'docs',
     });
   };
 
@@ -225,6 +235,8 @@ export function SettingsPage() {
       name: r.name,
       branch: r.default_branch,
       token: '',
+      wikiBaseUrl: r.wiki_base_url || '',
+      wikiRootPath: r.wiki_root_path || '',
     });
   };
 
@@ -376,6 +388,7 @@ export function SettingsPage() {
                             <span>{repoUrl}.git</span>
                             <ExternalLink className="w-3 h-3 text-neutral-400" />
                           </a>
+                          {r.wiki_base_url && <p className="mt-1 text-xs text-neutral-500 break-all">Wiki：<a href={r.wiki_base_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{r.wiki_base_url}</a> · 仓库目录：{r.wiki_root_path || '根目录'}</p>}
                           {testRes && (
                             <p className={`text-xs mt-1 ${testRes.ok ? 'text-emerald-600' : 'text-red-500'}`}>
                               {testRes.message}
@@ -689,7 +702,7 @@ export function SettingsPage() {
       {/* Modal 1: GitHub 仓库创建与编辑弹窗 */}
       {repoModal.open && (
         <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-neutral-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-neutral-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 bg-neutral-50/60">
               <h3 className="font-bold text-sm text-neutral-900 flex items-center gap-2">
                 <Github className="w-4 h-4 text-neutral-700" />
@@ -758,6 +771,7 @@ export function SettingsPage() {
                 </p>
               </div>
             </div>
+            <RepositoryWikiFields value={repoModal} onChange={(wiki) => setRepoModal((previous) => ({ ...previous, ...wiki }))} />
             <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between gap-2">
               <div>
                 {repoModal.mode === 'edit' && (
@@ -789,6 +803,7 @@ export function SettingsPage() {
                   size="sm"
                   disabled={
                     !repoModal.url ||
+                    !wikiConfig.success ||
                     (repoModal.mode === 'create' && !repoModal.token) ||
                     saveRepoMutation.isPending
                   }
@@ -799,6 +814,8 @@ export function SettingsPage() {
                       name: repoModal.name || undefined,
                       defaultBranch: repoModal.branch || 'main',
                       token: repoModal.token || undefined,
+                      wikiBaseUrl: repoModal.wikiBaseUrl,
+                      wikiRootPath: repoModal.wikiRootPath,
                     })
                   }
                 >
