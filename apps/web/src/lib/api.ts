@@ -6,6 +6,7 @@ import type {
   DoctorResult,
   Group,
   LibraryArticle,
+  LibraryFilterParams,
   LibraryResponse,
   NotificationConnection,
   PushDeliveryRecord,
@@ -166,18 +167,13 @@ export const api = {
   getSkill: (id: string) => request<Skill>(`/skills/${id}`),
 
   // Library
-  listLibrary: (params?: {
-    time_range?: 'today' | '3days' | 'published7' | 'all';
-    status_filter?: 'all' | 'selected' | 'deep' | 'interested';
-    source_id?: string;
-    group_id?: string;
-    search?: string;
-    page?: number;
-    page_size?: number;
-  }) => {
+  listLibrary: (params?: LibraryFilterParams) => {
     const q = new URLSearchParams();
-    if (params?.time_range && params.time_range !== 'all') q.set('time_range', params.time_range);
-    if (params?.status_filter && params.status_filter !== 'all') q.set('status_filter', params.status_filter);
+    for (const key of ['time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
+      const value = params?.[key];
+      if (value && value !== 'all') q.set(key, value);
+    }
+    if (params?.interested_only) q.set('interested_only', 'true');
     if (params?.source_id) q.set('source_id', params.source_id);
     if (params?.group_id) q.set('group_id', params.group_id);
     if (params?.search) q.set('search', params.search);

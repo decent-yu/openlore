@@ -1,6 +1,14 @@
-import { WikiReadingLinks } from '../../components/WikiReadingLinks.js';
-import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { LibraryArticleStatus } from "./LibraryArticleStatus.js";
+import {
+  LibraryFilters,
+  DEFAULT_LIBRARY_FILTERS,
+  libraryFilterParams,
+  libraryFiltersError,
+  type LibraryFiltersState,
+} from "./LibraryFilters.js";
+import { WikiReadingLinks } from "../../components/WikiReadingLinks.js";
+import React, { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Check,
@@ -9,44 +17,53 @@ import {
   Clock,
   Copy,
   ExternalLink,
-  FileText,
   Filter,
   Heart,
-  Layers,
   Loader2,
   RotateCw,
   Rss,
   Search,
   Sparkles,
-  Tag,
   X,
-} from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { LibraryArticle } from '@openlore/contracts';
-import { Badge } from '../../components/ui/badge.js';
-import { Button } from '../../components/ui/button.js';
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { LibraryArticle } from "@openlore/contracts";
+import { Badge } from "../../components/ui/badge.js";
+import { Button } from "../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card.js';
-import { Input } from '../../components/ui/input.js';
-import { api } from '../../lib/api.js';
-import { useDialog } from '../../lib/useDialog.js';
+} from "../../components/ui/card.js";
+import { Input } from "../../components/ui/input.js";
+import { api } from "../../lib/api.js";
+import { useDialog } from "../../lib/useDialog.js";
 
 function formatPoolTime(iso: string, timezone: string) {
-  if (!iso) return '未知时间';
+  if (!iso) return "未知时间";
   try {
     const d = new Date(iso);
     const now = new Date();
-    const dateOptions: Intl.DateTimeFormatOptions = { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' };
-    const isToday = d.toLocaleDateString('zh-CN', dateOptions) === now.toLocaleDateString('zh-CN', dateOptions);
-    const timeStr = d.toLocaleTimeString('zh-CN', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false });
+    const dateOptions: Intl.DateTimeFormatOptions = {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    };
+    const isToday =
+      d.toLocaleDateString("zh-CN", dateOptions) ===
+      now.toLocaleDateString("zh-CN", dateOptions);
+    const timeStr = d.toLocaleTimeString("zh-CN", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
     if (isToday) return `今天 ${timeStr}`;
-    return `${d.toLocaleDateString('zh-CN', dateOptions)} ${timeStr}`;
+    return `${d.toLocaleDateString("zh-CN", dateOptions)} ${timeStr}`;
   } catch {
     return iso;
   }
@@ -54,32 +71,45 @@ function formatPoolTime(iso: string, timezone: string) {
 
 export function LibraryPage() {
   const queryClient = useQueryClient();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const timezone = settings?.timezone || 'Asia/Shanghai';
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  const timezone = settings?.timezone || "Asia/Shanghai";
 
   // Filters state
-  const [timeRange, setTimeRange] = useState<'all' | 'today' | '3days' | 'published7'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'selected' | 'deep' | 'interested'>('all');
-  const [selectedSourceId, setSelectedSourceId] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filters, setFilters] = useState<LibraryFiltersState>(
+    DEFAULT_LIBRARY_FILTERS,
+  );
+  const filterError = libraryFiltersError(filters);
+  const [selectedSourceId, setSelectedSourceId] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   const pageSize = 12;
 
   // Research modal states
-  const [selectedArticleForResearch, setSelectedArticleForResearch] = useState<LibraryArticle | null>(null);
-  const [researchGroupId, setResearchGroupId] = useState<string>('');
-  const [viewingResearchArticle, setViewingResearchArticle] = useState<LibraryArticle | null>(null);
+  const [selectedArticleForResearch, setSelectedArticleForResearch] =
+    useState<LibraryArticle | null>(null);
+  const [researchGroupId, setResearchGroupId] = useState<string>("");
+  const [viewingResearchArticle, setViewingResearchArticle] =
+    useState<LibraryArticle | null>(null);
   const [copiedReport, setCopiedReport] = useState<boolean>(false);
-  const [message, setMessage] = useState('');
-  useDialog(Boolean(selectedArticleForResearch || viewingResearchArticle), () => { setSelectedArticleForResearch(null); setViewingResearchArticle(null); });
+  const [message, setMessage] = useState("");
+  useDialog(
+    Boolean(selectedArticleForResearch || viewingResearchArticle),
+    () => {
+      setSelectedArticleForResearch(null);
+      setViewingResearchArticle(null);
+    },
+  );
 
   const { data: groups } = useQuery({
-    queryKey: ['groups'],
+    queryKey: ["groups"],
     queryFn: api.listGroups,
   });
 
   const { data: sources } = useQuery({
-    queryKey: ['sources'],
+    queryKey: ["sources"],
     queryFn: api.listSources,
   });
 
@@ -89,13 +119,20 @@ export function LibraryPage() {
     return map;
   }, [sources]);
 
-  const { data: libraryData, isLoading, error: libraryError } = useQuery({
+  const {
+    data: libraryData,
+    isLoading,
+    error: libraryError,
+  } = useQuery({
     refetchInterval: 5000,
-    queryKey: ['library', { timeRange, statusFilter, selectedSourceId, searchTerm, page, pageSize }],
+    queryKey: [
+      "library",
+      { ...filters, selectedSourceId, searchTerm, page, pageSize },
+    ],
+    enabled: !filterError,
     queryFn: () =>
       api.listLibrary({
-        time_range: timeRange,
-        status_filter: statusFilter,
+        ...libraryFilterParams(filters),
         source_id: selectedSourceId || undefined,
         search: searchTerm || undefined,
         page,
@@ -104,24 +141,42 @@ export function LibraryPage() {
   });
 
   const toggleInterestMutation = useMutation({
-    mutationFn: ({ articleId, interested }: { articleId: string; interested: boolean }) =>
-      api.toggleArticleInterest(articleId, { interested }),
+    mutationFn: ({
+      articleId,
+      interested,
+    }: {
+      articleId: string;
+      interested: boolean;
+    }) => api.toggleArticleInterest(articleId, { interested }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['library'] });
-      queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
+      queryClient.invalidateQueries({ queryKey: ["library"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-feed"] });
     },
   });
 
   const researchMutation = useMutation({
-    mutationFn: async ({ articleId, groupId }: { articleId: string; groupId: string }) => {
-      const task = await api.startResearchOnArticle(articleId, { group_id: groupId });
-      if (task.status === 'failed') throw new Error(task.error_message || '调研失败，请重试');
+    mutationFn: async ({
+      articleId,
+      groupId,
+    }: {
+      articleId: string;
+      groupId: string;
+    }) => {
+      const task = await api.startResearchOnArticle(articleId, {
+        group_id: groupId,
+      });
+      if (task.status === "failed")
+        throw new Error(task.error_message || "调研失败，请重试");
       return task;
     },
     onSuccess: (task) => {
-      queryClient.invalidateQueries({ queryKey: ['research'] });
-      queryClient.invalidateQueries({ queryKey: ['library'] });
-      setMessage(task.status === 'succeeded' ? '深度调研已完成，可在文章卡片查看完整研报。' : '调研已启动，完成后将自动更新。');
+      queryClient.invalidateQueries({ queryKey: ["research"] });
+      queryClient.invalidateQueries({ queryKey: ["library"] });
+      setMessage(
+        task.status === "succeeded"
+          ? "深度调研已完成，可在文章卡片查看完整研报。"
+          : "调研已启动，完成后将自动更新。",
+      );
       setSelectedArticleForResearch(null);
     },
   });
@@ -130,13 +185,8 @@ export function LibraryPage() {
   const pagination = libraryData?.pagination;
   const articles = libraryData?.items || [];
 
-  const handleTimeChange = (val: 'all' | 'today' | '3days' | 'published7') => {
-    setTimeRange(val);
-    setPage(1);
-  };
-
-  const handleStatusChange = (val: 'all' | 'selected' | 'deep' | 'interested') => {
-    setStatusFilter(val);
+  const handleFiltersChange = (value: LibraryFiltersState) => {
+    setFilters(value);
     setPage(1);
   };
 
@@ -152,8 +202,19 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-6">
-      {message && <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">{message}</p>}
-      {(libraryError || toggleInterestMutation.error) && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{libraryError?.message || toggleInterestMutation.error?.message}</p>}
+      {message && (
+        <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">
+          {message}
+        </p>
+      )}
+      {(libraryError || toggleInterestMutation.error) && (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          {libraryError?.message || toggleInterestMutation.error?.message}
+        </p>
+      )}
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -166,7 +227,8 @@ export function LibraryPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
             <Input
-              aria-label="搜索标题或作者" placeholder="搜索标题或作者..."
+              aria-label="搜索标题或作者"
+              placeholder="搜索标题或作者..."
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 h-9 text-sm"
@@ -178,109 +240,12 @@ export function LibraryPage() {
       {/* Filter Toolbar */}
       <Card className="bg-neutral-50/50 border-neutral-200">
         <CardContent className="p-4 space-y-3.5">
-          {/* Row 1: 入池时间筛选 (3个快捷选项) */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-neutral-500 font-medium flex items-center gap-1.5 w-20 shrink-0">
-              <Clock className="w-3.5 h-3.5 text-neutral-400" />
-              时间范围:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
-              <button
-                type="button"
-                onClick={() => handleTimeChange('all')}
-                className={`px-3 py-1 rounded-md transition-all font-medium flex items-center gap-1.5 ${
-                  timeRange === 'all'
-                    ? 'bg-white text-neutral-900 shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                全部
-                <span className="text-[10px] text-neutral-400">({filterMeta?.total_count ?? 0})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTimeChange('today')}
-                className={`px-3 py-1 rounded-md transition-all font-medium flex items-center gap-1.5 ${
-                  timeRange === 'today'
-                    ? 'bg-white text-neutral-900 shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                今日发现
-                <span className="text-[10px] text-neutral-400">({filterMeta?.today_count ?? 0})</span>
-              </button>
-              <button type="button" onClick={() => handleTimeChange('published7')} className={`px-3 py-1 rounded-md font-medium ${timeRange==='published7' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'}`}>近七天发布</button>
-              <button
-                type="button"
-                onClick={() => handleTimeChange('3days')}
-                className={`px-3 py-1 rounded-md transition-all font-medium flex items-center gap-1.5 ${
-                  timeRange === '3days'
-                    ? 'bg-white text-neutral-900 shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
-              >
-                近三天发现
-                <span className="text-[10px] text-neutral-400">({filterMeta?.three_days_count ?? 0})</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Row 2: 标签筛选 (精选、深度分析、感兴趣) */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-neutral-500 font-medium flex items-center gap-1.5 w-20 shrink-0">
-              <Tag className="w-3.5 h-3.5 text-neutral-400" />
-              属性标签:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleStatusChange('all')}
-                className={`px-3 py-1 rounded-md border text-xs font-medium transition-all ${
-                  statusFilter === 'all'
-                    ? 'bg-neutral-900 text-white border-neutral-900'
-                    : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
-                }`}
-              >
-                全部
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStatusChange('selected')}
-                className={`px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1 ${
-                  statusFilter === 'selected'
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50/50'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                精选入围 ({filterMeta?.selected_count ?? 0})
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStatusChange('deep')}
-                className={`px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1 ${
-                  statusFilter === 'deep'
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50/50'
-                }`}
-              >
-                <FileText className="w-3 h-3" />
-                深度分析 ({filterMeta?.deep_count ?? 0})
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStatusChange('interested')}
-                className={`px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1 ${
-                  statusFilter === 'interested'
-                    ? 'bg-rose-600 text-white border-rose-600'
-                    : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50/50'
-                }`}
-              >
-                <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
-                感兴趣 ({filterMeta?.interested_count ?? 0})
-              </button>
-            </div>
-          </div>
+          <LibraryFilters
+            value={filters}
+            meta={filterMeta}
+            timezone={timezone}
+            onChange={handleFiltersChange}
+          />
 
           {/* Row 3: 采集来源标签筛选 */}
           <div className="flex flex-wrap items-center gap-2 text-xs pt-1 border-t border-neutral-200/60">
@@ -291,11 +256,11 @@ export function LibraryPage() {
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => handleSourceChange('')}
+                onClick={() => handleSourceChange("")}
                 className={`px-3 py-1 rounded-md border text-xs font-medium transition-all ${
-                  selectedSourceId === ''
-                    ? 'bg-neutral-900 text-white border-neutral-900'
-                    : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+                  selectedSourceId === ""
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
                 }`}
               >
                 全部
@@ -306,27 +271,33 @@ export function LibraryPage() {
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => handleSourceChange(isActive ? '' : s.id)}
+                    onClick={() => handleSourceChange(isActive ? "" : s.id)}
                     className={`px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1 ${
                       isActive
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                        : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                        : "bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50"
                     }`}
                   >
-                    <Rss className={`w-3 h-3 ${isActive ? 'text-white' : 'text-emerald-600'}`} />
+                    <Rss
+                      className={`w-3 h-3 ${isActive ? "text-white" : "text-emerald-600"}`}
+                    />
                     {s.name}
                   </button>
                 );
               })}
-              {(selectedSourceId || statusFilter !== 'all' || timeRange !== 'all' || searchTerm) && (
+              {(selectedSourceId ||
+                filters.status_filter !== "all" ||
+                filters.interested_only ||
+                filters.time_range !== "all" ||
+                filters.published_range !== "all" ||
+                searchTerm) && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setTimeRange('all');
-                    setStatusFilter('all');
-                    setSelectedSourceId('');
-                    setSearchTerm('');
+                    setFilters(DEFAULT_LIBRARY_FILTERS);
+                    setSelectedSourceId("");
+                    setSearchTerm("");
                     setPage(1);
                   }}
                   className="h-7 px-2 text-xs text-neutral-500 hover:text-neutral-800 ml-1"
@@ -340,13 +311,21 @@ export function LibraryPage() {
       </Card>
 
       {/* Article Cards Grid */}
-      {isLoading ? (
-        <div className="py-16 text-center text-neutral-400 text-sm">加载中...</div>
+      {filterError ? (
+        <p className="rounded-lg border bg-neutral-50 p-6 text-sm text-neutral-500">
+          请完成日期范围后查看文章。
+        </p>
+      ) : isLoading ? (
+        <div className="py-16 text-center text-neutral-400 text-sm">
+          加载中...
+        </div>
       ) : articles.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-16 text-center">
             <Filter className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-            <p className="text-sm font-medium text-neutral-600">未检索到匹配文章</p>
+            <p className="text-sm font-medium text-neutral-600">
+              未检索到匹配文章
+            </p>
             <p className="text-xs text-neutral-400 mt-1">
               可以尝试切换时间范围、状态标签或清空搜索条件。
             </p>
@@ -355,17 +334,39 @@ export function LibraryPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {articles.map((art) => (
-            <Card key={art.id} className="flex flex-col justify-between hover:shadow-xs transition-shadow">
+            <Card
+              key={art.id}
+              className="flex flex-col justify-between hover:shadow-xs transition-shadow"
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <CardTitle className="text-base font-semibold leading-snug line-clamp-2">
-                      {art.research?.wiki_url || art.wiki_url ? <a href={art.research?.wiki_url || art.wiki_url} target="_blank" rel="noreferrer" className="hover:text-blue-700 hover:underline">{art.title}</a> : art.title}
+                      {art.research?.wiki_url || art.wiki_url ? (
+                        <a
+                          href={art.research?.wiki_url || art.wiki_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-blue-700 hover:underline"
+                        >
+                          {art.title}
+                        </a>
+                      ) : (
+                        art.title
+                      )}
                     </CardTitle>
                     <CardDescription className="text-xs flex items-center gap-2 text-neutral-500">
-                      <span>{art.author || '未知作者'}</span>
+                      <span>{art.author || "未知作者"}</span>
                       <span>·</span>
-                      <span>首发：{art.published_at ? new Date(art.published_at).toLocaleDateString() : '无发布日期'}</span>
+                      <span>
+                        首发：
+                        {art.published_at
+                          ? new Date(art.published_at).toLocaleDateString(
+                              "zh-CN",
+                              { timeZone: timezone },
+                            )
+                          : "无发布日期"}
+                      </span>
                     </CardDescription>
                   </div>
 
@@ -380,13 +381,17 @@ export function LibraryPage() {
                         })
                       }
                       className="p-1.5 rounded-md hover:bg-neutral-100 transition-colors"
-                      title={art.user_interested ? '已标为感兴趣（点击取消）' : '标为感兴趣'}
+                      title={
+                        art.user_interested
+                          ? "已标为感兴趣（点击取消）"
+                          : "标为感兴趣"
+                      }
                     >
                       <Heart
                         className={`h-4 w-4 transition-colors ${
                           art.user_interested
-                            ? 'fill-rose-500 text-rose-500'
-                            : 'text-neutral-300 hover:text-neutral-500'
+                            ? "fill-rose-500 text-rose-500"
+                            : "text-neutral-300 hover:text-neutral-500"
                         }`}
                       />
                     </button>
@@ -396,12 +401,26 @@ export function LibraryPage() {
                 {/* Badges Bar */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-2">
                   {/* 入池时间 */}
-                  <Badge variant="outline" className="text-[10px] text-neutral-500 bg-neutral-50 border-neutral-200 font-normal">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] text-neutral-500 bg-neutral-50 border-neutral-200 font-normal"
+                  >
                     <Clock className="w-2.5 h-2.5 mr-1 text-neutral-400 inline" />
                     发现: {formatPoolTime(art.created_at, timezone)}
                   </Badge>
 
-                  {art.content_kind !== 'article' && art.content_kind !== 'unknown' && <Badge variant="outline" className="text-[10px]">{({digest:'汇总动态',announcement:'公告',note:'短文/实验'} as Record<string,string>)[art.content_kind] || art.content_kind}</Badge>}
+                  {art.content_kind !== "article" &&
+                    art.content_kind !== "unknown" && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {(
+                          {
+                            digest: "汇总动态",
+                            announcement: "公告",
+                            note: "短文/实验",
+                          } as Record<string, string>
+                        )[art.content_kind] || art.content_kind}
+                      </Badge>
+                    )}
                   {/* 采集来源标签 */}
                   {art.sources?.map((srcId) => (
                     <Badge
@@ -427,44 +446,22 @@ export function LibraryPage() {
                     </Badge>
                   ))}
 
-                  {/* 精选入围 */}
-                  {art.is_selected && (
-                    <Badge className="text-[10px] bg-amber-50 text-amber-700 border-amber-300 border font-normal">
-                      <Sparkles className="w-2.5 h-2.5 mr-0.5 text-amber-600 inline" />
-                      精选入围
-                    </Badge>
-                  )}
-
-                  {/* 深度分析研报就绪状态 */}
-                  {art.research?.status === 'succeeded' ? (
-                    <Badge className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 border font-normal">
-                      <BookOpen className="w-2.5 h-2.5 mr-0.5 text-purple-600 inline" />
-                      研报已就绪
-                    </Badge>
-                  ) : art.research?.status === 'running' || art.research?.status === 'queued' ? (
-                    <Badge className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-200 border font-normal animate-pulse">
-                      <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin inline" />
+                  <LibraryArticleStatus article={art} />
+                  {(art.research?.status === "running" ||
+                    art.research?.status === "queued") && (
+                    <Badge className="border-indigo-200 bg-indigo-50 text-[10px] font-normal text-indigo-700">
+                      <Loader2 className="mr-1 inline h-2.5 w-2.5 animate-spin" />
                       调研进行中
                     </Badge>
-                  ) : art.is_deep_analyzed ? (
-                    <Badge className="text-[10px] bg-purple-50 text-purple-700 border-purple-300 border font-normal">
-                      <FileText className="w-2.5 h-2.5 mr-0.5 text-purple-600 inline" />
-                      深度分析
-                    </Badge>
-                  ) : null}
-
-                  {/* 数据源 */}
-                  {art.sources?.map((s) => (
-                    <Badge key={s} variant="secondary" className="text-[10px] font-normal">
-                      {s}
-                    </Badge>
-                  ))}
+                  )}
                 </div>
               </CardHeader>
 
               <CardContent className="space-y-3 pt-1">
                 {/* Research Highlights or Body Snippet */}
-                {art.research?.status === 'succeeded' && art.research.questions && art.research.questions.length > 0 ? (
+                {art.research?.status === "succeeded" &&
+                art.research.questions &&
+                art.research.questions.length > 0 ? (
                   <div className="bg-purple-50/60 border border-purple-100 rounded-md p-2.5 text-xs space-y-1.5">
                     <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
                       <span className="flex items-center gap-1">
@@ -473,23 +470,31 @@ export function LibraryPage() {
                       </span>
                       {art.research.finished_at && (
                         <span className="text-[10px] text-purple-400 font-normal">
-                          完成于 {new Date(art.research.finished_at).toLocaleDateString()}
+                          完成于{" "}
+                          {new Date(
+                            art.research.finished_at,
+                          ).toLocaleDateString()}
                         </span>
                       )}
                     </div>
                     <ul className="list-disc list-inside text-neutral-600 space-y-0.5 text-[11px]">
                       {art.research.questions.slice(0, 2).map((q, idx) => (
-                        <li key={idx} className="line-clamp-1">{q}</li>
+                        <li key={idx} className="line-clamp-1">
+                          {q}
+                        </li>
                       ))}
                     </ul>
                   </div>
                 ) : (
                   <p className="text-xs text-neutral-600 line-clamp-3 bg-neutral-50/70 p-2.5 rounded-md border border-neutral-100 leading-relaxed">
-                    {art.body_snippet || '暂无正文预览'}
+                    {art.body_snippet || "暂无正文预览"}
                   </p>
                 )}
 
-                <WikiReadingLinks articleUrl={art.wiki_url} researchUrl={art.research?.wiki_url} />
+                <WikiReadingLinks
+                  articleUrl={art.wiki_url}
+                  researchUrl={art.research?.wiki_url}
+                />
 
                 {/* Bottom Actions */}
                 <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
@@ -508,12 +513,15 @@ export function LibraryPage() {
                   )}
 
                   <div className="flex items-center gap-1.5">
-                    {art.research?.status === 'succeeded' ? (
+                    {art.research?.status === "succeeded" ? (
                       <>
                         <Button
                           size="sm"
                           className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white gap-1"
-                          onClick={() => { setCopiedReport(false); setViewingResearchArticle(art); }}
+                          onClick={() => {
+                            setCopiedReport(false);
+                            setViewingResearchArticle(art);
+                          }}
                         >
                           <BookOpen className="h-3.5 w-3.5" />
                           查看深度研报
@@ -536,8 +544,14 @@ export function LibraryPage() {
                           <RotateCw className="h-3.5 w-3.5" />
                         </Button>
                       </>
-                    ) : art.research?.status === 'running' || art.research?.status === 'queued' ? (
-                      <Button size="sm" variant="outline" disabled className="h-8 text-xs gap-1 text-purple-700 border-purple-200 bg-purple-50/40">
+                    ) : art.research?.status === "running" ||
+                      art.research?.status === "queued" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        className="h-8 text-xs gap-1 text-purple-700 border-purple-200 bg-purple-50/40"
+                      >
                         <Loader2 className="h-3 w-3 animate-spin text-purple-600" />
                         调研中...
                       </Button>
@@ -571,9 +585,19 @@ export function LibraryPage() {
       {pagination && pagination.total_count > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs text-neutral-500">
           <div>
-            共 <span className="font-semibold text-neutral-700">{pagination.total_count}</span> 篇 · 当前第{' '}
-            <span className="font-semibold text-neutral-700">{pagination.page}</span> /{' '}
-            <span className="font-semibold text-neutral-700">{pagination.total_pages}</span> 页
+            共{" "}
+            <span className="font-semibold text-neutral-700">
+              {pagination.total_count}
+            </span>{" "}
+            篇 · 当前第{" "}
+            <span className="font-semibold text-neutral-700">
+              {pagination.page}
+            </span>{" "}
+            /{" "}
+            <span className="font-semibold text-neutral-700">
+              {pagination.total_pages}
+            </span>{" "}
+            页
           </div>
           <div className="flex items-center gap-1.5">
             <Button
@@ -593,7 +617,9 @@ export function LibraryPage() {
               variant="outline"
               size="sm"
               disabled={pagination.page >= pagination.total_pages}
-              onClick={() => setPage((p) => Math.min(pagination.total_pages, p + 1))}
+              onClick={() =>
+                setPage((p) => Math.min(pagination.total_pages, p + 1))
+              }
               className="h-8 px-2.5 text-xs gap-1"
             >
               下一页
@@ -605,7 +631,12 @@ export function LibraryPage() {
 
       {/* Start Research Modal */}
       {selectedArticleForResearch && (
-        <div role="dialog" aria-modal="true" aria-label="单篇深度调研" className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="单篇深度调研"
+          className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+        >
           <Card className="max-w-md w-full shadow-xl">
             <CardHeader>
               <CardTitle className="text-base flex items-center">
@@ -613,7 +644,8 @@ export function LibraryPage() {
                 单篇深度调研
               </CardTitle>
               <CardDescription>
-                将对 《{selectedArticleForResearch.title}》 展开机制分析、取舍分析与证据核验。
+                将对 《{selectedArticleForResearch.title}》
+                展开机制分析、取舍分析与证据核验。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -635,8 +667,16 @@ export function LibraryPage() {
                   ))}
                 </select>
               </div>
-              {researchMutation.error && <p role="alert" className="text-xs text-red-700">{researchMutation.error.message}</p>}
-              {researchMutation.isPending && <p role="status" className="text-xs text-blue-700">正在生成完整研报，请稍候。关闭窗口后仍会继续处理。</p>}
+              {researchMutation.error && (
+                <p role="alert" className="text-xs text-red-700">
+                  {researchMutation.error.message}
+                </p>
+              )}
+              {researchMutation.isPending && (
+                <p role="status" className="text-xs text-blue-700">
+                  正在生成完整研报，请稍候。关闭窗口后仍会继续处理。
+                </p>
+              )}
               <div className="flex justify-end space-x-2 pt-2">
                 <Button
                   variant="ghost"
@@ -655,7 +695,7 @@ export function LibraryPage() {
                     })
                   }
                 >
-                  {researchMutation.isPending ? '正在生成…' : '启动调研'}
+                  {researchMutation.isPending ? "正在生成…" : "启动调研"}
                 </Button>
               </div>
             </CardContent>
@@ -665,7 +705,12 @@ export function LibraryPage() {
 
       {/* View Full Research Report Modal */}
       {viewingResearchArticle && viewingResearchArticle.research && (
-        <div role="dialog" aria-modal="true" aria-label="深度技术调研报告" className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="深度技术调研报告"
+          className="fixed inset-0 bg-neutral-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-50 overflow-hidden"
+        >
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-neutral-200">
             {/* Modal Header */}
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/80 rounded-t-xl shrink-0">
@@ -682,41 +727,55 @@ export function LibraryPage() {
                   <span>
                     {viewingResearchArticle.research.finished_at
                       ? `完成于 ${new Date(viewingResearchArticle.research.finished_at).toLocaleString()}`
-                      : '调研完成'}
+                      : "调研完成"}
                   </span>
-                  {viewingResearchArticle.research.evidence && viewingResearchArticle.research.evidence.length > 0 && (
-                    <>
-                      <span>·</span>
-                      <span className="text-neutral-600">
-                        {viewingResearchArticle.research.evidence.length} 条交叉验证证据
-                      </span>
-                    </>
-                  )}
+                  {viewingResearchArticle.research.evidence &&
+                    viewingResearchArticle.research.evidence.length > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className="text-neutral-600">
+                          {viewingResearchArticle.research.evidence.length}{" "}
+                          条交叉验证证据
+                        </span>
+                      </>
+                    )}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <WikiReadingLinks articleUrl={viewingResearchArticle.wiki_url} researchUrl={viewingResearchArticle.research.wiki_url} />
+                <WikiReadingLinks
+                  articleUrl={viewingResearchArticle.wiki_url}
+                  researchUrl={viewingResearchArticle.research.wiki_url}
+                />
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-8 text-xs gap-1"
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText(viewingResearchArticle.research?.report_markdown || '');
+                      await navigator.clipboard.writeText(
+                        viewingResearchArticle.research?.report_markdown || "",
+                      );
                       setCopiedReport(true);
                       setTimeout(() => setCopiedReport(false), 2000);
-                    } catch { setMessage('无法访问剪贴板，请选中研报内容后复制。'); }
+                    } catch {
+                      setMessage("无法访问剪贴板，请选中研报内容后复制。");
+                    }
                   }}
                 >
-                  {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedReport ? '已复制' : '复制研报'}
+                  {copiedReport ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  {copiedReport ? "已复制" : "复制研报"}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-8 w-8 p-0 text-neutral-400 hover:text-neutral-700"
-                  aria-label="关闭研报" onClick={() => setViewingResearchArticle(null)}
+                  aria-label="关闭研报"
+                  onClick={() => setViewingResearchArticle(null)}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -726,19 +785,20 @@ export function LibraryPage() {
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Core Questions */}
-              {viewingResearchArticle.research.questions && viewingResearchArticle.research.questions.length > 0 && (
-                <div className="bg-purple-50/70 border border-purple-100 rounded-lg p-4 space-y-2">
-                  <h4 className="text-xs font-semibold text-purple-900 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                    核心研究问题
-                  </h4>
-                  <ul className="list-disc list-inside text-xs text-neutral-700 space-y-1">
-                    {viewingResearchArticle.research.questions.map((q, i) => (
-                      <li key={i}>{q}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {viewingResearchArticle.research.questions &&
+                viewingResearchArticle.research.questions.length > 0 && (
+                  <div className="bg-purple-50/70 border border-purple-100 rounded-lg p-4 space-y-2">
+                    <h4 className="text-xs font-semibold text-purple-900 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      核心研究问题
+                    </h4>
+                    <ul className="list-disc list-inside text-xs text-neutral-700 space-y-1">
+                      {viewingResearchArticle.research.questions.map((q, i) => (
+                        <li key={i}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
               {/* Markdown Report Content */}
               <div className="prose prose-neutral max-w-none text-sm leading-relaxed">
@@ -752,38 +812,57 @@ export function LibraryPage() {
               </div>
 
               {/* Cross-Verification Evidence */}
-              {viewingResearchArticle.research.evidence && viewingResearchArticle.research.evidence.length > 0 && (
-                <div className="border-t border-neutral-100 pt-4 space-y-3">
-                  <h4 className="text-xs font-semibold text-neutral-800">交叉引证与事实来源</h4>
-                  <div className="grid grid-cols-1 gap-2">
-                    {viewingResearchArticle.research.evidence.map((ev: any, idx: number) => (
-                      <div key={idx} className="p-3 bg-neutral-50 rounded-md border border-neutral-100 text-xs space-y-1">
-                        <div className="font-medium text-neutral-800 flex items-center justify-between">
-                          <span>{ev.title || `证据 #${idx + 1}`}</span>
-                          {ev.url && (
-                            <a
-                              href={ev.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline flex items-center gap-1"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              来源链接
-                            </a>
-                          )}
-                        </div>
-                        {ev.quote && <p className="text-neutral-600 italic">“{ev.quote}”</p>}
-                      </div>
-                    ))}
+              {viewingResearchArticle.research.evidence &&
+                viewingResearchArticle.research.evidence.length > 0 && (
+                  <div className="border-t border-neutral-100 pt-4 space-y-3">
+                    <h4 className="text-xs font-semibold text-neutral-800">
+                      交叉引证与事实来源
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {viewingResearchArticle.research.evidence.map(
+                        (ev: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="p-3 bg-neutral-50 rounded-md border border-neutral-100 text-xs space-y-1"
+                          >
+                            <div className="font-medium text-neutral-800 flex items-center justify-between">
+                              <span>{ev.title || `证据 #${idx + 1}`}</span>
+                              {ev.url && (
+                                <a
+                                  href={ev.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline flex items-center gap-1"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  来源链接
+                                </a>
+                              )}
+                            </div>
+                            {ev.quote && (
+                              <p className="text-neutral-600 italic">
+                                “{ev.quote}”
+                              </p>
+                            )}
+                          </div>
+                        ),
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t border-neutral-100 bg-neutral-50/50 flex items-center justify-between rounded-b-xl shrink-0">
-              <span className="text-xs text-neutral-400">OpenLore 深度调研白盒报告</span>
-              <Button size="sm" variant="outline" aria-label="关闭研报" onClick={() => setViewingResearchArticle(null)}>
+              <span className="text-xs text-neutral-400">
+                OpenLore 深度调研白盒报告
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="关闭研报"
+                onClick={() => setViewingResearchArticle(null)}
+              >
                 关闭
               </Button>
             </div>
