@@ -508,10 +508,10 @@ export function LibraryPage() {
 
               <CardContent className="space-y-3 pt-1">
                 <LibraryAssessments review={art.review} timezone={timezone} />
-                {/* Research Highlights or Body Snippet */}
+                {/* Research Highlights */}
                 {art.research?.status === "succeeded" &&
                 art.research.questions &&
-                art.research.questions.length > 0 ? (
+                art.research.questions.length > 0 && (
                   <div className="bg-purple-50/60 border border-purple-100 rounded-md p-2.5 text-xs space-y-1.5">
                     <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
                       <span className="flex items-center gap-1">
@@ -535,10 +535,6 @@ export function LibraryPage() {
                       ))}
                     </ul>
                   </div>
-                ) : (
-                  <p className="text-xs text-neutral-600 line-clamp-3 bg-neutral-50/70 p-2.5 rounded-md border border-neutral-100 leading-relaxed">
-                    {art.body_snippet || "暂无正文预览"}
-                  </p>
                 )}
 
                 <WikiReadingLinks
