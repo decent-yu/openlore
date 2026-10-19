@@ -70,6 +70,7 @@ function TimeRow({
   to,
   todayCount,
   recentCount,
+  totalCount,
   onChange,
 }: {
   label: string;
@@ -80,6 +81,7 @@ function TimeRow({
   to: string;
   todayCount?: number;
   recentCount?: number;
+  totalCount?: number;
   onChange: (range: LibraryTimeRange, from: string, to: string) => void;
 }) {
   return (
@@ -95,7 +97,7 @@ function TimeRow({
       <div className="flex flex-wrap gap-1 rounded-lg border border-neutral-200 bg-neutral-100 p-0.5">
         {(
           [
-            ["all", "全部"],
+            ["all", `全部${totalCount == null ? "" : ` (${totalCount})`}`],
             [
               "today",
               `今天${noun}${todayCount == null ? "" : ` (${todayCount})`}`,
@@ -166,6 +168,7 @@ export function LibraryFilters({
         to={value.discovered_to}
         todayCount={meta?.today_count}
         recentCount={meta?.three_days_count}
+        totalCount={meta?.total_count}
         onChange={(range, from, to) =>
           onChange({
             ...value,
@@ -184,6 +187,7 @@ export function LibraryFilters({
         to={value.published_to}
         todayCount={meta?.published_today_count}
         recentCount={meta?.published_three_days_count}
+        totalCount={meta?.total_count}
         onChange={(range, from, to) =>
           onChange({
             ...value,
@@ -213,7 +217,13 @@ export function LibraryFilters({
         </span>
         {(
           [
-            ["all", "全部", undefined],
+            [
+              "all",
+              "全部",
+              meta
+                ? meta.unselected_count + meta.selected_count + meta.deep_count
+                : undefined,
+            ],
             ["unselected", "暂未入选", meta?.unselected_count],
             ["selected", "精选入围", meta?.selected_count],
             ["deep", "深度分析", meta?.deep_count],
