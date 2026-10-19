@@ -1,6 +1,13 @@
 import React from "react";
+import { ReviewTags } from "./ReviewTags.js";
 import { Link } from "react-router-dom";
 import type { ArticleReview } from "@openlore/contracts";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 
 export function LibraryAssessments({
   review,
@@ -49,17 +56,20 @@ export function LibraryAssessments({
             </strong>
             <span className="text-neutral-400"> / 100</span>
           </p>
-          <p className="font-medium text-neutral-700">{result.positioning}</p>
-          <div className="flex flex-wrap gap-1">
-            {result.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded bg-white px-1.5 py-0.5 text-neutral-600"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p
+                  tabIndex={0}
+                  className="line-clamp-2 cursor-help break-words font-medium text-neutral-700"
+                >
+                  {result.positioning}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent>{result.positioning}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <ReviewTags tags={result.tags} />
           <details>
             <summary className="cursor-pointer text-neutral-500">
               查看审核详情
