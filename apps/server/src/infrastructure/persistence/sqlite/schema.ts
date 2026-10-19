@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const workspaceSettingsTable = sqliteTable('workspace_settings', {
   key: text('key').primaryKey(),
@@ -85,7 +85,7 @@ export const groupsTable = sqliteTable('groups', {
   timezone: text('timezone').notNull().default('Asia/Shanghai'),
   deepAnalysisCount: integer('deep_analysis_count').notNull().default(3),
   researchInstructions: text('research_instructions').notNull().default(''),
-  assessmentSkillId: text('assessment_skill_id').notNull().default('tech-article-extractor'),
+  selectionSkillId: text('selection_skill_id').notNull().default('article-selector'),
   researchSkillId: text('research_skill_id').notNull().default('deep-research-expert'),
   aiProfileId: text('ai_profile_id'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -124,6 +124,17 @@ export const articleRevisionsTable = sqliteTable('article_revisions', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const articleReviewsTable = sqliteTable('article_reviews', {
+  articleId: text('article_id').notNull().references(() => articlesTable.id, { onDelete: 'cascade' }),
+  revisionHash: text('revision_hash').notNull(),
+  status: text('status').notNull().default('queued'),
+  resultJson: text('result_json'),
+  errorMessage: text('error_message'),
+  logId: text('log_id'),
+  createdAt: text('created_at').notNull(),
+  assessedAt: text('assessed_at'),
+}, (table) => [primaryKey({columns: [table.articleId, table.revisionHash]})]);
+
 export const sourceItemsTable = sqliteTable('source_items', {
   id: text('id').primaryKey(),
   sourceId: text('source_id').notNull(),
@@ -145,7 +156,6 @@ export const groupItemsTable = sqliteTable('group_items', {
   rulesRevision: text('rules_revision').notNull(),
   decision: text('decision').notNull(), // 'qualified' | 'excluded'
   reason: text('reason').notNull().default(''),
-  scoresJson: text('scores_json'),
   matchedSourceIdsJson: text('matched_source_ids_json').notNull().default('[]'),
   isDeepAnalyzed: integer('is_deep_analyzed', { mode: 'boolean' }).notNull().default(false),
   selectionSource: text('selection_source').notNull().default('ai_daily_auto'),

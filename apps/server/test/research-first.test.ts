@@ -5,6 +5,7 @@ import {
 } from "../src/infrastructure/persistence/sqlite/db.js";
 import { groupsService } from "../src/modules/groups/service.js";
 import { collectionService } from "../src/modules/collection/service.js";
+import { articleReviewsService } from "../src/modules/processing/article-reviews.js";
 import { processingService } from "../src/modules/processing/service.js";
 import { researchService } from "../src/modules/research/service.js";
 import { deliveryService } from "../src/modules/delivery/service.js";
@@ -28,12 +29,17 @@ const execute = vi.fn(async (input: any) =>
         model: "mock",
         durationMs: 1,
         result: {
-          relevance: input.material.includes("Old best") ? 99 : 85,
+          positioning: "工程实践",
+          tags: ["工程"],
           quality: 90,
           reason: "Concrete engineering evidence",
           summary: "Assessment summary",
           evidence_refs: [body],
         },
+      }
+    : input.taskType === 'select' ? {
+        status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
+        result: {selected: JSON.parse(input.material).slice(0, 1).map((item: any) => ({article_id: item.article_id, reason: 'Matches the task'}))},
       }
     : {
         status: "success" as const,
@@ -47,7 +53,7 @@ beforeAll(() => initDatabase());
 beforeEach(async () => {
   const db = getSqliteDatabase();
   db.exec(
-    "DELETE FROM research_claims;DELETE FROM research_tasks;DELETE FROM runs;DELETE FROM group_items;DELETE FROM article_assessments;DELETE FROM source_items;DELETE FROM article_revisions;DELETE FROM articles;DELETE FROM groups;DELETE FROM deliveries;DELETE FROM artifact_bundles;DELETE FROM article_locations;DELETE FROM collections;DELETE FROM repository_connections",
+    "DELETE FROM research_claims;DELETE FROM research_tasks;DELETE FROM runs;DELETE FROM group_items;DELETE FROM article_reviews;DELETE FROM source_items;DELETE FROM article_revisions;DELETE FROM articles;DELETE FROM groups;DELETE FROM deliveries;DELETE FROM artifact_bundles;DELETE FROM article_locations;DELETE FROM collections;DELETE FROM repository_connections",
   );
   execute.mockClear();
   vi.spyOn(ai, "getAIAdapterWithFallback").mockReturnValue({
@@ -57,7 +63,7 @@ beforeEach(async () => {
   vi.spyOn(skillsService, "getSkill").mockImplementation(async (id) => ({
     id,
     name: id,
-    type: id === "tech-article-extractor" ? "extraction" : "research",
+    type: id === "tech-article-extractor" ? "extraction" : id === "article-selector" ? "selection" : "research",
     revision: "v1",
     description: "",
     tags: [],
@@ -95,6 +101,7 @@ beforeEach(async () => {
       issues: [],
     }),
   );
+  await articleReviewsService.processPending();
 });
 afterEach(() => vi.restoreAllMocks());
 async function finish(scheduler: AppScheduler, id: string) {
@@ -104,7 +111,7 @@ async function finish(scheduler: AppScheduler, id: string) {
   return (await scheduler.getRun(id))!;
 }
 
-it("ranks all old and new content, reuses scoring next run and only excludes archived research", async () => {
+it("selects from shared reviews across all old and new content and only excludes archived research", async () => {
   const scheduler = new AppScheduler();
   const first = await finish(
     scheduler,

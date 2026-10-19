@@ -23,6 +23,7 @@ import {
   repositoryConnectionsTable,
   reportPlansTable,
 } from "../../infrastructure/persistence/sqlite/schema.js";
+import { articleReviewsService } from "../processing/article-reviews.js";
 import { collectionService } from "../collection/service.js";
 import { deliveryService } from "../delivery/service.js";
 import { groupsService } from "../groups/service.js";
@@ -75,6 +76,7 @@ export class AppScheduler {
 
   start(intervalMs = 30000): void {
     if (this.timer) return;
+    articleReviewsService.recoverInterrupted();
     this.tick().catch(() => {});
     this.timer = setInterval(() => {
       this.tick().catch(() => {});
@@ -193,6 +195,7 @@ export class AppScheduler {
           this.reportSending.set(plan.id, sending);
         }
       }
+      articleReviewsService.processPending().catch(() => {});
       this.pollDueSources().catch(() => {});
     } finally {
       this.isProcessing = false;

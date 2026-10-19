@@ -140,9 +140,9 @@ export class FeedService {
         { commit_sha: string | null; commit_url: string | null } | undefined;
       const assessment = db
         .prepare(
-          "SELECT result_json FROM article_assessments WHERE article_id=? AND group_id=? ORDER BY created_at DESC LIMIT 1",
+          "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
         )
-        .get(article.id, group.id) as { result_json: string } | undefined;
+        .get(article.id) as { result_json: string } | undefined;
       let summary = "";
       if (assessment) {
         try {

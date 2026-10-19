@@ -6,13 +6,7 @@ export const DecisionSchema = z.object({
   decision: z.enum(['qualified', 'excluded']),
   reason: z.string(),
   matched_source_ids: z.array(z.string()).default([]),
-  scores: z
-    .object({
-      relevance: z.number().min(0).max(100),
-      quality: z.number().min(0).max(100),
-      overall: z.number().min(0).max(100),
-    })
-    .optional(),
+
 });
 export type Decision = z.infer<typeof DecisionSchema>;
 

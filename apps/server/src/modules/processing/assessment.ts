@@ -1,29 +1,10 @@
-/** Spread the budget across sections so conclusions and measurements aren't dropped. */
+/** Initial review reads the article once; selection later consumes only its digest. */
 export function assessmentMaterial(
   title: string,
   content: string,
   metadata: Record<string, unknown>,
 ): string {
-  const sections = content.split(/\n(?=#{1,6}\s)/);
-  let body = content;
-  if (content.length > 18000) {
-    const budget = Math.max(
-      300,
-      Math.floor(16500 / Math.max(1, sections.length)),
-    );
-    body =
-      sections
-        .map((section) =>
-          section.length > budget
-            ? section.slice(0, budget) + "\n[本节节选]"
-            : section,
-        )
-        .join("\n")
-        .slice(0, 16500) +
-      "\n[文末节选]\n" +
-      content.slice(-1500);
-  }
-  return `Metadata: ${JSON.stringify(metadata)}\nTitle: ${title}\n\n${body}`;
+  return `Metadata: ${JSON.stringify(metadata)}\nTitle: ${title}\n\n${content}`;
 }
 export function hasGroundedEvidence(result: any, material: string): boolean {
   // A quotation uses the visible anchor text, not the Markdown link destination.

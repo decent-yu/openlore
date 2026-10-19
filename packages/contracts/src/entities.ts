@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ArticleReviewSchema } from './article-review.js';
 import { ExecutionResultSchema } from './execution.js';
 import { GroupRouteSchema } from './delivery.js';
 
@@ -48,10 +49,10 @@ export const GroupSchema = z.object({
   source_ids: z.array(z.string()).default([]),
   schedule_cron: z.string().default('0 8 * * *'),
   timezone: z.string().default('Asia/Shanghai'),
-  deep_analysis_count: z.number().int().nonnegative().default(3),
+  deep_analysis_count: z.number().int().nonnegative().max(100).default(3),
   research_instructions: z.string().default(''),
   ai_profile_id: z.string().nullable().optional(),
-  assessment_skill_id: z.string().default('tech-article-extractor'),
+  selection_skill_id: z.string().default('article-selector'),
   research_skill_id: z.string().default('deep-research-expert'),
   created_at: z.string(),
   updated_at: z.string(),
@@ -115,6 +116,7 @@ export const RunCountsSchema = z.object({
   planned: z.number().int().default(0),
   excluded: z.number().int().default(0),
   deferred: z.number().int().default(0),
+  unreviewed: z.number().int().default(0),
 });
 export type RunCounts = z.infer<typeof RunCountsSchema>;
 
@@ -222,15 +224,7 @@ export type ResearchTask = z.infer<typeof ResearchTaskSchema>;
 export const PoolStatusSchema = z.enum(['ready', 'pending', 'review', 'history', 'excluded', 'failed']);
 export type PoolStatus = z.infer<typeof PoolStatusSchema>;
 export const LibraryArticleSchema = z.object({
-  assessments: z.array(z.object({
-    group_id: z.string(),
-    group_name: z.string(),
-    relevance: z.number().min(0).max(100),
-    quality: z.number().min(0).max(100),
-    overall: z.number().min(0).max(100),
-    reason: z.string(),
-    assessed_at: z.string(),
-  })).default([]),
+  review: ArticleReviewSchema.nullable().default(null),
   wiki_url: z.string().optional(),
   content_kind: z.string().default('unknown'),
   date_evidence: z.record(z.unknown()).default({}),

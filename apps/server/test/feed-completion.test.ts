@@ -23,7 +23,7 @@ beforeAll(async () => {
 afterAll(() => vi.useRealTimers());
 beforeEach(() => {
   db.exec(
-    "DELETE FROM articles;DELETE FROM group_items;DELETE FROM research_tasks;DELETE FROM runs;DELETE FROM source_items;DELETE FROM deliveries;DELETE FROM artifact_bundles;DELETE FROM article_assessments",
+    "DELETE FROM articles;DELETE FROM group_items;DELETE FROM research_tasks;DELETE FROM runs;DELETE FROM source_items;DELETE FROM deliveries;DELETE FROM artifact_bundles;DELETE FROM article_reviews",
   );
 });
 function report(id: string, article: string, archived: string | null) {

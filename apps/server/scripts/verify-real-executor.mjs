@@ -10,6 +10,7 @@ process.env.OPENLORE_DATA_DIR=path.join(root,'data');process.env.LOG_LEVEL='sile
 const {initDatabase,getSqliteDatabase}=await import('../dist/infrastructure/persistence/sqlite/db.js');
 const {settingsService}=await import('../dist/modules/settings/service.js');
 const {groupsService}=await import('../dist/modules/groups/service.js');
+const {articleReviewsService}=await import('../dist/modules/processing/article-reviews.js');
 const {collectionService}=await import('../dist/modules/collection/service.js');
 const {executorService}=await import('../dist/modules/executors/service.js');
 const {createServer}=await import('../dist/http/server.js');
@@ -34,7 +35,7 @@ if(chosen.length<3)throw new Error('At least three real article fixtures require
 for(const [index,article]of chosen.entries()){
  const id=await collectionService.persistContentItem({source_item_id:`fixture-${index}`,source_id:'fixture',canonical_url:article.canonical_url,title:article.title,published_at:article.published_at,body:{value:article.content,format:'html',completeness:'full'},attachments:[],fetched_at:new Date().toISOString(),fetch_method:'fixture',issues:[]});
 }
-await groupsService.saveGroup({id:'test-task',name:'Agent 工程实践',description:'Agent 上下文管理、记忆、工具调用、评估与可靠性',preferences:'优先有技术机制和实现证据的工程实践，排除没有实现内容的营销。',source_ids:['fixture'],deep_analysis_count:3,assessment_skill_id:'tech-article-extractor',research_skill_id:'deep-research-expert',research_instructions:'生成一篇约1000至1500字的独立中文工程文章，说明机制、适用边界和实践建议。只使用提供的原文证据，保留原文链接，不需要配图。',repository_connection_id:'repo',base_path:'docs/agent',ai_profile_id:'real-gemini'});
+await groupsService.saveGroup({id:'test-task',name:'Agent 工程实践',description:'Agent 上下文管理、记忆、工具调用、评估与可靠性',preferences:'优先有技术机制和实现证据的工程实践，排除没有实现内容的营销。',source_ids:['fixture'],deep_analysis_count:3,selection_skill_id:'article-selector',research_skill_id:'deep-research-expert',research_instructions:'生成一篇约1000至1500字的独立中文工程文章，说明机制、适用边界和实践建议。只使用提供的原文证据，保留原文链接，不需要配图。',repository_connection_id:'repo',base_path:'docs/agent',ai_profile_id:'real-gemini'});
 const app=await createServer();const address=await app.listen({host:'127.0.0.1',port:0});
 const file=path.join(root,'worker.json');fs.writeFileSync(file,JSON.stringify({server_url:address,profile_id:'real-gemini',token:pair.token,name:'Real Gemini Test'}),{mode:0o600});
 const child=spawn(process.execPath,[path.resolve('apps/server/dist/cli/index.js'),'worker',file],{env:{...process.env,OPENLORE_ADMIN_TOKEN:''},stdio:['ignore','pipe','pipe']});
@@ -43,6 +44,7 @@ console.log('ARTIFACT_ROOT='+root);
 fs.writeFileSync('/tmp/openlore-real-worker-root.txt',root);
 appScheduler.addSseListener((event)=>console.log(JSON.stringify(event)));
 try{
+ await articleReviewsService.processPending();
  const run=await appScheduler.triggerGroupRun('test-task');
  const deadline=Date.now()+25*60*1000;let result;
  while(Date.now()<deadline){result=await appScheduler.getRun(run.id);if(result.status!=='running')break;await new Promise((resolve)=>setTimeout(resolve,2000));}

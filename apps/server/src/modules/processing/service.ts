@@ -1,34 +1,26 @@
-import { claimResearchArticle } from "../research/state.js";
 import crypto from "node:crypto";
-import { buildAssessmentPrompt, type RunAILog } from "@openlore/contracts";
 import fs from "node:fs";
-import { and, eq } from "drizzle-orm";
-import type { Decision, Group, StructuredEntry } from "@openlore/contracts";
 import {
-  FallbackAIAdapter,
-  getAIAdapterWithFallback,
-} from "../../infrastructure/ai/fallback_runner.js";
-import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
-import {
-  getDb,
-  getSqliteDatabase,
-} from "../../infrastructure/persistence/sqlite/db.js";
+  ArticleSelectionSchema,
+  buildSelectionPrompt,
+  type Decision,
+  type Group,
+  type RunAILog,
+  type StructuredEntry,
+} from "@openlore/contracts";
+import { getAIAdapterWithFallback } from "../../infrastructure/ai/fallback_runner.js";
 import { executionLogs } from "../../infrastructure/ai/execution_logs.js";
-import { listPoolCandidates } from "./candidates.js";
-import { assessmentMaterial, hasGroundedEvidence } from "./assessment.js";
+import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
+import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
+import { claimResearchArticle } from "../research/state.js";
 import { skillsService } from "../skills/service.js";
-import {
-  articleRevisionsTable,
-  articlesTable,
-  groupItemsTable,
-  mediaAssetsTable,
-  sourceItemsTable,
-  runsTable,
-} from "../../infrastructure/persistence/sqlite/schema.js";
+import { listPoolCandidates } from "./candidates.js";
+import { getArticleReviews } from "./article-reviews.js";
 
 export interface ProcessedBatchResult {
   decisions: Decision[];
   entries: StructuredEntry[];
+  aiLogs: RunAILog[];
   counts: {
     observed: number;
     already_processed: number;
@@ -36,10 +28,9 @@ export interface ProcessedBatchResult {
     planned: number;
     excluded: number;
     deferred: number;
+    unreviewed: number;
   };
-  aiLogs?: RunAILog[];
 }
-
 export function slugify(text: string): string {
   return (
     text
@@ -50,545 +41,300 @@ export function slugify(text: string): string {
       .slice(0, 40) || "article"
   );
 }
+const MATERIAL_LIMIT = 48000;
+type Candidate = {
+  article_id: string;
+  title: string;
+  quality: number;
+  positioning: string;
+  summary: string;
+  tags: string[];
+};
+function batches(items: Candidate[]): Candidate[][] {
+  const result: Candidate[][] = [];
+  let current: Candidate[] = [],
+    size = 2;
+  for (const item of items) {
+    const length = JSON.stringify(item).length + 1;
+    if (length > MATERIAL_LIMIT)
+      throw new Error(`文章 ${item.article_id} 的初审资料过长，请重新初审`);
+    if (size + length > MATERIAL_LIMIT && current.length) {
+      result.push(current);
+      current = [];
+      size = 2;
+    }
+    current.push(item);
+    size += length;
+  }
+  if (current.length) result.push(current);
+  return result;
+}
 
 export class ProcessingService {
   async runProcessingForGroup(
     group: Group,
     runId: string,
   ): Promise<ProcessedBatchResult> {
-    const db = getDb();
-    const counts = {
-      observed: 0,
-      already_processed: 0,
-      candidate: 0,
-      planned: 0,
-      excluded: 0,
-      deferred: 0,
-    };
-
-    const decisions: Decision[] = [];
-    const entries: StructuredEntry[] = [];
-    const aiLogs: Array<any> = [];
-
+    const db = getSqliteDatabase();
     const pool = listPoolCandidates(group.source_ids);
-    counts.observed = pool.length;
-    const articleSourceMap = new Map<string, string[]>();
-    for (const item of db.select().from(sourceItemsTable).all()) {
-      const list = articleSourceMap.get(item.articleId) || [];
-      if (!list.includes(item.sourceId)) list.push(item.sourceId);
-      articleSourceMap.set(item.articleId, list);
-    }
-
-    // Read every unprocessed article in the selected pool scope.
-    const candidateArticles: Array<{
-      article: any;
-      revision: any;
-      matchedSources: string[];
-      content: string;
-    }> = [];
-
-    for (const poolItem of pool) {
-      if (poolItem.processed || poolItem.busy) {
-        counts.already_processed++;
+    const result: ProcessedBatchResult = {
+      decisions: [],
+      entries: [],
+      aiLogs: [],
+      counts: {
+        observed: pool.length,
+        already_processed: 0,
+        candidate: 0,
+        planned: 0,
+        excluded: 0,
+        deferred: 0,
+        unreviewed: 0,
+      },
+    };
+    const save = () =>
+      db
+        .prepare("UPDATE runs SET counts_json=?,ai_logs_json=? WHERE id=?")
+        .run(
+          JSON.stringify(result.counts),
+          JSON.stringify(result.aiLogs),
+          runId,
+        );
+    const reviews = getArticleReviews(pool.map((item) => item.id));
+    const candidates: Candidate[] = [];
+    for (const item of pool) {
+      if (item.processed || item.busy) {
+        result.counts.already_processed++;
         continue;
       }
-      const artId = poolItem.id;
-      const art = db
-        .select()
-        .from(articlesTable)
-        .where(eq(articlesTable.id, artId))
-        .get();
-      if (!art?.latestRevision)
-        throw new Error(`内容池文章 ${artId} 缺少正文版本，请修复存储后重试`);
-      const rev = db
-        .select()
-        .from(articleRevisionsTable)
-        .where(
-          and(
-            eq(articleRevisionsTable.articleId, artId),
-            eq(articleRevisionsTable.revisionHash, art.latestRevision),
-          ),
-        )
-        .get();
-      if (!rev)
-        throw new Error(
-          `内容池文章 ${artId} 的正文版本不存在，请修复存储后重试`,
-        );
-
-      // Storage failures are errors, not a second admission filter or a silent skip.
-      const content = fs.readFileSync(rev.contentRef, "utf-8");
-
-      candidateArticles.push({
-        article: art,
-        revision: rev,
-        matchedSources: articleSourceMap.get(art.id) || [],
-        content,
+      const review = reviews.get(item.id);
+      if (review?.status !== "succeeded" || !review.result) {
+        result.counts.unreviewed++;
+        continue;
+      }
+      const article = db
+        .prepare("SELECT title FROM articles WHERE id=?")
+        .get(item.id) as { title: string };
+      candidates.push({
+        article_id: item.id,
+        title: article.title,
+        quality: review.result.quality,
+        positioning: review.result.positioning,
+        summary: review.result.summary,
+        tags: review.result.tags,
       });
     }
-
-    counts.candidate = candidateArticles.length;
-    db.update(runsTable)
-      .set({ countsJson: JSON.stringify(counts) })
-      .where(eq(runsTable.id, runId))
-      .run();
-
-    // AI assessment of the entire candidate set.
-    const qualifiedList: Array<{
-      item: (typeof candidateArticles)[0];
-      relevance: number;
-      quality: number;
-      score: number;
-      reason: string;
-      tags: string[];
-      summary: string;
-      cleanMarkdown: string;
-      evidence: string[];
-    }> = [];
-
-    const assessmentSkill = await skillsService.getSkill(
-      group.assessment_skill_id,
+    result.counts.candidate = candidates.length;
+    result.counts.deferred = candidates.length;
+    save();
+    // Pipelines never trigger per-article initial reviews. M=0 consumes no selection/research AI.
+    if (!candidates.length || group.deep_analysis_count === 0) return result;
+    const adapter = getAIAdapterWithFallback(group.ai_profile_id);
+    if (!adapter) throw new Error("选文失败：请先配置可用的 AI 执行器");
+    const skill = await skillsService.getSkill(
+      group.selection_skill_id,
       group.ai_profile_id || "default",
     );
-    if (!assessmentSkill || assessmentSkill.type !== "extraction")
-      throw new Error(`审核 Skill 不存在：${group.assessment_skill_id}`);
-
-    // Resolve AI profile adapter with primary and fallback support
-    const aiAdapter = getAIAdapterWithFallback(group.ai_profile_id);
-    const activeTarget = (aiAdapter as FallbackAIAdapter)?.targets?.[0]?.target;
-
-    if (candidateArticles.length > 0 && !aiAdapter)
-      throw new Error("审核失败：请先配置可用的 AI 执行器");
-
-    const assess = async (cand: (typeof candidateArticles)[number]) => {
-      const matchedSourceId = cand.matchedSources[0] || "";
-
-      let relevance = 0;
-      let quality = 0;
-      let reason = "";
-      let summary = "";
-      let tags: string[] = [];
-      let usedPrompt = "";
-      let usedModel = "";
-      let executionDetails: unknown;
-      let evidence: string[] = [];
-
-      if (aiAdapter) {
-        try {
-          const prompt = buildAssessmentPrompt(
-            group.assessment_skill_id,
-            group,
-          );
-
-          usedPrompt = prompt;
-          const material = assessmentMaterial(
-            cand.article.title || "",
-            cand.content,
-            {
-              published_at: cand.article.publishedAt,
-              sources: cand.matchedSources,
-              completeness: cand.revision.bodyCompleteness,
-              content_kind: cand.article.contentKind,
-            },
-          );
-          const cacheKey = crypto
-            .createHash("sha256")
-            .update(
-              JSON.stringify([
-                group.id,
-                prompt,
-                assessmentSkill.revision,
-                material,
-                group.ai_profile_id,
-                activeTarget,
-              ]),
-            )
-            .digest("hex");
-          const cached = getSqliteDatabase()
-            .prepare(
-              "SELECT result_json FROM article_assessments WHERE cache_key=?",
-            )
-            .get(cacheKey) as { result_json: string } | undefined;
-          let aiRes = cached
-            ? {
-                status: "success",
-                result: JSON.parse(cached.result_json),
-                error: undefined,
-              }
-            : await aiAdapter.execute({
-                jobId: `${runId}_${cand.article.id}`,
-                runId,
-                groupId: group.id,
-                articleId: cand.article.id,
-                articleTitle: cand.article.title || undefined,
-                profileId: group.ai_profile_id!,
-                taskType: "assess",
-                skillId: group.assessment_skill_id,
-                skillRevision: assessmentSkill.revision,
-                prompt,
-                material,
-                outputSchema: {
-                  type: "object",
-                  properties: {
-                    relevance: { type: "number" },
-                    quality: { type: "number" },
-                    reason: { type: "string" },
-                    summary: { type: "string" },
-                    tags: { type: "array", items: { type: "string" } },
-                    evidence_refs: { type: "array", items: { type: "string" } },
-                  },
-                  required: [
-                    "relevance",
-                    "quality",
-                    "reason",
-                    "summary",
-                    "evidence_refs",
-                  ],
-                },
-              });
-
-          // Retry malformed evidence once with precise feedback; never relax admission.
-          if (
-            !cached &&
-            aiRes.status === "success" &&
-            aiRes.result &&
-            !hasGroundedEvidence(aiRes.result, cand.content)
-          ) {
-            executionLogs.invalidate(
-              "trace_id" in aiRes ? aiRes.trace_id : undefined,
-              "审核引用未通过正文核验，已要求重新返回",
-            );
-            usedPrompt = `${prompt}\n\n上次返回的 evidence_refs 未通过原文核验。请重新读取 input/article.md，逐字复制至少一段完整原句（至少 16 字符）；保留原句措辞，不翻译或改写。重新返回完整 JSON。`;
-            aiRes = await aiAdapter.execute({
-              jobId: `${runId}_${cand.article.id}_evidence_retry`,
-              runId,
-              groupId: group.id,
-              articleId: cand.article.id,
-              articleTitle: cand.article.title || undefined,
-              profileId: group.ai_profile_id!,
-              taskType: "assess",
-              skillId: group.assessment_skill_id,
-              skillRevision: assessmentSkill.revision,
-              prompt: usedPrompt,
-              material,
-              outputSchema: {
+    if (!skill || skill.type !== "selection")
+      throw new Error(`选文 Skill 不存在：${group.selection_skill_id}`);
+    const prompt = buildSelectionPrompt(group.selection_skill_id, group);
+    let sequence = 0;
+    const select = async (batch: Candidate[]) => {
+      const response = await adapter.execute({
+        jobId: `${runId}_select_${++sequence}`,
+        runId,
+        groupId: group.id,
+        profileId: group.ai_profile_id || "default",
+        taskType: "select",
+        skillId: group.selection_skill_id,
+        skillRevision: skill.revision,
+        prompt,
+        material: JSON.stringify(batch),
+        outputSchema: {
+          type: "object",
+          properties: {
+            selected: {
+              type: "array",
+              items: {
                 type: "object",
                 properties: {
-                  relevance: { type: "number" },
-                  quality: { type: "number" },
+                  article_id: { type: "string" },
                   reason: { type: "string" },
-                  summary: { type: "string" },
-                  tags: { type: "array", items: { type: "string" } },
-                  evidence_refs: { type: "array", items: { type: "string" } },
                 },
-                required: [
-                  "relevance",
-                  "quality",
-                  "reason",
-                  "summary",
-                  "evidence_refs",
-                ],
+                required: ["article_id", "reason"],
               },
-            });
-          }
-
-          usedModel = "model" in aiRes ? String(aiRes.model) : "cached";
-          executionDetails = "execution" in aiRes ? aiRes.execution : undefined;
-          if (
-            aiRes.status !== "success" ||
-            !aiRes.result ||
-            !Number.isFinite(aiRes.result.relevance) ||
-            !Number.isFinite(aiRes.result.quality) ||
-            typeof aiRes.result.summary !== "string"
-          )
-            throw new Error(aiRes.error?.message || "审核返回结果不完整");
-          if (!hasGroundedEvidence(aiRes.result, cand.content)) {
-            executionLogs.invalidate(
-              "trace_id" in aiRes ? aiRes.trace_id : undefined,
-              "审核缺少可核验的正文证据",
-            );
-            throw new Error("审核缺少可核验的正文证据");
-          }
-          evidence = aiRes.result.evidence_refs;
-          if (!cached)
-            getSqliteDatabase()
-              .prepare(
-                "INSERT OR REPLACE INTO article_assessments VALUES (?,?,?,?,?)",
-              )
-              .run(
-                cacheKey,
-                cand.article.id,
-                group.id,
-                JSON.stringify(aiRes.result),
-                new Date().toISOString(),
-              );
-          if (aiRes.status === "success" && aiRes.result) {
-            if (typeof aiRes.result.relevance === "number") {
-              relevance = Math.min(
-                100,
-                Math.max(0, Math.round(aiRes.result.relevance)),
-              );
-            }
-            if (typeof aiRes.result.quality === "number") {
-              quality = Math.min(
-                100,
-                Math.max(0, Math.round(aiRes.result.quality)),
-              );
-            }
-            if (aiRes.result.reason) {
-              reason = aiRes.result.reason;
-            }
-            if (aiRes.result.summary) {
-              summary = aiRes.result.summary;
-            }
-            if (
-              Array.isArray(aiRes.result.tags) &&
-              aiRes.result.tags.length > 0
-            ) {
-              tags = aiRes.result.tags;
-            }
-          }
-        } catch (error: any) {
-          throw new Error(
-            `文章「${cand.article.title}」审核失败：${error.message}`,
-          );
-        }
-      }
-
-      const overall = Number((0.7 * relevance + 0.3 * quality).toFixed(1));
-
-      aiLogs.push({
-        timestamp: new Date().toISOString(),
-        article_id: cand.article.id,
-        article_title: cand.article.title || "Untitled Article",
-        task_type: "assess",
-        skill_id: group.assessment_skill_id,
-        model:
-          usedModel ||
-          activeTarget?.model ||
-          (activeTarget?.provider === "gemini_cli"
-            ? "gemini-cli"
-            : activeTarget
-              ? "codex-cli"
-              : "heuristic-ai-evaluator"),
-        prompt_preview: usedPrompt,
-        execution: executionDetails,
-        response_preview: JSON.stringify(
-          {
-            relevance,
-            quality,
-            overall,
-            decision:
-              relevance >= 75 && quality >= 70 ? "qualified" : "excluded",
-            reason,
-            summary,
-            tags,
+            },
           },
-          null,
-          2,
-        ),
-        status: "success",
+          required: ["selected"],
+        },
       });
-
-      db.update(runsTable)
-        .set({
-          countsJson: JSON.stringify(counts),
-          aiLogsJson: JSON.stringify(aiLogs),
-        })
-        .where(eq(runsTable.id, runId))
-        .run();
-
-      // Threshold check: relevance >= 75 and quality >= 70
-      if (relevance < 75 || quality < 70) {
-        counts.excluded++;
-        decisions.push({
-          article_id: cand.article.id,
-          revision: cand.revision.revisionHash,
-          decision: "excluded",
-          reason: `Below score threshold (relevance: ${relevance}, quality: ${quality})`,
-          matched_source_ids: [matchedSourceId],
-          scores: { relevance, quality, overall },
-        });
-        return;
+      const log: RunAILog = {
+        timestamp: new Date().toISOString(),
+        task_type: "select",
+        skill_id: group.selection_skill_id,
+        model: response.model,
+        execution: response.execution,
+        prompt_preview: prompt,
+        response_preview: JSON.stringify(response.result || response.error),
+        status: response.status,
+      };
+      result.aiLogs.push(log);
+      save();
+      if (response.status !== "success")
+        throw new Error(response.error?.message || "批量选文失败");
+      const parsed = ArticleSelectionSchema.safeParse(response.result);
+      const allowed = new Set(batch.map((item) => item.article_id));
+      const selected = parsed.success ? parsed.data.selected : [];
+      if (
+        !parsed.success ||
+        selected.length > group.deep_analysis_count ||
+        new Set(selected.map((item) => item.article_id)).size !==
+          selected.length ||
+        selected.some((item) => !allowed.has(item.article_id))
+      ) {
+        const message =
+          "选文结果无效：包含未知或重复文章、缺少理由，或超过 M 篇";
+        executionLogs.invalidate(response.trace_id, message);
+        log.status = "invalid_output";
+        save();
+        throw new Error(message);
       }
-
-      qualifiedList.push({
-        item: cand,
-        relevance,
-        quality,
-        score: overall,
-        reason,
-        tags,
-        summary,
-        cleanMarkdown: cand.content,
-        evidence,
-      });
+      return selected;
     };
-    const concurrency = Math.max(
-      1,
-      Math.min(4, activeTarget?.execution?.concurrency || 1),
-    );
-    let nextCandidate = 0;
-    let assessmentError: unknown;
-    await Promise.all(
-      Array.from(
-        { length: Math.min(concurrency, candidateArticles.length) },
-        async () => {
-          while (!assessmentError && nextCandidate < candidateArticles.length) {
-            const candidate = candidateArticles[nextCandidate++];
-            try {
-              await assess(candidate);
-            } catch (error) {
-              assessmentError = error;
-            }
-          }
-        },
-      ),
-    );
-    if (assessmentError) throw assessmentError;
-
-    // Sort qualified list by overall score desc, publishedAt desc
-    qualifiedList.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      const dateA = a.item.article.publishedAt
-        ? new Date(a.item.article.publishedAt).getTime()
-        : 0;
-      const dateB = b.item.article.publishedAt
-        ? new Date(b.item.article.publishedAt).getTime()
-        : 0;
-      return dateB - dateA;
-    });
-
-    // Persist every valid review; publication quota does not create a selection state.
-    for (const item of qualifiedList)
-      decisions.push({
-        article_id: item.item.article.id,
-        revision: item.item.revision.revisionHash,
-        decision: "qualified",
-        reason: item.reason,
-        matched_source_ids: item.item.matchedSources,
-        scores: {
-          relevance: item.relevance,
-          quality: item.quality,
-          overall: item.score,
-        },
-      });
-    const selected: typeof qualifiedList = [];
-    for (const item of qualifiedList) {
-      if (selected.length >= group.deep_analysis_count) break;
-      if (claimResearchArticle(item.item.article.id, group.id, runId))
-        selected.push(item);
-    }
-    counts.deferred = qualifiedList.length - selected.length;
-
-    // 5. Build structured entries and archive assets
-    for (const sel of selected) {
-      counts.planned++;
-      const art = sel.item.article;
-      const rev = sel.item.revision;
-      const slug = slugify(art.title || art.id);
-
-      // Find image links in content
-      const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
-      let match;
-      const urlMap = new Map<string, string>();
-      const assetRefs: string[] = [];
-
-      while ((match = imageRegex.exec(sel.cleanMarkdown)) !== null) {
-        const imgUrl = match[2];
-        if (
-          imgUrl.startsWith("http://") ||
-          imgUrl.startsWith("https://") ||
-          imgUrl.startsWith("data:")
-        ) {
-          const archived = await mediaAssetsArchiver.archiveImage(
-            imgUrl,
-            "diagram",
-          );
-          if (archived.status === "downloaded" && archived.relativePath) {
-            urlMap.set(imgUrl, archived.relativePath);
-            assetRefs.push(archived.relativePath);
-
-            // Save to media_assets db
-            db.insert(mediaAssetsTable)
-              .values({
-                id: archived.assetId,
-                articleId: art.id,
-                originalUrl: imgUrl,
-                localPath: archived.relativePath,
-                sha256: archived.sha256,
-                mimeType: archived.mimeType,
-                sizeBytes: archived.sizeBytes,
-                blobRef: archived.blobRef,
-                status: "downloaded",
-                createdAt: new Date().toISOString(),
-              })
-              .onConflictDoNothing()
-              .run();
-          }
-        }
+    let remaining = candidates;
+    let selected: Array<{ article_id: string; reason: string }> = [];
+    while (remaining.length) {
+      const groups = batches(remaining);
+      const shortlists: typeof selected = [];
+      for (const batch of groups) shortlists.push(...(await select(batch)));
+      if (groups.length === 1) {
+        selected = shortlists;
+        break;
       }
-
-      const rewrittenMarkdown = mediaAssetsArchiver.rewriteMarkdownImageUrls(
-        sel.cleanMarkdown,
-        urlMap,
-      );
-
-      entries.push({
-        article_id: art.id,
-        revision: rev.revisionHash,
-        slug,
-        title: art.title || slug,
-        original_url: art.canonicalUrl,
-        author: art.author,
-        published_at: art.publishedAt,
-        tags: sel.tags,
-        summary: sel.summary,
-        organized_markdown: rewrittenMarkdown,
+      const ids = new Set(shortlists.map((item) => item.article_id));
+      const reduced = remaining.filter((item) => ids.has(item.article_id));
+      if (reduced.length >= remaining.length)
+        throw new Error(
+          "候选资料超过单次选文容量，且分批初选未缩减；请减少 M 或缩小来源范围后重试",
+        );
+      remaining = reduced;
+    }
+    // Validate all selection IDs before claiming or reading full articles.
+    for (const choice of selected) {
+      const article = db
+        .prepare("SELECT * FROM articles WHERE id=?")
+        .get(choice.article_id) as {
+        id: string;
+        title: string;
+        latest_revision: string;
+        canonical_url: string | null;
+        author: string | null;
+        published_at: string | null;
+      };
+      const revision = db
+        .prepare(
+          "SELECT content_ref FROM article_revisions WHERE article_id=? AND revision_hash=?",
+        )
+        .get(article.id, article.latest_revision) as
+        { content_ref: string } | undefined;
+      const review = reviews.get(article.id)!;
+      const current = getArticleReviews([article.id]).get(article.id);
+      if (
+        !current ||
+        current.status !== "succeeded" ||
+        JSON.stringify(current) !== JSON.stringify(review)
+      )
+        throw new Error(`文章 ${article.title} 的初审结果已变化，请重新选文`);
+      if (!revision)
+        throw new Error(`内容池文章 ${article.id} 的正文版本不存在`);
+      const content = fs.readFileSync(revision.content_ref, "utf8");
+      if (!claimResearchArticle(article.id, group.id, runId)) continue;
+      const sources = (
+        db
+          .prepare(
+            "SELECT DISTINCT source_id FROM source_items WHERE article_id=?",
+          )
+          .all(article.id) as { source_id: string }[]
+      ).map((row) => row.source_id);
+      result.decisions.push({
+        article_id: article.id,
+        revision: article.latest_revision,
+        decision: "qualified",
+        reason: choice.reason,
+        matched_source_ids: sources,
+      });
+      const assetRefs: string[] = [],
+        urlMap = new Map<string, string>();
+      for (const match of content.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+        if (!/^https?:/.test(match[1])) continue;
+        const asset = await mediaAssetsArchiver.archiveImage(
+          match[1],
+          "diagram",
+        );
+        if (asset.status !== "downloaded" || !asset.relativePath) continue;
+        urlMap.set(match[1], asset.relativePath);
+        assetRefs.push(asset.relativePath);
+        db.prepare(
+          "INSERT OR IGNORE INTO media_assets(id,article_id,original_url,local_path,sha256,mime_type,size_bytes,blob_ref,status) VALUES (?,?,?,?,?,?,?,?,?)",
+        ).run(
+          asset.assetId,
+          article.id,
+          match[1],
+          asset.relativePath,
+          asset.sha256,
+          asset.mimeType,
+          asset.sizeBytes,
+          asset.blobRef,
+          "downloaded",
+        );
+      }
+      result.entries.push({
+        article_id: article.id,
+        revision: article.latest_revision,
+        slug: slugify(article.title),
+        title: article.title,
+        original_url: article.canonical_url,
+        author: article.author,
+        published_at: article.published_at,
+        tags: review.result!.tags,
+        summary: review.result!.summary,
+        organized_markdown: mediaAssetsArchiver.rewriteMarkdownImageUrls(
+          content,
+          urlMap,
+        ),
         asset_refs: assetRefs,
-        evidence_refs: sel.evidence,
+        evidence_refs: review.result!.evidence_refs,
         limitations: [],
       });
-    }
-
-    // Persist exclusions and deferrals too, so every assessed article has an explanation.
-    const sqlite = getSqliteDatabase();
-    for (const decision of decisions) {
-      const prior = sqlite
+      const prior = db
         .prepare("SELECT id FROM group_items WHERE group_id=? AND article_id=?")
-        .get(group.id, decision.article_id) as { id: string } | undefined;
+        .get(group.id, article.id) as { id: string } | undefined;
       if (prior)
-        sqlite
-          .prepare(
-            "UPDATE group_items SET decision=?,reason=?,scores_json=?,revision_hash=?,updated_at=? WHERE id=?",
-          )
-          .run(
-            decision.decision,
-            decision.reason,
-            JSON.stringify(decision.scores || {}),
-            decision.revision,
-            new Date().toISOString(),
-            prior.id,
-          );
+        db.prepare(
+          "UPDATE group_items SET revision_hash=?,rules_revision='batch-selection-v1',decision='qualified',reason=?,matched_source_ids_json=?,updated_at=? WHERE id=?",
+        ).run(
+          article.latest_revision,
+          choice.reason,
+          JSON.stringify(sources),
+          new Date().toISOString(),
+          prior.id,
+        );
       else
-        sqlite
-          .prepare(
-            "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,reason,scores_json,matched_source_ids_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-          )
-          .run(
-            `gi_${crypto.randomUUID()}`,
-            group.id,
-            decision.article_id,
-            decision.revision,
-            "quality-v1",
-            decision.decision,
-            decision.reason,
-            JSON.stringify(decision.scores || {}),
-            JSON.stringify(decision.matched_source_ids),
-            new Date().toISOString(),
-          );
+        db.prepare(
+          "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,reason,matched_source_ids_json,updated_at) VALUES (?,?,?,?,'batch-selection-v1','qualified',?,?,?)",
+        ).run(
+          `gi_${crypto.randomUUID()}`,
+          group.id,
+          article.id,
+          article.latest_revision,
+          choice.reason,
+          JSON.stringify(sources),
+          new Date().toISOString(),
+        );
     }
-    return { decisions, entries, counts, aiLogs };
+    result.counts.planned = result.entries.length;
+    result.counts.deferred = candidates.length - result.entries.length;
+    save();
+    return result;
   }
 }
-
 export const processingService = new ProcessingService();

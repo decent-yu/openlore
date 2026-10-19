@@ -44,7 +44,7 @@ export class GroupsService {
         timezone: r.timezone,
         deep_analysis_count: r.deepAnalysisCount ?? 3,
         research_instructions: r.researchInstructions,
-      assessment_skill_id: r.assessmentSkillId,
+      selection_skill_id: r.selectionSkillId,
       research_skill_id: r.researchSkillId,
         ai_profile_id: r.aiProfileId,
         created_at: r.createdAt,
@@ -81,7 +81,7 @@ export class GroupsService {
       timezone: r.timezone,
       deep_analysis_count: r.deepAnalysisCount ?? 3,
       research_instructions: r.researchInstructions,
-      assessment_skill_id: r.assessmentSkillId,
+      selection_skill_id: r.selectionSkillId,
       research_skill_id: r.researchSkillId,
       ai_profile_id: r.aiProfileId,
       created_at: r.createdAt,
@@ -130,14 +130,14 @@ export class GroupsService {
     timezone?: string;
     deep_analysis_count?: number;
     research_instructions?: string;
-    assessment_skill_id?: string;
+    selection_skill_id?: string;
     research_skill_id?: string;
     ai_profile_id?: string | null;
   }): Promise<Group> {
     validateCron(data.schedule_cron || '0 8 * * *');
     new Intl.DateTimeFormat('en', { timeZone: data.timezone || 'Asia/Shanghai' });
     const id = data.id || `group_${crypto.randomUUID().slice(0, 8)}`;
-    if (data.deep_analysis_count !== undefined && (!Number.isInteger(data.deep_analysis_count) || data.deep_analysis_count < 0)) throw new Error('深度调研篇数不能为负数');
+    if (data.deep_analysis_count !== undefined && (!Number.isInteger(data.deep_analysis_count) || data.deep_analysis_count < 0 || data.deep_analysis_count > 100)) throw new Error('深度调研篇数必须为 0 到 100 之间的整数');
     const normalizedPath = normalizeRoutePath(data.base_path);
     await this.validateRoute(data.repository_connection_id, normalizedPath, id);
 
@@ -156,7 +156,7 @@ export class GroupsService {
       timezone: data.timezone || 'Asia/Shanghai',
       deepAnalysisCount: data.deep_analysis_count !== undefined ? data.deep_analysis_count : 3,
       researchInstructions: data.research_instructions || '',
-      assessmentSkillId: data.assessment_skill_id || 'tech-article-extractor',
+      selectionSkillId: data.selection_skill_id || 'article-selector',
       researchSkillId: data.research_skill_id || 'deep-research-expert',
       aiProfileId: data.ai_profile_id || null,
       updatedAt: now,

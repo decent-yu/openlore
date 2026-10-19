@@ -40,6 +40,7 @@ export const ExecutionInputSchema = z.object({
   profileId: z.string(),
   taskType: z.enum([
     'assess',
+    'select',
     'organize',
     'research_plan',
     'research_report',

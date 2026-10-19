@@ -1,185 +1,311 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import {
-  afterAll,
   beforeAll,
   beforeEach,
-  describe,
+  afterEach,
+  afterAll,
   expect,
   it,
   vi,
-} from 'vitest';
+} from "vitest";
+import {
+  initDatabase,
+  getSqliteDatabase,
+} from "../src/infrastructure/persistence/sqlite/db.js";
+import { createServer } from "../src/http/server.js";
+import { collectionService } from "../src/modules/collection/service.js";
+import {
+  articleReviewsService,
+  getArticleReviews,
+} from "../src/modules/processing/article-reviews.js";
+import { groupsService } from "../src/modules/groups/service.js";
+import { processingService } from "../src/modules/processing/service.js";
+import { researchService } from "../src/modules/research/service.js";
+import { releaseResearchClaims } from "../src/modules/research/state.js";
+import { sourcesService } from "../src/modules/sources/service.js";
+import { collectorRegistry } from "../src/modules/collection/registry.js";
+import * as ai from "../src/infrastructure/ai/fallback_runner.js";
 import type {
   AITaskInput,
   AIResult,
-} from '../src/infrastructure/ai/adapter.js';
-import * as ai from '../src/infrastructure/ai/fallback_runner.js';
-import {
-  getSqliteDatabase,
-  initDatabase,
-} from '../src/infrastructure/persistence/sqlite/db.js';
-import { groupsService } from '../src/modules/groups/service.js';
-import { collectionService } from '../src/modules/collection/service.js';
-import { processingService } from '../src/modules/processing/service.js';
-import { researchService } from '../src/modules/research/service.js';
-import { skillsService } from '../src/modules/skills/service.js';
+} from "../src/infrastructure/ai/adapter.js";
 
-describe('Separate review and research Skills', () => {
-  const dataDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'openlore-skill-stages-'),
+const evidence =
+  "We explain detailed implementation mechanisms, reproducible benchmarks, failure handling and engineering tradeoffs.";
+const assessment = {
+  quality: 90,
+  positioning: "Database performance",
+  summary: "Problem, method, conclusions and limitations",
+  tags: ["database"],
+  reason: "Reproducible measurements",
+  evidence_refs: [evidence],
+};
+const execute = vi.fn<(input: AITaskInput) => Promise<AIResult>>();
+let app: Awaited<ReturnType<typeof createServer>>;
+let id: string;
+const item = () => ({
+  source_id: "source",
+  source_item_id: "article",
+  title: "Engineering article",
+  canonical_url: "https://example.com/article",
+  published_at: new Date().toISOString(),
+  date_evidence: { verified: true },
+  body: {
+    value: evidence,
+    format: "text" as const,
+    completeness: "full" as const,
+  },
+  attachments: [],
+  fetched_at: new Date().toISOString(),
+  fetch_method: "test",
+  issues: [],
+});
+beforeAll(async () => {
+  initDatabase();
+  app = await createServer();
+});
+afterAll(async () => {
+  await app.close();
+});
+beforeEach(async () => {
+  const db = getSqliteDatabase();
+  db.exec(
+    "DELETE FROM research_claims; DELETE FROM research_tasks; DELETE FROM group_items; DELETE FROM article_reviews; DELETE FROM source_items; DELETE FROM article_revisions; DELETE FROM articles; DELETE FROM ai_execution_logs; DELETE FROM groups; DELETE FROM sources; DELETE FROM collection_candidates; DELETE FROM collection_runs; DELETE FROM source_states",
   );
-  const execute = vi.fn<(input: AITaskInput) => Promise<AIResult>>();
-  let articleId = '';
-  beforeAll(async () => {
-    process.env.OPENLORE_DATA_DIR = dataDir;
-    initDatabase();
-    vi.spyOn(skillsService, 'getSkill').mockImplementation(async (id) => ({
-      id,
-      name: id,
-      type: id === 'review-only' ? 'extraction' : 'research',
-      description: '',
-      tags: [],
-      file_path: '',
-      system_prompt:
-        id === 'review-only' ? 'REVIEW_BASE_PROMPT' : 'RESEARCH_BASE_PROMPT',
-    }));
-    vi.spyOn(ai, 'getAIAdapterWithFallback').mockReturnValue({
-      execute,
-      testConnection: async () => ({ ok: true, message: '' }),
-    });
-    await groupsService.saveGroup({
-      id: 'task',
-      name: 'Agent Learning',
-      description: 'Engineering',
-      preferences: 'Prefer reproducible implementations',
-      research_instructions: 'Explain the tradeoffs',
-      assessment_skill_id: 'review-only',
-      research_skill_id: 'research-only',
-      repository_connection_id: 'repo',
-      base_path: 'docs/skills',
-      deep_analysis_count: 1,
-    });
-    articleId = await collectionService.persistContentItem({
-      source_item_id: 'source-1',
-      source_id: 'source',
-      title: 'Agents',
-      published_at: new Date().toISOString(),
-      canonical_url: 'https://example.com/agents',
-      body: {
-        value: 'Engineering evidence and code',
-        format: 'text',
-        completeness: 'full',
-      },
-      attachments: [],
-      fetched_at: new Date().toISOString(),
-      fetch_method: 'test',
-      issues: [],
-    });
-  });
-  beforeEach(() => {
-    getSqliteDatabase().exec('DELETE FROM research_claims; DELETE FROM research_tasks');
-    getSqliteDatabase().exec(
-      'DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM article_assessments',
-    );
-    execute
-      .mockReset()
-      .mockImplementation(async (input) => ({
-        status: 'success',
-        provider: 'mock',
-        model: 'mock',
-        durationMs: 0,
-        result:
-          input.taskType === 'assess'
+  execute
+    .mockReset()
+    .mockImplementation(async (input) => ({
+      status: "success",
+      provider: "mock",
+      model: "mock",
+      durationMs: 0,
+      result:
+        input.taskType === "assess"
+          ? assessment
+          : input.taskType === "select"
             ? {
-                relevance: 95,
-                quality: 90,
-                reason: 'Relevant',
-                summary: 'Summary',
-                evidence_refs: ['Engineering evidence and code'],
+                selected: [
+                  { article_id: id, reason: "Matches the research task" },
+                ],
               }
-            : '# Actual AI research',
-      }));
+            : "# Actual AI research",
+    }));
+  const adapter = new ai.FallbackAIAdapter([
+    {
+      target: {
+        id: "mock",
+        name: "Mock",
+        provider: "codex_cli",
+        cliPath: "mock",
+        isPrimary: true,
+      },
+      adapter: {
+        execute,
+        testConnection: async () => ({ ok: true, message: "" }),
+      },
+    },
+  ]);
+  vi.spyOn(ai, "getAIAdapterWithFallback").mockReturnValue(adapter);
+  await groupsService.saveGroup({
+    id: "task",
+    name: "Agent",
+    description: "Agent systems",
+    preferences: "Prefer concrete evidence",
+    research_instructions: "Explain tradeoffs",
+    repository_connection_id: "repo",
+    base_path: "docs/agent",
+    deep_analysis_count: 1,
   });
-  afterAll(() => {
-    vi.restoreAllMocks();
-    getSqliteDatabase().close();
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  });
+  id = collectionService.persistContentItem(item());
+});
+afterEach(async () => {
+  await articleReviewsService.processPending();
+  vi.restoreAllMocks();
+});
 
-  it('calls the review Skill first, then the research Skill, with distinct prompts and no task digest', async () => {
-    const group = (await groupsService.getGroup('task'))!;
-    const result = await processingService.runProcessingForGroup(group, 'run');
-    expect(result.entries).toHaveLength(1);
-    expect(result.entries.map(entry=>entry.article_id)).toEqual([articleId]);
-    expect(execute).toHaveBeenCalledTimes(1);
-    const review = execute.mock.calls[0][0];
-    expect(review.runId).toBe('run');
-    expect(review.groupId).toBe(group.id);
-    expect(review.articleId).toBe(articleId);
-    expect(review.skillId).toBe('review-only');
-    expect(review.prompt).toContain('$review-only');
-    expect(review.prompt).not.toContain('REVIEW_BASE_PROMPT');
-    expect(review.prompt).toContain('Prefer reproducible implementations');
-    expect(review.prompt).not.toContain('RESEARCH_BASE_PROMPT');
-    expect(result.aiLogs?.[0].prompt_preview).toBe(review.prompt);
-    const research = await researchService.runResearchOnArticle(
-      group.id,
-      articleId,
-      undefined,
-      'run',
-    );
-    expect(research.status).toBe('succeeded');
-    const request = execute.mock.calls[1][0];
-    expect(request.runId).toBe('run');
-    expect(request.groupId).toBe(group.id);
-    expect(request.skillId).toBe('research-only');
-    expect(request.prompt).toContain('$research-only');
-    expect(request.prompt).not.toContain('RESEARCH_BASE_PROMPT');
-    expect(request.prompt).toContain('Explain the tradeoffs');
-    expect(request.prompt).not.toContain('REVIEW_BASE_PROMPT');
-    expect(execute.mock.calls.map(([request]) => request.taskType)).toEqual([
-      'assess',
-      'research_report',
-    ]);
-    expect(group).not.toHaveProperty('generate_digest');
-    expect(group).not.toHaveProperty('skill_ids');
-  });
-  it('rejects ungrounded scores and does not select marketing-quality content', async () => {
-    execute.mockResolvedValue({status:'success',provider:'mock',model:'mock',durationMs:0,result:{relevance:95,quality:95,reason:'Claim',summary:'Claim',evidence_refs:['This quote is invented and absent from the article']}});
-    await expect(processingService.runProcessingForGroup((await groupsService.getGroup('task'))!,'ungrounded')).rejects.toThrow('正文证据');
-    execute.mockResolvedValue({status:'success',provider:'mock',model:'mock',durationMs:0,result:{relevance:95,quality:55,reason:'No implementation evidence',summary:'Announcement',evidence_refs:['Engineering evidence and code']}});
-    const result=await processingService.runProcessingForGroup((await groupsService.getGroup('task'))!,'low-quality');
-    expect(result.counts.planned).toBe(0);
-    expect(getSqliteDatabase().prepare("SELECT decision FROM group_items WHERE article_id=?").get(articleId)).toEqual({decision:'excluded'});
-  });
+it("reviews new admitted articles independently and reuses the shared result for later pipeline selection and full-text research", async () => {
+  expect(getArticleReviews([id]).get(id)?.status).toBe("queued");
+  await articleReviewsService.processPending();
+  expect(getArticleReviews([id]).get(id)?.result).toEqual(assessment);
+  const review = execute.mock.calls[0][0];
+  expect(review.taskType).toBe("assess");
+  expect(review.groupId).toBeUndefined();
+  expect(review.prompt).not.toContain("Agent systems");
+  expect(review.material).toContain(evidence);
+  await processingService.runProcessingForGroup(
+    (await groupsService.getGroup("task"))!,
+    "run",
+  );
+  const selection = execute.mock.calls[1][0];
+  expect(selection.taskType).toBe("select");
+  expect(selection.articleId).toBeUndefined();
+  expect(selection.prompt).toContain("Agent systems");
+  expect(selection.material).toContain(assessment.summary);
+  expect(selection.material).not.toContain(evidence);
+  expect(
+    (await researchService.runResearchOnArticle("task", id, undefined, "run"))
+      .status,
+  ).toBe("succeeded");
+  expect(execute.mock.calls[2][0].material).toContain(evidence);
+  expect(execute.mock.calls.map(([input]) => input.taskType)).toEqual([
+    "assess",
+    "select",
+    "research_report",
+  ]);
+  releaseResearchClaims("run");
+  expect(articleReviewsService.enqueue([id])).toBe(0);
+});
 
-  it('does not manufacture a successful review when AI fails', async () => {
-    execute.mockResolvedValue({
-      status: 'failed',
-      provider: 'mock',
-      model: 'mock',
-      durationMs: 0,
-      error: { code: 'unavailable', message: 'AI unavailable' },
-    });
-    await expect(
-      processingService.runProcessingForGroup(
-        (await groupsService.getGroup('task'))!,
-        'run',
-      ),
-    ).rejects.toThrow('AI unavailable');
+it("automatically starts initial review after successful source admission, while duplicates do not create new reviews", async () => {
+  getSqliteDatabase().exec(
+    "DELETE FROM source_items; DELETE FROM article_revisions; DELETE FROM articles",
+  );
+  await sourcesService.saveSource({
+    id: "source",
+    name: "Source",
+    url: "https://example.com/feed",
   });
-  it('does not substitute a generic template for failed research', async () => {
-    execute.mockResolvedValue({
-      status: 'failed',
-      provider: 'mock',
-      model: 'mock',
-      durationMs: 0,
-      error: { code: 'unavailable', message: 'AI unavailable' },
-    });
-    const task = await researchService.runResearchOnArticle('task', articleId);
-    expect(task.status).toBe('failed');
-    expect(task.report_markdown).toBe('');
-    expect(task.error_message).toBe('AI unavailable');
+  vi.spyOn(collectorRegistry, "get").mockReturnValue({
+    id: "web_feed",
+    supportedOperations: ["discover"],
+    collect: async (request) => ({
+      run_id: request.run_id,
+      source_id: "source",
+      capability_id: "web_feed",
+      status: "success",
+      items: [item()],
+      errors: [],
+      observed_at: new Date().toISOString(),
+      scan: "complete",
+      stats: { requests: 1, items_observed: 1, items_returned: 1 },
+    }),
+  });
+  await collectionService.discoverSource("source");
+  await articleReviewsService.processPending();
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "assess"),
+  ).toHaveLength(1);
+  await collectionService.discoverSource("source");
+  await articleReviewsService.processPending();
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "assess"),
+  ).toHaveLength(1);
+});
+
+it("leaves historical articles untouched until manually triggered and exposes initial review and selection logs by type", async () => {
+  getSqliteDatabase().exec("DELETE FROM article_reviews"); // Existing historical pool at upgrade.
+  await articleReviewsService.processPending();
+  const unreviewed = await processingService.runProcessingForGroup(
+    (await groupsService.getGroup("task"))!,
+    "empty",
+  );
+  expect(unreviewed.counts.unreviewed).toBe(1);
+  expect(execute).not.toHaveBeenCalled();
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/library/review",
+        payload: { article_ids: [id] },
+      })
+    ).statusCode,
+  ).toBe(202);
+  await articleReviewsService.processPending();
+  await processingService.runProcessingForGroup(
+    (await groupsService.getGroup("task"))!,
+    "selected-run",
+  );
+  const reviews = (
+    await app.inject("/api/v1/execution-logs?task_type=assess")
+  ).json();
+  const selections = (
+    await app.inject("/api/v1/execution-logs?task_type=select")
+  ).json();
+  expect(reviews.items).toHaveLength(1);
+  expect(reviews.items[0]).toMatchObject({
+    article_id: id,
+    task_type: "assess",
+    status: "success",
+  });
+  expect(selections.items).toHaveLength(1);
+  expect(selections.items[0]).toMatchObject({
+    run_id: "selected-run",
+    group_id: "task",
+    task_type: "select",
+  });
+  const detail = (
+    await app.inject(`/api/v1/execution-logs/${selections.items[0].id}`)
+  ).json();
+  expect(JSON.parse(detail.input.material)[0].article_id).toBe(id);
+  expect(JSON.parse(detail.output).selected[0].reason).toBe(
+    "Matches the research task",
+  );
+  releaseResearchClaims("selected-run");
+});
+
+it("records invalid evidence as failed, then supports explicit retry without fake scores", async () => {
+  execute.mockResolvedValue({
+    status: "success",
+    provider: "mock",
+    model: "mock",
+    durationMs: 0,
+    result: {
+      ...assessment,
+      evidence_refs: ["This invented quotation is absent from the article."],
+    },
+  });
+  await articleReviewsService.processPending();
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(getArticleReviews([id]).get(id)).toMatchObject({
+    status: "failed",
+    result: null,
+    error_message: "初审缺少可核验的正文证据",
+  });
+  const logs = (
+    await app.inject("/api/v1/execution-logs?task_type=assess&status=problem")
+  ).json();
+  expect(logs.items).toHaveLength(2);
+  execute.mockResolvedValue({
+    status: "success",
+    provider: "mock",
+    model: "mock",
+    durationMs: 0,
+    result: assessment,
+  });
+  expect(articleReviewsService.enqueue([id])).toBe(1);
+  await articleReviewsService.processPending();
+  expect(getArticleReviews([id]).get(id)?.status).toBe("succeeded");
+});
+
+it("does not change an old score into a current-revision review and validates manual requests atomically", async () => {
+  await articleReviewsService.processPending();
+  const changed = {
+    ...item(),
+    body: {
+      value: evidence + " Changed body.",
+      format: "text" as const,
+      completeness: "full" as const,
+    },
+  };
+  collectionService.persistContentItem(changed, id);
+  expect(getArticleReviews([id]).get(id)).toMatchObject({
+    status: "queued",
+    result: null,
+  });
+  const db = getSqliteDatabase();
+  db.exec("DELETE FROM article_reviews");
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/library/review",
+        payload: { article_ids: [] },
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(() => articleReviewsService.enqueue([id, "missing"])).toThrow(
+    "缺少正文版本",
+  );
+  expect(db.prepare("SELECT count(*) n FROM article_reviews").get()).toEqual({
+    n: 0,
   });
 });

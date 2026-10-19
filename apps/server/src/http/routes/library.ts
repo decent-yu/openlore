@@ -1,15 +1,12 @@
 import { feedService } from "../../modules/feed/service.js";
 import { completedResearchSql } from "../../modules/research/state.js";
-import {
-  LIBRARY_ASSESSMENTS_CTE,
-  getLibraryAssessments,
-} from "../../modules/processing/library-assessments.js";
+import { articleReviewsService, getArticleReviews, CURRENT_REVIEW_JOIN } from "../../modules/processing/article-reviews.js";
 import {
   getPublishedWikiLinks,
   wikiLinkKey,
 } from "../../modules/delivery/wiki-links.js";
 import fs from "node:fs";
-import { LibraryQuerySchema, type LibraryTimeRange } from "@openlore/contracts";
+import { LibraryQuerySchema, ReviewArticlesRequestSchema, type LibraryTimeRange } from "@openlore/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import type { LibraryArticle, LibraryResponse } from "@openlore/contracts";
 import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
@@ -38,7 +35,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const nowEnd = new Date(now.getTime() + 1).toISOString();
     const deep = completedResearchSql("a.id");
     const scope: string[] = [];
-    const scopeParams: string[] = groupId ? [groupId] : [];
+    const scopeParams: string[] = [];
     if (sourceId) {
       scope.push(
         "EXISTS (SELECT 1 FROM source_items si WHERE si.article_id=a.id AND si.source_id=?)",
@@ -55,10 +52,10 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       scope.push("(a.title LIKE ? OR a.author LIKE ?)");
       scopeParams.push(`%${search}%`, `%${search}%`);
     }
-    const scopedPool = `WITH ${LIBRARY_ASSESSMENTS_CTE}, pool AS (
+    const scopedPool = `WITH pool AS (
       SELECT a.*, ${deep} AS deep_flag,
-        EXISTS (SELECT 1 FROM library_assessments sa WHERE sa.article_id=a.id ${groupId ? "AND sa.group_id=?" : ""}) AS assessed_flag
-      FROM articles a
+        CASE WHEN review.status='succeeded' THEN 1 ELSE 0 END AS assessed_flag
+      FROM articles a ${CURRENT_REVIEW_JOIN}
     ), scoped AS (SELECT * FROM pool a ${scope.length ? "WHERE " + scope.join(" AND ") : ""})`;
 
     const timeClauses: string[] = [];
@@ -183,7 +180,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     }>;
 
     const articleIds = pageRows.map((r) => r.id);
-    const assessments = getLibraryAssessments(articleIds, groupId || undefined);
+    const reviews = getArticleReviews(articleIds);
     const wikiLinks = getPublishedWikiLinks(articleIds, groupId || undefined);
     const groupsByArticleId = new Map<
       string,
@@ -364,7 +361,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
 
     const items: LibraryArticle[] = pageRows.map((r) => ({
       id: r.id,
-      assessments: assessments.get(r.id) || [],
+      review: reviews.get(r.id) || null,
       content_kind: r.content_kind,
       date_evidence: JSON.parse(r.date_evidence_json || "{}"),
       title: r.title || "Untitled",
@@ -400,6 +397,13 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       },
       filter_meta: filterMeta,
     };
+  });
+
+  fastify.post("/library/review", async (request, reply) => {
+    const body = ReviewArticlesRequestSchema.parse(request.body);
+    const queued = articleReviewsService.enqueue(body.article_ids, body.force);
+    articleReviewsService.processPending().catch(error => request.log.error(error));
+    return reply.status(202).send({ queued });
   });
 
   fastify.post("/library/:id/research", async (request) => {

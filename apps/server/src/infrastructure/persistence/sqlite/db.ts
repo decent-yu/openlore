@@ -193,7 +193,6 @@ export function initDatabase(dbPath?: string): void {
       rules_revision TEXT NOT NULL,
       decision TEXT NOT NULL,
       reason TEXT NOT NULL DEFAULT '',
-      scores_json TEXT,
       matched_source_ids_json TEXT NOT NULL DEFAULT '[]',
       is_deep_analyzed INTEGER NOT NULL DEFAULT 0,
       selection_source TEXT NOT NULL DEFAULT 'ai_daily_auto',
@@ -426,7 +425,7 @@ function migratePipelineConfiguration(sqlite: Database.Database): void {
 function migrateStageSkillsAndReports(sqlite: Database.Database): void {
   sqlite.transaction(() => {
     const columns = sqlite.pragma('table_info(groups)') as Array<{name: string}>;
-    for (const [name, value] of Object.entries({ assessment_skill_id: 'tech-article-extractor', research_skill_id: 'deep-research-expert' })) {
+    for (const [name, value] of Object.entries({ selection_skill_id: 'article-selector', research_skill_id: 'deep-research-expert' })) {
       if (!columns.some((column) => column.name === name)) sqlite.exec(`ALTER TABLE groups ADD COLUMN ${name} TEXT NOT NULL DEFAULT '${value}'`);
     }
     if (columns.some((column) => column.name === 'skill_ids_json')) {
@@ -434,9 +433,7 @@ function migrateStageSkillsAndReports(sqlite: Database.Database): void {
       for (const group of groups) {
         const ids: string[] = JSON.parse(group.skill_ids_json || '[]');
         const research = ids.find((id) => /research/.test(id)) || 'deep-research-expert';
-        const digest = ids.find((id) => /digest/.test(id)) || 'batch-digest-generator';
-        const assessment = ids.find((id) => id !== research && id !== digest) || 'tech-article-extractor';
-        sqlite.prepare('UPDATE groups SET assessment_skill_id = ?, research_skill_id = ? WHERE id = ?').run(assessment, research, group.id);
+        sqlite.prepare('UPDATE groups SET research_skill_id = ? WHERE id = ?').run(research, group.id);
       }
       sqlite.exec('ALTER TABLE groups DROP COLUMN skill_ids_json');
     }
@@ -478,16 +475,25 @@ function migrateCollectionQuality(sqlite: Database.Database): void {
       options_json TEXT NOT NULL, implementation TEXT NOT NULL,
       stats_json TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS article_assessments (
-      cache_key TEXT PRIMARY KEY, article_id TEXT NOT NULL, group_id TEXT NOT NULL,
-      result_json TEXT NOT NULL, created_at TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS article_reviews (
+      article_id TEXT NOT NULL, revision_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued', result_json TEXT, error_message TEXT,
+      log_id TEXT, created_at TEXT NOT NULL, assessed_at TEXT,
+      PRIMARY KEY(article_id, revision_hash),
+      FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE CASCADE
     );
+    CREATE INDEX IF NOT EXISTS article_reviews_pending ON article_reviews(status, created_at);
   `);
   sqlite.exec('DROP INDEX IF EXISTS articles_pool_date');
   for (const [table, removed] of [['articles',['pool_status','quality_reason']],['groups',['lookback_days']]] as const) {
     const columns=sqlite.pragma(`table_info(${table})`) as Array<{name:string}>;
     for(const name of removed) if(columns.some(column=>column.name===name)) sqlite.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
   }
+  const relationColumns = sqlite.pragma('table_info(group_items)') as Array<{name: string}>;
+  if (relationColumns.some(column => column.name === 'scores_json')) sqlite.exec('ALTER TABLE group_items DROP COLUMN scores_json');
+  const taskColumns = sqlite.pragma('table_info(groups)') as Array<{name: string}>;
+  if (taskColumns.some(column => column.name === 'assessment_skill_id'))
+    sqlite.exec('ALTER TABLE groups DROP COLUMN assessment_skill_id');
   const candidateColumns = sqlite.pragma('table_info(collection_candidates)') as Array<{name:string}>;
   if (!candidateColumns.some(column=>column.name==='last_error')) sqlite.exec('ALTER TABLE collection_candidates ADD COLUMN last_error TEXT');
 }

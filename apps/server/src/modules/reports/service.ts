@@ -201,9 +201,9 @@ export class ReportService {
         const old = outputs.get(publication.article_id);
         const cached = getSqliteDatabase()
           .prepare(
-            "SELECT result_json FROM article_assessments WHERE article_id=? AND group_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
           )
-          .get(publication.article_id, id) as
+          .get(publication.article_id) as
           { result_json: string } | undefined;
         let summary = old?.summary || "";
         if (!summary && cached) {

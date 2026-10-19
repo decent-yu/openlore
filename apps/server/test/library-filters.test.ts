@@ -20,7 +20,7 @@ afterAll(async () => {
 beforeEach(() => {
   const db = getSqliteDatabase();
   db.exec(
-    "DELETE FROM article_assessments; DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM source_items; DELETE FROM articles; DELETE FROM groups; DELETE FROM ai_execution_logs;",
+    "DELETE FROM article_reviews; DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM source_items; DELETE FROM articles; DELETE FROM groups; DELETE FROM ai_execution_logs;",
   );
   db.prepare(
     "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('timezone','Asia/Shanghai')",
@@ -70,10 +70,7 @@ beforeEach(() => {
     "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,is_deep_analyzed) VALUES (?,'task',?,'rev','v1',?,?)",
   );
   mark.run("selected", "selected", "qualified", 0);
-  db.prepare("UPDATE group_items SET scores_json=? WHERE id=?").run(
-    '{"relevance":85,"quality":85}',
-    "selected",
-  );
+  score("selected", 85);
   mark.run("deep", "deep", "selected", 1);
   mark.run("excluded", "excluded", "excluded", 0);
   mark.run("deferred", "deferred", "deferred", 0);
@@ -264,174 +261,41 @@ it("rejects invalid enums, malformed dates, reversed and incomplete ranges", asy
     expect((await app.inject(`/api/v1/library?${query}`)).statusCode).toBe(400);
 });
 
-function score(articleId: string, relevance: number, quality: number) {
-  getSqliteDatabase()
-    .prepare(
-      "UPDATE group_items SET scores_json=?,updated_at=? WHERE article_id=?",
-    )
-    .run(
-      JSON.stringify({ relevance, quality, overall: 999 }),
-      "2026-10-19T03:00:00Z",
-      articleId,
-    );
+function score(articleId: string, quality: number) {
+  const db = getSqliteDatabase();
+  db.prepare("UPDATE articles SET latest_revision='rev' WHERE id=?").run(articleId);
+  db.prepare("INSERT OR REPLACE INTO article_reviews(article_id,revision_hash,status,result_json,created_at,assessed_at) VALUES (?,'rev','succeeded',?,?,?)")
+    .run(articleId, JSON.stringify({quality, positioning: '工程知识', summary: '问题、方法与结论', tags: ['工程'], reason: '原文证据充分', evidence_refs: ['A verifiable sentence from the original content.']}), '2026-10-19T03:00:00Z', '2026-10-19T03:00:00Z');
 }
 
-it("splits unselected articles by effective scoring and keeps scores for selected and deep articles too", async () => {
-  const db = getSqliteDatabase();
-  db.prepare(
-    "INSERT INTO groups(id,name,repository_connection_id,base_path) VALUES ('task','Agent 工程','repo','docs/agent')",
-  ).run();
-  score("excluded", 50, 60);
-  score("deferred", 88, 90);
-  score("selected", 95, 80);
-  score("deep", 91, 93);
-  db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
-    "cached",
-    "unselected",
-    "task",
-    JSON.stringify({
-      relevance: 90.4,
-      quality: 89.6,
-      reason: "已完成审核，但流水线后续中断",
-    }),
-    "2026-10-19T03:01:00Z",
-  );
+it("shares one content assessment independently of task selection and preserves zero scores", async () => {
+  score('excluded', 0); score('deferred', 90); score('deep', 93); score('unselected', 89);
   const all = await list();
-  expect(all.filter_meta).toMatchObject({
-    unreviewed_count: 2,
-    scored_count: 4,
-  });
-  expect(ids(await list("status_filter=unreviewed"))).toEqual([
-    "old",
-    "tomorrow",
-  ]);
-  expect(ids(await list("status_filter=scored"))).toEqual([
-    "deferred",
-    "excluded",
-    "selected",
-    "unselected",
-  ]);
-  const cached = all.items.find((item) => item.id === "unselected")!;
-  expect(cached.assessments).toEqual([
-    {
-      group_id: "task",
-      group_name: "Agent 工程",
-      relevance: 90,
-      quality: 90,
-      overall: 90,
-      reason: "已完成审核，但流水线后续中断",
-      assessed_at: "2026-10-19T03:01:00Z",
-    },
-  ]);
-  expect(
-    (await list("status_filter=scored")).items[0].assessments[0].overall,
-  ).toBe(90.5);
-  expect(
-    (await list("status_filter=deep")).items.find((item) => item.id === "deep")
-      ?.assessments[0].overall,
-  ).toBe(91.6);
+  expect(all.filter_meta).toMatchObject({unreviewed_count: 2, scored_count: 4, deep_count: 2});
+  expect(ids(await list('status_filter=scored'))).toEqual(['deferred', 'excluded', 'selected', 'unselected']);
+  const zero = all.items.find(item => item.id === 'excluded')!;
+  expect(zero.review?.result?.quality).toBe(0);
+  expect(zero).not.toHaveProperty('assessments');
+  expect((await list('group_id=task')).items.find(item => item.id === 'excluded')?.review).toEqual(zero.review);
+  expect(all.items.find(item => item.id === 'deep')?.review?.result?.quality).toBe(93);
 });
 
-it("does not treat malformed, incomplete or failed calls as scored and accepts genuine zero scores", async () => {
+it("only uses the current body revision and does not count queued, failed or running reviews as scored", async () => {
   const db = getSqliteDatabase();
-  for (const [key, article, raw] of [
-    ["bad", "old", "not-json"],
-    ["missing", "excluded", '{"relevance":80}'],
-    ["wrong-type", "deferred", '{"relevance":"80","quality":90}'],
-    ["infinite", "tomorrow", '{"relevance":1e999,"quality":90}'],
-  ]) {
-    db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
-      key,
-      article,
-      "task",
-      raw,
-      "2026-10-19T03:00:00Z",
-    );
+  score('old', 95);
+  db.prepare("UPDATE articles SET latest_revision='new-revision' WHERE id='old'").run();
+  for (const [id, status] of [['excluded', 'failed'], ['deferred', 'running'], ['tomorrow', 'queued']]) {
+    db.prepare("UPDATE articles SET latest_revision='rev' WHERE id=?").run(id);
+    db.prepare("INSERT INTO article_reviews(article_id,revision_hash,status,created_at) VALUES (?,'rev',?,'2026-10-19T03:00:00Z')").run(id, status);
   }
-  db.prepare(
-    "INSERT INTO ai_execution_logs(id,job_id,article_id,task_type,started_at,status,input_json) VALUES ('failed','job','unselected','assess','2026-10-19T03:00:00Z','failed','{}')",
-  ).run();
-  expect((await list()).filter_meta).toMatchObject({
-    unreviewed_count: 5,
-    scored_count: 1,
-  });
-  db.prepare("UPDATE group_items SET scores_json=? WHERE article_id=?").run(
-    '{"relevance":0,"quality":0}',
-    "excluded",
-  );
-  db.prepare("UPDATE group_items SET scores_json=? WHERE article_id=?").run(
-    "invalid-json",
-    "deferred",
-  );
-  const data = await list("status_filter=scored");
-  expect(ids(data)).toEqual(["excluded", "selected"]);
-  expect(
-    data.items.find((item) => item.id === "excluded")!.assessments[0],
-  ).toMatchObject({
-    relevance: 0,
-    quality: 0,
-    overall: 0,
-  });
+  expect(ids(await list('status_filter=scored'))).toEqual(['selected']);
+  expect((await list()).items.find(item => item.id === 'old')?.review).toBeNull();
 });
 
-it("keeps latest valid scores per pipeline separate and uses the pipeline scope consistently", async () => {
-  const db = getSqliteDatabase();
-  for (const [key, group, relevance, time] of [
-    ["first", "task", 30, "2026-10-18T01:00:00Z"],
-    ["second", "task", 80, "2026-10-19T01:00:00Z"],
-    ["third", "other", 90, "2026-10-19T02:00:00Z"],
-  ]) {
-    db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
-      key,
-      "excluded",
-      group,
-      JSON.stringify({
-        relevance: Number(relevance),
-        quality: 70,
-        reason: group,
-      }),
-      time,
-    );
-  }
-  const all = await list("status_filter=scored");
-  expect(
-    all.items
-      .find((item) => item.id === "excluded")!
-      .assessments.map((a) => [a.group_id, a.relevance]),
-  ).toEqual([
-    ["other", 90],
-    ["task", 80],
-  ]);
-  const scoped = await list("group_id=task&status_filter=scored");
-  expect(ids(scoped)).toEqual(["excluded", "selected"]);
-  expect(scoped.items[0].assessments).toHaveLength(1);
-  expect(scoped.items[0].assessments[0].group_id).toBe("task");
-  expect(scoped.filter_meta).toMatchObject({
-    unreviewed_count: 1,
-    scored_count: 2,
-  });
-});
-
-it("combines review filters with date, source, interest and pagination without changing state totals", async () => {
-  const db = getSqliteDatabase();
-  db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
-    "cache",
-    "unselected",
-    "task",
-    '{"relevance":90,"quality":80}',
-    "2026-10-19T03:00:00Z",
-  );
-  const data = await list(
-    "time_range=today&source_id=source&status_filter=scored&interested_only=true&page_size=1",
-  );
-  expect(ids(data)).toEqual(["unselected"]);
+it("combines shared reviews with dates, source, interest and pagination", async () => {
+  score('unselected', 80);
+  const data = await list('time_range=today&source_id=source&status_filter=scored&interested_only=true&page_size=1');
+  expect(ids(data)).toEqual(['unselected']);
   expect(data.pagination.total_count).toBe(1);
-  expect(data.filter_meta).toMatchObject({
-    unreviewed_count: 0,
-    scored_count: 2,
-    deep_count: 1,
-  });
-  expect(
-    (await app.inject("/api/v1/library?status_filter=failed")).statusCode,
-  ).toBe(400);
+  expect(data.filter_meta).toMatchObject({unreviewed_count: 0, scored_count: 2, deep_count: 1});
 });

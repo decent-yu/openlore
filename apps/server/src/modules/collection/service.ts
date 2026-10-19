@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { articleReviewsService } from "../processing/article-reviews.js";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -188,6 +189,7 @@ export class CollectionService {
     );
     removeUnusedBlobs([...this.retiredRawRefs]);
     this.retiredRawRefs.clear();
+    articleReviewsService.processPending().catch(() => {});
     return result;
   }
 
@@ -442,6 +444,7 @@ export class CollectionService {
     db.prepare('DELETE FROM collection_receipts WHERE source_id=?').run(sourceId);
     removeUnusedBlobs([...this.retiredRawRefs]);
     this.retiredRawRefs.clear();
+    articleReviewsService.processPending().catch(() => {});
     return counts;
   }
 
@@ -538,6 +541,8 @@ export class CollectionService {
       JSON.stringify(item.issues || []),
       now,
     );
+    const current = db.prepare('SELECT latest_revision FROM articles WHERE id=?').get(articleId) as {latest_revision: string};
+    if (!existing || current.latest_revision !== existing.latest_revision) articleReviewsService.enqueue([articleId]);
     return articleId;
   }
 }
