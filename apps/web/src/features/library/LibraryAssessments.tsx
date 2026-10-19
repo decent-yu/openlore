@@ -1,70 +1,90 @@
 import React from "react";
-import type { LibraryArticle } from "@openlore/contracts";
+import { Link } from "react-router-dom";
+import type { ArticleReview } from "@openlore/contracts";
 
 export function LibraryAssessments({
-  assessments,
+  review,
   timezone,
 }: {
-  assessments: LibraryArticle["assessments"];
+  review: ArticleReview | null;
   timezone: string;
 }) {
-  if (!assessments.length)
-    return <p className="text-[11px] text-neutral-400">暂无 AI 评分</p>;
+  if (!review) return <p className="text-xs text-neutral-400">待初审</p>;
+  const result = review.result;
   return (
     <section
-      aria-label="AI 评分"
+      aria-label="内容初审"
       className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3 text-xs"
     >
-      <p className="font-medium text-blue-900">
-        AI 已评分{" "}
-        <span className="font-normal text-neutral-500">（满分 100）</span>
-      </p>
-      {assessments.map((item) => (
-        <div key={item.group_id} className="space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <span className="font-medium text-neutral-700">
-              {item.group_name}
-            </span>
-            <time
-              dateTime={item.assessed_at}
-              className="text-[10px] text-neutral-400"
-            >
-              {new Intl.DateTimeFormat("zh-CN", {
-                timeZone: timezone,
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              }).format(new Date(item.assessed_at))}
-            </time>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-blue-900">
+          内容初审 ·{" "}
+          {
+            {
+              queued: "排队中",
+              running: "审核中",
+              succeeded: "已完成",
+              failed: "失败",
+            }[review.status]
+          }
+        </span>
+        {review.log_id && (
+          <Link
+            className="text-blue-700 hover:underline"
+            to={`/runs?tab=ai&call=${encodeURIComponent(review.log_id)}`}
+          >
+            查看初审记录
+          </Link>
+        )}
+      </div>
+      {review.error_message && (
+        <p className="text-red-700">{review.error_message}</p>
+      )}
+      {review.status === "succeeded" && result && (
+        <>
+          <p>
+            内容质量{" "}
+            <strong className="text-base text-blue-800">
+              {result.quality}
+            </strong>
+            <span className="text-neutral-400"> / 100</span>
+          </p>
+          <p className="font-medium text-neutral-700">{result.positioning}</p>
+          <div className="flex flex-wrap gap-1">
+            {result.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded bg-white px-1.5 py-0.5 text-neutral-600"
+              >
+                {tag}
+              </span>
+            ))}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-neutral-600">
-            <span>
-              综合分{" "}
-              <strong className="text-blue-800">
-                {item.overall.toFixed(1)}
-              </strong>
-            </span>
-            <span>
-              相关度 <strong>{item.relevance}</strong>
-            </span>
-            <span>
-              工程质量 <strong>{item.quality}</strong>
-            </span>
-          </div>
-          {item.reason && (
-            <p className="text-[11px] leading-relaxed text-neutral-500">
-              {item.reason}
-            </p>
-          )}
-        </div>
-      ))}
-      <p className="text-[10px] text-neutral-400">
-        各流水线最近一次有效评分；综合分 = 相关度 × 70% + 工程质量 ×
-        30%。评分历史不代表当前一定入选。
-      </p>
+          <p className="leading-relaxed text-neutral-600">{result.summary}</p>
+          <details>
+            <summary className="cursor-pointer text-neutral-500">
+              评分依据与原文证据
+            </summary>
+            <p className="mt-2">{result.reason}</p>
+            {result.evidence_refs.map((quote, i) => (
+              <blockquote
+                key={i}
+                className="mt-2 border-l-2 pl-2 text-neutral-500"
+              >
+                {quote}
+              </blockquote>
+            ))}
+          </details>
+        </>
+      )}
+      {review.assessed_at && (
+        <p className="text-[10px] text-neutral-400">
+          {new Date(review.assessed_at).toLocaleString("zh-CN", {
+            timeZone: timezone,
+            hour12: false,
+          })}
+        </p>
+      )}
     </section>
   );
 }

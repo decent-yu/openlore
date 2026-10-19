@@ -128,7 +128,7 @@ export function RunsPage() {
             <div>
               <h3 className="font-semibold">流水线运行</h3>
               <p className="mt-1 text-xs text-neutral-500">
-                每张卡片是一次完整运行：审核 → 调研 → GitHub
+                每张卡片是一次完整运行：选文 → 调研 → GitHub
                 归档。点击“本次运行的全部 AI 调用”直接查看。
               </p>
             </div>

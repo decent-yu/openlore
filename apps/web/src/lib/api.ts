@@ -167,6 +167,9 @@ export const api = {
   getSkill: (id: string) => request<Skill>(`/skills/${id}`),
 
   // Library
+  reviewArticles: (articleIds: string[], force = false) => request<{ queued: number }>('/library/review', {
+    method: 'POST', body: JSON.stringify({ article_ids: articleIds, force }),
+  }),
   listLibrary: (params?: LibraryFilterParams) => {
     const q = new URLSearchParams();
     for (const key of ['time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {

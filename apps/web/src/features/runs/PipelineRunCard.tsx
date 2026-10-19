@@ -3,7 +3,7 @@ import type { Run } from "@openlore/contracts";
 import { ExecutionLogs } from "./ExecutionLogs.js";
 import { RunHistoryDetails } from "./RunHistoryDetails.js";
 const stages: Record<string, string> = {
-  processing: "AI 审核",
+  processing: "AI 批量选文",
   research: "深度调研",
   delivery: "GitHub 归档",
   completed: "已完成",
@@ -56,41 +56,20 @@ export function PipelineRunCard({
       </p>
       <div className="mt-3 flex flex-wrap gap-4 text-sm">
         <span>扫描文章 {run.counts.observed}</span>
-        <span>参与评估 {run.counts.candidate}</span>
+        <span>备选文章 {run.counts.candidate}</span>
         <span>本次调研 {run.counts.planned}</span>
         <span>
           调研{" "}
           {run.output?.entries.filter((entry) => entry.is_deep_analyzed)
             .length || 0}
         </span>
-        <span>审核排除 {run.counts.excluded}</span>
-        {!!run.counts.deferred && <span>合格待选 {run.counts.deferred}</span>}
+        <span>未初审跳过 {run.counts.unreviewed}</span>
+        {!!run.counts.deferred && <span>留待后续 {run.counts.deferred}</span>}
         <span>已归档/执行中跳过 {run.counts.already_processed}</span>
       </div>
-      {run.status === "running" &&
-        run.stage === "processing" &&
-        run.counts.candidate > 0 && (
-          <div
-            role="status"
-            className="mt-3 space-y-1.5 rounded-lg bg-blue-50 p-3 text-xs text-blue-800"
-          >
-            <p>
-              已完成审核{" "}
-              {run.ai_logs.filter((log) => log.task_type === "assess").length} /{" "}
-              {run.counts.candidate} 篇 · 按有效评分排序调研
-            </p>
-            <progress
-              aria-label="文章审核进度"
-              className="h-1.5 w-full accent-blue-600"
-              max={run.counts.candidate}
-              value={
-                run.ai_logs.filter((log) => log.task_type === "assess").length
-              }
-            />
-          </div>
-        )}
+      {run.status === 'running' && run.stage === 'processing' && <p role="status" className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">正在比较 {run.counts.candidate} 篇候选的评分与简介，批量选择调研文章…</p>}
       <p className="mt-2 text-xs text-neutral-500">
-        来源范围内，全池未完成调研的文章按有效评分竞争本次调研名额，已归档和执行中的文章不重复领取。
+        只使用共享初审结果批量选文；已归档、执行中和未完成初审的文章跳过。
       </p>
       {run.error_message && (
         <p role="alert" className="mt-2 text-sm text-red-600">
@@ -122,7 +101,7 @@ export function PipelineRunCard({
         {open && (
           <div className="mt-4">
             <p className="mb-3 text-xs leading-relaxed text-neutral-500">
-              只展示本次运行的审核、调研和重试调用；主备尝试保存在每次调用详情中。命中缓存的审核结果可在下方汇总查看。
+              展示本次选文、调研及重试调用。内容初审独立记录，可在“AI 调用日志”按类型查看。
             </p>
             <ExecutionLogs
               key={run.id}

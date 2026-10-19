@@ -104,7 +104,7 @@ export function DailyFeedPage() {
           role="status"
           className="rounded border bg-blue-50 p-3 text-sm text-blue-800"
         >
-          正在评分、调研或归档，完成后自动更新。
+          正在选文、调研或归档，完成后自动更新。
           <Link to="/runs" className="ml-2 underline">
             查看运行记录
           </Link>
@@ -131,7 +131,7 @@ export function DailyFeedPage() {
           <BookOpen className="mx-auto h-8 w-8 text-neutral-300" />
           <p className="mt-3 font-medium">当天暂无已归档研报</p>
           <p className="mt-2 text-sm text-neutral-500">
-            候选文章不受发现日期限制，按各任务评分选择。未完成归档的文章请在内容池或运行记录查看。
+            候选文章不受发现日期限制，由 AI 根据共享评分与简介选文。未完成归档的文章请在内容池或运行记录查看。
           </p>
           <Link
             to="/pool"

@@ -69,7 +69,7 @@ it("describes a single M research quota rather than an N-then-M selection pipeli
   client.setQueryData(["groups"], [task]);
   client.setQueryData(["runs"], []);
   const html = render(<PipelinesPage />, client);
-  expect(html).toContain("全池有效评分排序");
+  expect(html).toContain("AI 批量选文");
   expect(html).toContain("每次最多深度调研");
   expect(html).not.toContain("精选最多");
   expect(html).not.toContain("精选篇数");

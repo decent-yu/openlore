@@ -6,7 +6,8 @@ import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 
 const taskNames: Record<string, string> = {
-  assess: "文章审核",
+  assess: "内容初审",
+  select: "流水线选文",
   research_report: "深度调研",
   digest: "汇报简报",
   organize: "文章整理",
@@ -102,7 +103,7 @@ export function ExecutionLogs({
         <div>
           <h3 className="text-lg font-semibold">全部 AI 调用</h3>
           <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-            跨任务查看审核、调研和简报调用，点击来源可返回对应运行或推送。相同调用在各入口展示同一份详情。
+            按类型查看内容初审、流水线选文和深度调研调用，点击来源可返回对应运行或推送。相同调用在各入口展示同一份详情。
           </p>
         </div>
       )}
@@ -129,13 +130,14 @@ export function ExecutionLogs({
           <option value="problem">失败 / 超时 / 中断</option>
         </select>
         <select
-          aria-label="调用阶段"
+          aria-label="调用类型"
           className="rounded-md border bg-white px-3 text-sm"
           value={task}
           onChange={(event) => filter(() => setTask(event.target.value))}
         >
-          <option value="">全部阶段</option>
-          <option value="assess">文章审核</option>
+          <option value="">全部类型</option>
+          <option value="assess">内容初审</option>
+          <option value="select">流水线选文</option>
           <option value="research_report">深度调研</option>
           <option value="digest">汇报简报</option>
         </select>

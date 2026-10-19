@@ -182,6 +182,19 @@ export function LibraryPage() {
     },
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: ({ ids, force = false }: { ids: string[]; force?: boolean }) =>
+      api.reviewArticles(ids, force),
+    onSuccess: ({ queued }) => {
+      queryClient.invalidateQueries({ queryKey: ["library"] });
+      setMessage(
+        queued
+          ? `已提交 ${queued} 篇内容初审，可在运行记录按“内容初审”筛选查看。`
+          : "文章已审核或正在排队，无需重复提交。",
+      );
+    },
+  });
+
   const filterMeta = libraryData?.filter_meta;
   const pagination = libraryData?.pagination;
   const articles = libraryData?.items || [];
@@ -208,12 +221,16 @@ export function LibraryPage() {
           {message}
         </p>
       )}
-      {(libraryError || toggleInterestMutation.error) && (
+      {(libraryError ||
+        toggleInterestMutation.error ||
+        reviewMutation.error) && (
         <p
           role="alert"
           className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
         >
-          {libraryError?.message || toggleInterestMutation.error?.message}
+          {libraryError?.message ||
+            toggleInterestMutation.error?.message ||
+            reviewMutation.error?.message}
         </p>
       )}
       {/* Top Header */}
@@ -221,19 +238,44 @@ export function LibraryPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">内容池</h2>
           <p className="text-neutral-500 text-sm">
-            入池前完成采集准入；池内尚未完成调研的文章参与评分排序，有效评分直接复用。
+            新文章入池后自动初审；历史文章可手动审核，评分与简介由所有流水线共享。
           </p>
         </div>
-        <div className="w-full sm:w-80">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
-            <Input
-              aria-label="搜索标题或作者"
-              placeholder="搜索标题或作者..."
-              value={searchTerm}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={
+              reviewMutation.isPending ||
+              !articles.some(
+                (article) =>
+                  !article.review || article.review.status === "failed",
+              )
+            }
+            onClick={() =>
+              reviewMutation.mutate({
+                ids: articles
+                  .filter(
+                    (article) =>
+                      !article.review || article.review.status === "failed",
+                  )
+                  .map((article) => article.id),
+              })
+            }
+          >
+            审核本页未审核文章
+          </Button>
+          <div className="w-full sm:w-64">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
+              <Input
+                aria-label="搜索标题或作者"
+                placeholder="搜索标题或作者..."
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -465,10 +507,7 @@ export function LibraryPage() {
               </CardHeader>
 
               <CardContent className="space-y-3 pt-1">
-                <LibraryAssessments
-                  assessments={art.assessments}
-                  timezone={timezone}
-                />
+                <LibraryAssessments review={art.review} timezone={timezone} />
                 {/* Research Highlights or Body Snippet */}
                 {art.research?.status === "succeeded" &&
                 art.research.questions &&
@@ -523,7 +562,31 @@ export function LibraryPage() {
                     <span className="text-xs text-neutral-400">无外部链接</span>
                   )}
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs"
+                      disabled={
+                        reviewMutation.isPending ||
+                        art.review?.status === "queued" ||
+                        art.review?.status === "running"
+                      }
+                      onClick={() =>
+                        reviewMutation.mutate({
+                          ids: [art.id],
+                          force: art.review?.status === "succeeded",
+                        })
+                      }
+                    >
+                      {art.review?.status === "succeeded"
+                        ? "重新初审"
+                        : art.review?.status === "failed"
+                          ? "重试初审"
+                          : art.review
+                            ? "初审中"
+                            : "初审"}
+                    </Button>
                     {art.research?.status === "succeeded" ? (
                       <>
                         <Button

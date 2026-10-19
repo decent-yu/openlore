@@ -8,6 +8,11 @@ import { api } from "../../lib/api.js";
 import { Button } from "../../components/ui/button.js";
 import { useDialog } from "../../lib/useDialog.js";
 
+const taskNames: Record<string, string> = {
+  assess: "内容初审",
+  select: "流水线选文",
+  research_report: "深度调研",
+};
 const statusNames: Record<string, string> = {
   running: "执行中",
   success: "成功",
@@ -121,6 +126,7 @@ export function ExecutionLogDetail({
                   <span className={`rounded px-2 py-1 ${color(detail.status)}`}>
                     {statusNames[detail.status] || detail.status}
                   </span>
+                  <span>{taskNames[detail.task_type] || detail.task_type}</span>
                   <span>开始 {time(detail.started_at)}</span>
                   <span>结束 {time(detail.finished_at)}</span>
                   <span>

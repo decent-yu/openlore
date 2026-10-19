@@ -1,4 +1,5 @@
 import React from "react";
+import { MemoryRouter } from "react-router-dom";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -84,7 +85,7 @@ it("keeps status and interest active simultaneously and validates dates before a
 it("displays exactly one article state with deep analysis taking precedence over selection", () => {
   const deep = renderToStaticMarkup(
     <LibraryArticleStatus
-      article={{ assessments: [], is_deep_analyzed: true }}
+      article={{ review: null, is_deep_analyzed: true }}
     />,
   );
   expect(deep).toContain("深度分析");
@@ -94,17 +95,7 @@ it("displays exactly one article state with deep analysis taking precedence over
     renderToStaticMarkup(
       <LibraryArticleStatus
         article={{
-          assessments: [
-            {
-              group_id: "g",
-              group_name: "G",
-              relevance: 80,
-              quality: 80,
-              overall: 80,
-              reason: "",
-              assessed_at: "2026-10-19T00:00:00Z",
-            },
-          ],
+          review: {status: 'succeeded', result: null, error_message: null, assessed_at: null, log_id: null},
           is_deep_analyzed: false,
         }}
       />,
@@ -113,7 +104,7 @@ it("displays exactly one article state with deep analysis taking precedence over
   expect(
     renderToStaticMarkup(
       <LibraryArticleStatus
-        article={{ assessments: [], is_deep_analyzed: false }}
+        article={{ review: null, is_deep_analyzed: false }}
       />,
     ),
   ).toContain("未审核");
@@ -168,47 +159,14 @@ it("shows independent unreviewed, scored and archived states with counts", () =>
   expect(html).not.toContain("精选入围");
 });
 
-it("displays real scores, task names, reasons and zero values rather than fabricating a score for unreviewed articles", () => {
-  const html = renderToStaticMarkup(
-    <LibraryAssessments
-      timezone="Asia/Shanghai"
-      assessments={[
-        {
-          group_id: "agent",
-          group_name: "Agent 工程",
-          relevance: 80,
-          quality: 90,
-          overall: 83,
-          reason: "有完整工程实现与证据",
-          assessed_at: "2026-10-19T03:00:00Z",
-        },
-        {
-          group_id: "frontend",
-          group_name: "前端工程",
-          relevance: 0,
-          quality: 0,
-          overall: 0,
-          reason: "主题不相关",
-          assessed_at: "2026-10-18T03:00:00Z",
-        },
-      ]}
-    />,
-  );
-  for (const text of [
-    "AI 已评分",
-    "Agent 工程",
-    "前端工程",
-    "相关度",
-    "工程质量",
-    "83.0",
-    "0.0",
-    "有完整工程实现与证据",
-    "主题不相关",
-  ])
-    expect(html).toContain(text);
-  const none = renderToStaticMarkup(
-    <LibraryAssessments timezone="UTC" assessments={[]} />,
-  );
-  expect(none).toContain("暂无 AI 评分");
-  expect(none).not.toContain("0.0");
+it("shows shared content quality, positioning and evidence, with a link to its initial-review log", () => {
+  const html = renderToStaticMarkup(<MemoryRouter><LibraryAssessments timezone="UTC" review={{
+    status: 'succeeded', error_message: null, log_id: 'review-log', assessed_at: '2026-10-19T03:00:00Z',
+    result: {quality: 0, positioning: '数据库性能', summary: '问题、方法和局限', tags: ['数据库'], reason: '证据不足', evidence_refs: ['A complete original sentence from the article.']},
+  }} /></MemoryRouter>);
+  for (const text of ['内容质量', '数据库性能', '问题、方法和局限', '证据不足', '查看初审记录', 'review-log']) expect(html).toContain(text);
+  expect(html).not.toContain('相关度');
+  const none = renderToStaticMarkup(<LibraryAssessments timezone="UTC" review={null} />);
+  expect(none).toContain('待初审');
+  expect(none).not.toContain('内容质量');
 });

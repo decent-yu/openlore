@@ -4,7 +4,7 @@ import { Badge } from "../../components/ui/badge.js";
 export function LibraryArticleStatus({
   article,
 }: {
-  article: Pick<LibraryArticle, "is_deep_analyzed" | "assessments">;
+  article: Pick<LibraryArticle, "is_deep_analyzed" | "review">;
 }) {
   if (article.is_deep_analyzed)
     return (
@@ -12,7 +12,7 @@ export function LibraryArticleStatus({
         深度分析
       </Badge>
     );
-  if (article.assessments.length)
+  if (article.review?.status === "succeeded")
     return (
       <Badge className="border-blue-200 bg-blue-50 text-[10px] font-normal text-blue-700">
         已评分

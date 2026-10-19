@@ -13,7 +13,7 @@ export function RunHistoryDetails({
   return (
     <details className="mt-3 border-t pt-3">
       <summary className="cursor-pointer text-sm">
-        审核结果与历史摘要（{run.ai_logs.length}）
+        选文结果与调研摘要（{run.ai_logs.length}）
       </summary>
       <p className="mt-2 text-xs text-neutral-500">
         此处为任务汇总摘要。旧记录没有保存完整材料、时限和失败尝试，无法补全；新调用请展开本次运行的

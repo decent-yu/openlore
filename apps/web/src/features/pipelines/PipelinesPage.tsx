@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
-  buildAssessmentPrompt,
+  buildSelectionPrompt,
   buildResearchPrompt,
   type Group,
   type Skill,
@@ -25,7 +25,7 @@ const initialForm = {
   source_ids: [] as string[],
   deep_analysis_count: 3,
   ai_profile_id: "",
-  assessment_skill_id: "tech-article-extractor",
+  selection_skill_id: "article-selector",
   research_skill_id: "deep-research-expert",
   research_instructions: "",
   repository_connection_id: "",
@@ -81,7 +81,7 @@ export function PipelinesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["runs"] });
       queryClient.invalidateQueries({ queryKey: ["daily-feed"] });
-      setMessage("任务已启动，可在运行记录查看审核、调研与归档进度");
+      setMessage("任务已启动，可在运行记录查看选文、调研与归档进度");
     },
     onError: (error) => setMessage(error.message),
   });
@@ -106,7 +106,7 @@ export function PipelinesPage() {
             source_ids: group.source_ids,
             deep_analysis_count: group.deep_analysis_count,
             ai_profile_id: group.ai_profile_id || "",
-            assessment_skill_id: group.assessment_skill_id,
+            selection_skill_id: group.selection_skill_id,
             research_skill_id: group.research_skill_id,
             research_instructions: group.research_instructions,
             repository_connection_id: group.route.repository_connection_id,
@@ -224,10 +224,10 @@ export function PipelinesPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border bg-blue-50/40 p-4">
               <h4 className="flex items-center gap-2 text-sm font-semibold">
-                <Bot className="h-4 w-4" />1 · 审核与调研
+                <Bot className="h-4 w-4" />1 · 选文与调研
               </h4>
               <p className="text-sm">
-                全池有效评分排序 → 每次最多深度调研 {group.deep_analysis_count}{" "}
+                AI 批量选文 → 每次最多深度调研 {group.deep_analysis_count}{" "}
                 篇
               </p>
               <p className="text-xs text-neutral-500">
@@ -243,7 +243,7 @@ export function PipelinesPage() {
                   : "全部来源"}
               </p>
               <p className="text-xs text-neutral-500">
-                范围内未完成调研的文章全部参与，复用有效评分，不限入池日期。
+                范围内已初审、未完成调研的文章参与，不限入池日期；流水线不补跑初审。
               </p>
             </div>
             <div className="space-y-2 rounded-lg border bg-emerald-50/40 p-4">
@@ -396,9 +396,9 @@ export function PipelinesPage() {
                     1
                   </span>
                   <div>
-                    <h4 className="text-sm font-semibold">内容审核与评分</h4>
+                    <h4 className="text-sm font-semibold">AI 批量选文</h4>
                     <p className="mt-0.5 text-[11px] text-neutral-500">
-                      读取内容池 → 审核 Skill 评分 → 选出目标篇数
+                      共享评分与简介 → AI 比较候选 → 最多选择 M 篇
                     </p>
                   </div>
                 </div>
@@ -436,16 +436,16 @@ export function PipelinesPage() {
                   </div>
                 </fieldset>
                 <SkillPicker
-                  label="审核 Skill"
-                  type="extraction"
-                  value={form.assessment_skill_id}
+                  label="选文 Skill"
+                  type="selection"
+                  value={form.selection_skill_id}
                   skills={skills}
-                  onChange={(id) => update("assessment_skill_id", id)}
-                  prompt={buildAssessmentPrompt(form.assessment_skill_id, form)}
-                  instructionsLabel="审核要求"
+                  onChange={(id) => update("selection_skill_id", id)}
+                  prompt={buildSelectionPrompt(form.selection_skill_id, form)}
+                  instructionsLabel="选文要求"
                   instructions={form.preferences}
                   onInstructionsChange={(value) => update("preferences", value)}
-                  instructionsPlaceholder="按任务定位判断相关性与质量"
+                  instructionsPlaceholder="根据任务定位选择值得深入研究的文章"
                 />
               </section>
               <section className="space-y-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
@@ -456,10 +456,10 @@ export function PipelinesPage() {
                     </span>
                     <div>
                       <h4 className="text-sm font-semibold">
-                        按评分选择深度调研
+                        深度调研
                       </h4>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
-                        从全池合格文章中取分数最高的 M 篇
+                        读取选中文章全文，按任务要求生成研报
                       </p>
                     </div>
                   </div>
@@ -479,9 +479,9 @@ export function PipelinesPage() {
                   />
                 </label>
                 <p className="text-xs text-neutral-500">
-                  从所有未完成调研的合格文章中选择最多{" "}
+                  AI 根据已初审文章的评分和简介选择最多{" "}
                   {form.deep_analysis_count}{" "}
-                  篇，不限当天；未取到的文章下轮继续参与。M 为 0 时只评分。
+                  篇，不要求凑满；未选中的文章下轮继续参与。M 为 0 时不选文、不调研。
                 </p>
                 <SkillPicker
                   label="深度调研 Skill"
