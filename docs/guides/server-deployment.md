@@ -2,6 +2,8 @@
 
 适用于管理网站、采集、调度和业务数据的常驻机器。只接入 AI 的电脑请看[Runner 指引](ai-executors.md)。以下为 macOS/Linux shell 命令，均从仓库根目录执行。
 
+本项目仅规划成员本地与云端正式两类环境，协作和后续 `.env` 配置见[协作指引](collaboration.md)。本文命令描述当前可用的部署方式，后端目前不自动加载 `.env`。
+
 ## 1. 准备环境与依赖
 
 准备 Git、项目选型的 Node.js 24、Python ≥3.12，以及 [uv](https://docs.astral.sh/uv/getting-started/installation/)。安装当前项目指定的 pnpm：

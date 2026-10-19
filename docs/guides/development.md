@@ -2,6 +2,8 @@
 
 本指南用于修改代码与整站调试。只运行 AI 的用户按[Runner 接入](ai-executors.md)操作，服务器管理员按[部署指引](server-deployment.md)操作。整体边界见[系统架构](../architecture/system-architecture.md)。以下命令从仓库根目录执行，Python 测试除外。
 
+环境分工和后续 `.env` 约定见[本地开发与云端正式运行](collaboration.md)：成员各自本地开发，验收后发布云端正式环境，不另设测试环境。
+
 ## 开发启动
 
 准备 Git、Node.js（项目选型为 24）、Python ≥3.12 和 uv；pnpm 版本以根 `package.json` 为准，当前可用 `npm install -g pnpm@12.0.0` 安装。
