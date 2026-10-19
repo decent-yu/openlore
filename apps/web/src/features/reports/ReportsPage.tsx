@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/input.js';
 import { api } from '../../lib/api.js';
 import { FeishuCardPreview } from './FeishuCardPreview.js';
 import { ReportTemplateEditor } from './ReportTemplateEditor.js';
+import { useDialog } from '../../lib/useDialog.js';
 
 const statuses: Record<string, string> = {
   succeeded: '已完成归档',
@@ -48,6 +49,7 @@ export function ReportsPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [previewId, setPreviewId] = useState('');
   const [message, setMessage] = useState('');
+  const [messageError, setMessageError] = useState(false);
   const {
     data: preview,
     refetch,
@@ -67,6 +69,7 @@ export function ReportsPage() {
     mutationFn: api.saveReportPlan,
     onSuccess: (plan) => {
       invalidate();
+      setMessageError(false);
       setDraft(null);
       setPreviewId(plan.id);
       setMessage(`「${plan.name}」已保存`);
@@ -75,23 +78,29 @@ export function ReportsPage() {
   const toggle = useMutation({
     mutationFn: api.saveReportPlan,
     onSuccess: invalidate,
-    onError: (error) => setMessage(error.message),
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const remove = useMutation({
     mutationFn: api.deleteReportPlan,
-    onSuccess: (_, id) => {
-      invalidate();
+    onMutate: async (id) => {
       if (previewId === id) setPreviewId('');
+      await client.cancelQueries({ queryKey: ['reportPreview', id] });
     },
-    onError: (error) => setMessage(error.message),
+    onSuccess: (_, id) => {
+      client.invalidateQueries({ queryKey: ['reportPlans'] });
+      setMessageError(false);
+      setMessage('汇报方案已删除');
+    },
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const send = useMutation({
     mutationFn: api.sendReport,
     onSuccess: (result) => {
+      setMessageError(!result.ok);
       setMessage(result.message);
       client.invalidateQueries({ queryKey: ['pushDeliveries'] });
     },
-    onError: (error) => setMessage(error.message),
+    onError: (error) => { setMessageError(true); setMessage(error.message); },
   });
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((previous) =>
@@ -113,6 +122,7 @@ export function ReportsPage() {
           },
     );
   };
+  useDialog(Boolean(draft), () => setDraft(null));
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -136,7 +146,7 @@ export function ReportsPage() {
         </p>
       )}
       {message && (
-        <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">
+        <p role={messageError ? "alert" : "status"} className={`rounded-lg border p-3 text-sm ${messageError ? "border-red-200 bg-red-50 text-red-700" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
           {message}
         </p>
       )}
