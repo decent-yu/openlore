@@ -166,7 +166,6 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       )
       .all(...params, pageSize, offset) as Array<{
       id: string;
-      content_kind: string;
       date_evidence_json: string;
       title: string | null;
       author: string | null;
@@ -362,7 +361,6 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const items: LibraryArticle[] = pageRows.map((r) => ({
       id: r.id,
       review: reviews.get(r.id) || null,
-      content_kind: r.content_kind,
       date_evidence: JSON.parse(r.date_evidence_json || "{}"),
       title: r.title || "Untitled",
       author: r.author,

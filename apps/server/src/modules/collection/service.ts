@@ -3,7 +3,6 @@ import { articleReviewsService } from "../processing/article-reviews.js";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  SourceOptionsSchema,
   type SourceOptions,
   type Source,
   type CollectionRequest,
@@ -299,7 +298,7 @@ export class CollectionService {
         if(other.source_item_id!==item.source_item_id) this.persistContentItem(other,articleId);
       }
     }
-    if(best.status==='ready') db.prepare('UPDATE articles SET content_kind=?,date_evidence_json=? WHERE id=?').run(evaluateContent(item,SourceOptionsSchema.parse({}),'UTC').kind,JSON.stringify(item.date_evidence || {}),articleId);
+    if(best.status==='ready') db.prepare('UPDATE articles SET date_evidence_json=? WHERE id=?').run(JSON.stringify(item.date_evidence || {}),articleId);
     const rawRefs:string[]=[];
     for(const row of db.prepare("SELECT source_id,item_id,item_json FROM collection_candidates WHERE article_id=? AND status IN ('history','excluded','failed')").all(articleId) as any[]) {
       const rejected=JSON.parse(row.item_json) as ContentItem;

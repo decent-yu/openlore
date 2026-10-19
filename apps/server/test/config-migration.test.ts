@@ -28,6 +28,17 @@ it('removes the old selection quota and distinguishes acknowledged reports from 
  initDatabase();
  expect(db.prepare("SELECT archived_at FROM research_tasks WHERE id='generated-only'").get()).toEqual({archived_at:null});
 });
+it('removes obsolete rule-based content types without changing article data', () => {
+  const db = getSqliteDatabase();
+  db.exec("ALTER TABLE articles ADD COLUMN content_kind TEXT NOT NULL DEFAULT 'unknown'");
+  db.prepare("INSERT INTO articles(id,title,content_kind) VALUES ('classified-article','Newsletter with engineering evidence','digest')").run();
+  initDatabase();
+  expect((db.pragma('table_info(articles)') as Array<{name: string}>).map(column => column.name)).not.toContain('content_kind');
+  expect(db.prepare("SELECT id,title FROM articles WHERE id='classified-article'").get()).toEqual({id: 'classified-article', title: 'Newsletter with engineering evidence'});
+  initDatabase();
+  expect(db.prepare("SELECT title FROM articles WHERE id='classified-article'").get()).toEqual({title: 'Newsletter with engineering evidence'});
+});
+
 afterAll(() => {
   getSqliteDatabase().close();
   fs.rmSync(dataDir, { recursive: true, force: true });

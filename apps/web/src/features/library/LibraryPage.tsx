@@ -470,18 +470,6 @@ export function LibraryPage() {
                     发现: {formatPoolTime(art.created_at, timezone)}
                   </Badge>
 
-                  {art.content_kind !== "article" &&
-                    art.content_kind !== "unknown" && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {(
-                          {
-                            digest: "汇总动态",
-                            announcement: "公告",
-                            note: "短文/实验",
-                          } as Record<string, string>
-                        )[art.content_kind] || art.content_kind}
-                      </Badge>
-                    )}
                   {/* 采集来源标签 */}
                   {art.sources?.map((srcId) => (
                     <Badge

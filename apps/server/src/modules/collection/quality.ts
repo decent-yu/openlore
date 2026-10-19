@@ -133,30 +133,15 @@ export function publicationIssue(
     return "outside_window";
   return null;
 }
-export function contentKind(item: ContentItem): string {
-  const title = item.title || "";
-  if (/newsletter|roundup|round.up|digest/i.test(title)) return "digest";
-  if (/conference|webinar|seed round|funding|hiring|team update/i.test(title))
-    return "announcement";
-  if (
-    /^(quoting|tool:)|game experiment/i.test(
-      `${title} ${plainText(item.body.value).slice(0, 100)}`,
-    )
-  )
-    return "note";
-  return "article";
-}
 export function evaluateContent(
   item: ContentItem,
   options: SourceOptions,
   timezone: string,
   now = new Date(),
-): { status: PoolStatus; reason: string; kind: string } {
-  const kind = contentKind(item);
+): { status: PoolStatus; reason: string } {
   const done = (status: PoolStatus, reason: string) => ({
     status,
     reason,
-    kind,
   });
   const issue = publicationIssue(item.published_at, options, timezone, now);
   if (issue === "previous_year" || issue === "outside_window")

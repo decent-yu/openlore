@@ -226,7 +226,6 @@ export type PoolStatus = z.infer<typeof PoolStatusSchema>;
 export const LibraryArticleSchema = z.object({
   review: ArticleReviewSchema.nullable().default(null),
   wiki_url: z.string().optional(),
-  content_kind: z.string().default('unknown'),
   date_evidence: z.record(z.unknown()).default({}),
   id: z.string(),
   title: z.string(),

@@ -452,7 +452,7 @@ function migrateStageSkillsAndReports(sqlite: Database.Database): void {
 
 function migrateCollectionQuality(sqlite: Database.Database): void {
   const columns = sqlite.pragma('table_info(articles)') as Array<{ name: string }>;
-  for (const [name, value] of Object.entries({content_kind: 'unknown', date_evidence_json: '{}'})) {
+  for (const [name, value] of Object.entries({date_evidence_json: '{}'})) {
     if (!columns.some((column) => column.name === name)) sqlite.exec(`ALTER TABLE articles ADD COLUMN ${name} TEXT NOT NULL DEFAULT '${value}'`);
   }
   sqlite.exec(`
@@ -485,7 +485,7 @@ function migrateCollectionQuality(sqlite: Database.Database): void {
     CREATE INDEX IF NOT EXISTS article_reviews_pending ON article_reviews(status, created_at);
   `);
   sqlite.exec('DROP INDEX IF EXISTS articles_pool_date');
-  for (const [table, removed] of [['articles',['pool_status','quality_reason']],['groups',['lookback_days']]] as const) {
+  for (const [table, removed] of [['articles',['pool_status','quality_reason','content_kind']],['groups',['lookback_days']]] as const) {
     const columns=sqlite.pragma(`table_info(${table})`) as Array<{name:string}>;
     for(const name of removed) if(columns.some(column=>column.name===name)) sqlite.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
   }

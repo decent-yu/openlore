@@ -99,7 +99,6 @@ export const groupSourcesTable = sqliteTable('group_sources', {
 });
 
 export const articlesTable = sqliteTable('articles', {
-  contentKind: text('content_kind').notNull().default('unknown'),
   dateEvidenceJson: text('date_evidence_json').notNull().default('{}'),
   id: text('id').primaryKey(),
   canonicalUrl: text('canonical_url'),

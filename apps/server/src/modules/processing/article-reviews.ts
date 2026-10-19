@@ -136,12 +136,11 @@ export class ArticleReviewsService {
     try {
       const article = db
         .prepare(
-          "SELECT title,published_at,content_kind FROM articles WHERE id=?",
+          "SELECT title,published_at FROM articles WHERE id=?",
         )
         .get(row.article_id) as {
         title: string;
         published_at: string | null;
-        content_kind: string;
       };
       const revision = db
         .prepare(
@@ -165,7 +164,6 @@ export class ArticleReviewsService {
         prompt: buildAssessmentPrompt(),
         material: assessmentMaterial(article.title, content, {
           published_at: article.published_at,
-          content_kind: article.content_kind,
         }),
         outputSchema: {
           type: "object",
