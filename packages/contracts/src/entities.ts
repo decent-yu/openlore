@@ -223,6 +223,15 @@ export type ResearchTask = z.infer<typeof ResearchTaskSchema>;
 export const PoolStatusSchema = z.enum(['ready', 'pending', 'review', 'history', 'excluded', 'failed']);
 export type PoolStatus = z.infer<typeof PoolStatusSchema>;
 export const LibraryArticleSchema = z.object({
+  assessments: z.array(z.object({
+    group_id: z.string(),
+    group_name: z.string(),
+    relevance: z.number().min(0).max(100),
+    quality: z.number().min(0).max(100),
+    overall: z.number().min(0).max(100),
+    reason: z.string(),
+    assessed_at: z.string(),
+  })).default([]),
   wiki_url: z.string().optional(),
   content_kind: z.string().default('unknown'),
   date_evidence: z.record(z.unknown()).default({}),
@@ -279,6 +288,8 @@ export const LibraryResponseSchema = z.object({
     published_today_count: z.number(),
     published_three_days_count: z.number(),
     unselected_count: z.number(),
+    unreviewed_count: z.number(),
+    scored_count: z.number(),
     selected_count: z.number(),
     deep_count: z.number(),
     interested_count: z.number(),

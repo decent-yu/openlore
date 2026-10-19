@@ -1,4 +1,8 @@
 import {
+  LIBRARY_ASSESSMENTS_CTE,
+  getLibraryAssessments,
+} from "../../modules/processing/library-assessments.js";
+import {
   getPublishedWikiLinks,
   wikiLinkKey,
 } from "../../modules/delivery/wiki-links.js";
@@ -36,7 +40,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const deep =
       "(EXISTS (SELECT 1 FROM group_items gi WHERE gi.article_id=a.id AND gi.is_deep_analyzed=1) OR EXISTS (SELECT 1 FROM research_tasks rt WHERE rt.article_id=a.id AND rt.status='succeeded'))";
     const scope: string[] = [];
-    const scopeParams: string[] = [];
+    const scopeParams: string[] = groupId ? [groupId] : [];
     if (sourceId) {
       scope.push(
         "EXISTS (SELECT 1 FROM source_items si WHERE si.article_id=a.id AND si.source_id=?)",
@@ -53,8 +57,10 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       scope.push("(a.title LIKE ? OR a.author LIKE ?)");
       scopeParams.push(`%${search}%`, `%${search}%`);
     }
-    const scopedPool = `WITH pool AS (
-      SELECT a.*, ${selection} AS selected_flag, ${deep} AS deep_flag FROM articles a
+    const scopedPool = `WITH ${LIBRARY_ASSESSMENTS_CTE}, pool AS (
+      SELECT a.*, ${selection} AS selected_flag, ${deep} AS deep_flag,
+        EXISTS (SELECT 1 FROM library_assessments sa WHERE sa.article_id=a.id ${groupId ? "AND sa.group_id=?" : ""}) AS assessed_flag
+      FROM articles a
     ), scoped AS (SELECT * FROM pool a ${scope.length ? "WHERE " + scope.join(" AND ") : ""})`;
 
     const timeClauses: string[] = [];
@@ -126,6 +132,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       .prepare(
         `${scopedPool} SELECT
       COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag THEN 1 END) AS unselected_count,
+      COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag AND NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
+      COUNT(CASE WHEN NOT a.selected_flag AND NOT a.deep_flag AND a.assessed_flag THEN 1 END) AS scored_count,
       COUNT(CASE WHEN a.selected_flag AND NOT a.deep_flag THEN 1 END) AS selected_count,
       COUNT(CASE WHEN a.deep_flag THEN 1 END) AS deep_count,
       COUNT(CASE WHEN a.user_interested=1 THEN 1 END) AS interested_count
@@ -133,14 +141,20 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       )
       .get(...scopeParams, ...timeParams) as {
       unselected_count: number;
+      unreviewed_count: number;
+      scored_count: number;
       selected_count: number;
       deep_count: number;
       interested_count: number;
     };
     const filterMeta = { ...timeCounts, ...stateCounts };
     const clauses = [...timeClauses];
-    if (query.status_filter === "unselected")
+    if (query.status_filter === "unselected") {
       clauses.push("NOT a.selected_flag AND NOT a.deep_flag");
+      if (query.review_filter === "unreviewed")
+        clauses.push("NOT a.assessed_flag");
+      if (query.review_filter === "scored") clauses.push("a.assessed_flag");
+    }
     if (query.status_filter === "selected")
       clauses.push("a.selected_flag AND NOT a.deep_flag");
     if (query.status_filter === "deep") clauses.push("a.deep_flag");
@@ -180,6 +194,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     }>;
 
     const articleIds = pageRows.map((r) => r.id);
+    const assessments = getLibraryAssessments(articleIds, groupId || undefined);
     const wikiLinks = getPublishedWikiLinks(articleIds, groupId || undefined);
     const groupsByArticleId = new Map<
       string,
@@ -357,6 +372,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
 
     const items: LibraryArticle[] = pageRows.map((r) => ({
       id: r.id,
+      assessments: assessments.get(r.id) || [],
       content_kind: r.content_kind,
       date_evidence: JSON.parse(r.date_evidence_json || "{}"),
       title: r.title || "Untitled",

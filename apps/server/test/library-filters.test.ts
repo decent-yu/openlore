@@ -20,7 +20,7 @@ afterAll(async () => {
 beforeEach(() => {
   const db = getSqliteDatabase();
   db.exec(
-    "DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM source_items; DELETE FROM articles;",
+    "DELETE FROM article_assessments; DELETE FROM group_items; DELETE FROM research_tasks; DELETE FROM source_items; DELETE FROM articles; DELETE FROM groups; DELETE FROM ai_execution_logs;",
   );
   db.prepare(
     "INSERT OR REPLACE INTO workspace_settings(key,value) VALUES ('timezone','Asia/Shanghai')",
@@ -259,4 +259,174 @@ it("rejects invalid enums, malformed dates, reversed and incomplete ranges", asy
     "published_range=custom&published_from=2026-10-20&published_to=2026-10-19",
   ])
     expect((await app.inject(`/api/v1/library?${query}`)).statusCode).toBe(400);
+});
+
+function score(articleId: string, relevance: number, quality: number) {
+  getSqliteDatabase()
+    .prepare(
+      "UPDATE group_items SET scores_json=?,updated_at=? WHERE article_id=?",
+    )
+    .run(
+      JSON.stringify({ relevance, quality, overall: 999 }),
+      "2026-10-19T03:00:00Z",
+      articleId,
+    );
+}
+
+it("splits unselected articles by effective scoring and keeps scores for selected and deep articles too", async () => {
+  const db = getSqliteDatabase();
+  db.prepare(
+    "INSERT INTO groups(id,name,repository_connection_id,base_path) VALUES ('task','Agent 工程','repo','docs/agent')",
+  ).run();
+  score("excluded", 50, 60);
+  score("deferred", 88, 90);
+  score("selected", 95, 80);
+  score("deep", 91, 93);
+  db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
+    "cached",
+    "unselected",
+    "task",
+    JSON.stringify({
+      relevance: 90.4,
+      quality: 89.6,
+      reason: "已完成审核，但流水线后续中断",
+    }),
+    "2026-10-19T03:01:00Z",
+  );
+  const all = await list("status_filter=unselected");
+  expect(all.filter_meta).toMatchObject({
+    unselected_count: 5,
+    unreviewed_count: 2,
+    scored_count: 3,
+  });
+  expect(
+    ids(await list("status_filter=unselected&review_filter=unreviewed")),
+  ).toEqual(["old", "tomorrow"]);
+  expect(
+    ids(await list("status_filter=unselected&review_filter=scored")),
+  ).toEqual(["deferred", "excluded", "unselected"]);
+  const cached = all.items.find((item) => item.id === "unselected")!;
+  expect(cached.assessments).toEqual([
+    {
+      group_id: "task",
+      group_name: "Agent 工程",
+      relevance: 90,
+      quality: 90,
+      overall: 90,
+      reason: "已完成审核，但流水线后续中断",
+      assessed_at: "2026-10-19T03:01:00Z",
+    },
+  ]);
+  expect(
+    (await list("status_filter=selected")).items[0].assessments[0].overall,
+  ).toBe(90.5);
+  expect(
+    (await list("status_filter=deep")).items.find((item) => item.id === "deep")
+      ?.assessments[0].overall,
+  ).toBe(91.6);
+});
+
+it("does not treat malformed, incomplete or failed calls as scored and accepts genuine zero scores", async () => {
+  const db = getSqliteDatabase();
+  for (const [key, article, raw] of [
+    ["bad", "old", "not-json"],
+    ["missing", "excluded", '{"relevance":80}'],
+    ["wrong-type", "deferred", '{"relevance":"80","quality":90}'],
+    ["infinite", "tomorrow", '{"relevance":1e999,"quality":90}'],
+  ]) {
+    db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
+      key,
+      article,
+      "task",
+      raw,
+      "2026-10-19T03:00:00Z",
+    );
+  }
+  db.prepare(
+    "INSERT INTO ai_execution_logs(id,job_id,article_id,task_type,started_at,status,input_json) VALUES ('failed','job','unselected','assess','2026-10-19T03:00:00Z','failed','{}')",
+  ).run();
+  expect((await list()).filter_meta).toMatchObject({
+    unreviewed_count: 5,
+    scored_count: 0,
+  });
+  db.prepare("UPDATE group_items SET scores_json=? WHERE article_id=?").run(
+    '{"relevance":0,"quality":0}',
+    "excluded",
+  );
+  db.prepare("UPDATE group_items SET scores_json=? WHERE article_id=?").run(
+    "invalid-json",
+    "deferred",
+  );
+  const data = await list("status_filter=unselected&review_filter=scored");
+  expect(ids(data)).toEqual(["excluded"]);
+  expect(data.items[0].assessments[0]).toMatchObject({
+    relevance: 0,
+    quality: 0,
+    overall: 0,
+  });
+});
+
+it("keeps latest valid scores per pipeline separate and uses the pipeline scope consistently", async () => {
+  const db = getSqliteDatabase();
+  for (const [key, group, relevance, time] of [
+    ["first", "task", 30, "2026-10-18T01:00:00Z"],
+    ["second", "task", 80, "2026-10-19T01:00:00Z"],
+    ["third", "other", 90, "2026-10-19T02:00:00Z"],
+  ]) {
+    db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
+      key,
+      "excluded",
+      group,
+      JSON.stringify({
+        relevance: Number(relevance),
+        quality: 70,
+        reason: group,
+      }),
+      time,
+    );
+  }
+  const all = await list("status_filter=unselected&review_filter=scored");
+  expect(
+    all.items[0].assessments.map((a) => [a.group_id, a.relevance]),
+  ).toEqual([
+    ["other", 90],
+    ["task", 80],
+  ]);
+  const scoped = await list(
+    "group_id=task&status_filter=unselected&review_filter=scored",
+  );
+  expect(ids(scoped)).toEqual(["excluded"]);
+  expect(scoped.items[0].assessments).toHaveLength(1);
+  expect(scoped.items[0].assessments[0].group_id).toBe("task");
+  expect(scoped.filter_meta).toMatchObject({
+    unselected_count: 2,
+    unreviewed_count: 1,
+    scored_count: 1,
+  });
+});
+
+it("combines review filters with date, source, interest and pagination without changing state totals", async () => {
+  const db = getSqliteDatabase();
+  db.prepare("INSERT INTO article_assessments VALUES (?,?,?,?,?)").run(
+    "cache",
+    "unselected",
+    "task",
+    '{"relevance":90,"quality":80}',
+    "2026-10-19T03:00:00Z",
+  );
+  const data = await list(
+    "time_range=today&source_id=source&status_filter=unselected&review_filter=scored&interested_only=true&page_size=1",
+  );
+  expect(ids(data)).toEqual(["unselected"]);
+  expect(data.pagination.total_count).toBe(1);
+  expect(data.filter_meta).toMatchObject({
+    unselected_count: 1,
+    unreviewed_count: 0,
+    scored_count: 1,
+    selected_count: 1,
+    deep_count: 1,
+  });
+  expect(
+    (await app.inject("/api/v1/library?review_filter=failed")).statusCode,
+  ).toBe(400);
 });
