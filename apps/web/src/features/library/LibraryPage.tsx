@@ -1,3 +1,4 @@
+import { LibraryAssessments } from "./LibraryAssessments.js";
 import { LibraryArticleStatus } from "./LibraryArticleStatus.js";
 import {
   LibraryFilters,
@@ -458,6 +459,10 @@ export function LibraryPage() {
               </CardHeader>
 
               <CardContent className="space-y-3 pt-1">
+                <LibraryAssessments
+                  assessments={art.assessments}
+                  timezone={timezone}
+                />
                 {/* Research Highlights or Body Snippet */}
                 {art.research?.status === "succeeded" &&
                 art.research.questions &&

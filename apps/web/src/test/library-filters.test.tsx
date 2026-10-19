@@ -9,6 +9,7 @@ import {
 } from "../features/library/LibraryFilters.js";
 import { LibraryArticleStatus } from "../features/library/LibraryArticleStatus.js";
 import { api } from "../lib/api.js";
+import { LibraryAssessments } from "../features/library/LibraryAssessments.js";
 
 afterEach(() => vi.unstubAllGlobals());
 it("separates discovery and publication rows and shows custom date controls for each", () => {
@@ -127,4 +128,93 @@ it("sends both date ranges, article state and independent interest to the API", 
     interested_only: "true",
     page: "2",
   });
+});
+
+it("shows unselected review buckets with totals and sends the active review filter", async () => {
+  const value = {
+    ...DEFAULT_LIBRARY_FILTERS,
+    status_filter: "unselected" as const,
+    review_filter: "scored" as const,
+  };
+  const html = renderToStaticMarkup(
+    <LibraryFilters
+      value={value}
+      timezone="Asia/Shanghai"
+      onChange={() => {}}
+      meta={{
+        total_count: 8,
+        today_count: 3,
+        three_days_count: 6,
+        published_today_count: 3,
+        published_three_days_count: 4,
+        unselected_count: 5,
+        unreviewed_count: 2,
+        scored_count: 3,
+        selected_count: 1,
+        deep_count: 2,
+        interested_count: 2,
+      }}
+    />,
+  );
+  expect(html).toContain("暂未入选的审核状态");
+  expect(html).toContain("未审核 (2)");
+  expect(html).toContain("已评分 (3)");
+  expect(html).toContain("调用失败不计为已评分");
+  expect(libraryFilterParams(value).review_filter).toBe("scored");
+  expect(
+    libraryFilterParams({ ...value, status_filter: "selected" }),
+  ).not.toHaveProperty("review_filter");
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetch);
+  await api.listLibrary(libraryFilterParams(value));
+  expect(
+    new URL(fetch.mock.calls[0][0], "http://localhost").searchParams.get(
+      "review_filter",
+    ),
+  ).toBe("scored");
+});
+
+it("displays real scores, task names, reasons and zero values rather than fabricating a score for unreviewed articles", () => {
+  const html = renderToStaticMarkup(
+    <LibraryAssessments
+      timezone="Asia/Shanghai"
+      assessments={[
+        {
+          group_id: "agent",
+          group_name: "Agent 工程",
+          relevance: 80,
+          quality: 90,
+          overall: 83,
+          reason: "有完整工程实现与证据",
+          assessed_at: "2026-10-19T03:00:00Z",
+        },
+        {
+          group_id: "frontend",
+          group_name: "前端工程",
+          relevance: 0,
+          quality: 0,
+          overall: 0,
+          reason: "主题不相关",
+          assessed_at: "2026-10-18T03:00:00Z",
+        },
+      ]}
+    />,
+  );
+  for (const text of [
+    "AI 已评分",
+    "Agent 工程",
+    "前端工程",
+    "相关度",
+    "工程质量",
+    "83.0",
+    "0.0",
+    "有完整工程实现与证据",
+    "主题不相关",
+  ])
+    expect(html).toContain(text);
+  const none = renderToStaticMarkup(
+    <LibraryAssessments timezone="UTC" assessments={[]} />,
+  );
+  expect(none).toContain("暂无 AI 评分");
+  expect(none).not.toContain("0.0");
 });

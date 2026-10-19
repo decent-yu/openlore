@@ -6,6 +6,7 @@ import {
   type LibraryResponse,
   type LibraryTimeRange,
   type LibraryStatusFilter,
+  type LibraryReviewFilter,
 } from "@openlore/contracts";
 
 export interface LibraryFiltersState {
@@ -16,6 +17,7 @@ export interface LibraryFiltersState {
   published_from: string;
   published_to: string;
   status_filter: LibraryStatusFilter;
+  review_filter: LibraryReviewFilter;
   interested_only: boolean;
 }
 export const DEFAULT_LIBRARY_FILTERS: LibraryFiltersState = {
@@ -26,6 +28,7 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFiltersState = {
   published_from: "",
   published_to: "",
   status_filter: "all",
+  review_filter: "all",
   interested_only: false,
 };
 
@@ -36,6 +39,9 @@ export function libraryFilterParams(
     time_range: value.time_range,
     published_range: value.published_range,
     status_filter: value.status_filter,
+    ...(value.status_filter === "unselected"
+      ? { review_filter: value.review_filter }
+      : {}),
     interested_only: value.interested_only,
     ...(value.time_range === "custom"
       ? {
@@ -233,7 +239,9 @@ export function LibraryFilters({
             key={key}
             type="button"
             aria-pressed={value.status_filter === key}
-            onClick={() => onChange({ ...value, status_filter: key })}
+            onClick={() =>
+              onChange({ ...value, status_filter: key, review_filter: "all" })
+            }
             className={`rounded-md border px-3 py-1 font-medium ${value.status_filter === key ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"}`}
           >
             {label}
@@ -256,6 +264,36 @@ export function LibraryFilters({
           感兴趣{meta ? ` (${meta.interested_count})` : ""}
         </button>
       </div>
+      {value.status_filter === "unselected" && (
+        <div
+          role="group"
+          aria-label="暂未入选的审核状态"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs sm:ml-[88px]"
+        >
+          <span className="mr-1 font-medium text-neutral-500">AI 审核</span>
+          {(
+            [
+              ["all", "全部", meta?.unselected_count],
+              ["unreviewed", "未审核", meta?.unreviewed_count],
+              ["scored", "已评分", meta?.scored_count],
+            ] as const
+          ).map(([key, label, count]) => (
+            <button
+              type="button"
+              key={key}
+              aria-pressed={value.review_filter === key}
+              onClick={() => onChange({ ...value, review_filter: key })}
+              className={`rounded-md border px-3 py-1 ${value.review_filter === key ? "border-blue-600 bg-blue-50 text-blue-800" : "border-neutral-200 text-neutral-600"}`}
+            >
+              {label}
+              {count == null ? "" : ` (${count})`}
+            </button>
+          ))}
+          <p className="w-full text-[11px] text-neutral-500">
+            未审核表示暂无有效评分；调用失败不计为已评分。已评分可能未达门槛，也可能因精选名额限制而暂未入选。
+          </p>
+        </div>
+      )}
     </div>
   );
 }
