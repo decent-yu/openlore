@@ -467,7 +467,7 @@ export function SourcesPage() {
               <label className="block space-y-1 text-xs">排除来源分类
                 <Input value={excludedCategories} onChange={e=>setExcludedCategories(e.target.value)} placeholder="例如 Company, Global Affairs" />
               </label>
-              <p className="text-[11px] text-neutral-500">按标题、分类和补抓正文匹配，支持 agent/agents、eval/evals 等变体。保存规则会重评未入池候选。未通过准入的候选不进入内容池；已收藏、精选或归档的文章保留。</p>
+              <p className="text-[11px] text-neutral-500">按标题、分类和补抓正文匹配，支持 agent/agents、eval/evals 等变体。保存规则会重评未入池候选。未通过准入的候选不进入内容池；已入池文章保留。</p>
               {saveMutation.error && <p role="alert" className="text-xs text-red-600">{saveMutation.error.message}</p>}
               <div className="flex items-center space-x-2.5 pt-2 border-t border-neutral-100">
                 <input

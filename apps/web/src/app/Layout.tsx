@@ -13,9 +13,9 @@ import {
 
 const NAV_GROUPS = [
   {
-    title: '内容与精选',
+    title: '内容与研报',
     items: [
-      { name: '每日精选', path: '/', icon: Sparkles },
+      { name: '每日研报', path: '/', icon: Sparkles },
       { name: '内容池', path: '/pool', icon: Library },
     ],
   },

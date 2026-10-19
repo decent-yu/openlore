@@ -221,7 +221,7 @@ export function LibraryPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">内容池</h2>
           <p className="text-neutral-500 text-sm">
-            入池前完成采集准入；池内尚未精选或深度调研的文章全部参与 AI 审核。
+            入池前完成采集准入；池内尚未完成调研的文章参与评分排序，有效评分直接复用。
           </p>
         </div>
         <div className="w-full sm:w-80">
@@ -448,6 +448,12 @@ export function LibraryPage() {
                   ))}
 
                   <LibraryArticleStatus article={art} />
+                  {art.research?.status === "succeeded" &&
+                    !art.research.archived_at && (
+                      <Badge className="border-amber-200 bg-amber-50 text-[10px] font-normal text-amber-700">
+                        研报待归档
+                      </Badge>
+                    )}
                   {(art.research?.status === "running" ||
                     art.research?.status === "queued") && (
                     <Badge className="border-indigo-200 bg-indigo-50 text-[10px] font-normal text-indigo-700">
@@ -535,7 +541,11 @@ export function LibraryPage() {
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0 text-neutral-400 hover:text-neutral-700"
-                          title="重新发起深度调研"
+                          title={
+                            art.research?.archived_at
+                              ? "重新发起深度调研"
+                              : "重试归档"
+                          }
                           onClick={() => {
                             researchMutation.reset();
                             setSelectedArticleForResearch(art);

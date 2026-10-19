@@ -1,37 +1,35 @@
-import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from 'lucide-react';
+import React, { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
   buildAssessmentPrompt,
   buildResearchPrompt,
   type Group,
   type Skill,
-} from '@openlore/contracts';
-import { Button } from '../../components/ui/button.js';
-import { Input } from '../../components/ui/input.js';
-import { api } from '../../lib/api.js';
-import { useDialog } from '../../lib/useDialog.js';
+} from "@openlore/contracts";
+import { Button } from "../../components/ui/button.js";
+import { Input } from "../../components/ui/input.js";
+import { api } from "../../lib/api.js";
+import { useDialog } from "../../lib/useDialog.js";
 
 const fieldClass =
-  'w-full rounded-md border border-neutral-200 bg-white p-2 text-sm';
+  "w-full rounded-md border border-neutral-200 bg-white p-2 text-sm";
 const initialForm = {
-  name: '',
-  description: '',
-  preferences: '',
+  name: "",
+  description: "",
+  preferences: "",
   enabled: true,
-  schedule_cron: '0 8 * * *',
-  timezone: 'Asia/Shanghai',
+  schedule_cron: "0 8 * * *",
+  timezone: "Asia/Shanghai",
   source_ids: [] as string[],
-  max_selected: 10,
   deep_analysis_count: 3,
-  ai_profile_id: '',
-  assessment_skill_id: 'tech-article-extractor',
-  research_skill_id: 'deep-research-expert',
-  enable_research: true,
-  research_instructions: '',
-  repository_connection_id: '',
-  base_path: 'docs/agent-learning',
+  ai_profile_id: "",
+  assessment_skill_id: "tech-article-extractor",
+  research_skill_id: "deep-research-expert",
+  research_instructions: "",
+  repository_connection_id: "",
+  base_path: "docs/agent-learning",
 };
 
 export function PipelinesPage() {
@@ -40,25 +38,32 @@ export function PipelinesPage() {
     data: groups = [],
     isLoading,
     error,
-  } = useQuery({ queryKey: ['groups'], queryFn: api.listGroups });
+  } = useQuery({ queryKey: ["groups"], queryFn: api.listGroups });
   const { data: sources = [] } = useQuery({
-    queryKey: ['sources'],
+    queryKey: ["sources"],
     queryFn: api.listSources,
   });
   const { data: repos = [] } = useQuery({
-    queryKey: ['repos'],
+    queryKey: ["repos"],
     queryFn: api.listRepos,
   });
   const { data: profiles = [] } = useQuery({
-    queryKey: ['aiProfiles'],
+    queryKey: ["aiProfiles"],
     queryFn: api.listAIProfiles,
   });
-  const { data: runs = [] } = useQuery({queryKey: ['runs'], queryFn: () => api.listRuns(), refetchInterval: 5000});
+  const { data: runs = [] } = useQuery({
+    queryKey: ["runs"],
+    queryFn: () => api.listRuns(),
+    refetchInterval: 5000,
+  });
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [form, setForm] = useState(initialForm);
-  const { data: skills = [] } = useQuery({ queryKey: ['skills', form.ai_profile_id || 'default'], queryFn: () => api.listSkills(form.ai_profile_id || 'default') });
-  const [message, setMessage] = useState('');
+  const { data: skills = [] } = useQuery({
+    queryKey: ["skills", form.ai_profile_id || "default"],
+    queryFn: () => api.listSkills(form.ai_profile_id || "default"),
+  });
+  const [message, setMessage] = useState("");
   const update = <K extends keyof typeof initialForm>(
     key: K,
     value: (typeof initialForm)[K],
@@ -66,25 +71,25 @@ export function PipelinesPage() {
   const save = useMutation({
     mutationFn: api.saveGroup,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
       setOpen(false);
-      setMessage('流水线任务已保存');
+      setMessage("流水线任务已保存");
     },
   });
   const run = useMutation({
     mutationFn: api.triggerGroupRun,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['runs'] });
-      queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
-      setMessage('任务已启动，可在运行记录查看审核、调研与归档进度');
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-feed"] });
+      setMessage("任务已启动，可在运行记录查看审核、调研与归档进度");
     },
     onError: (error) => setMessage(error.message),
   });
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.toggleGroup(id, enabled),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
-    onError: error => setMessage(error.message),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["groups"] }),
+    onError: (error) => setMessage(error.message),
   });
   const edit = (group?: Group) => {
     setEditingId(group?.id);
@@ -99,21 +104,19 @@ export function PipelinesPage() {
             schedule_cron: group.schedule_cron,
             timezone: group.timezone,
             source_ids: group.source_ids,
-            max_selected: group.max_selected,
             deep_analysis_count: group.deep_analysis_count,
-            ai_profile_id: group.ai_profile_id || '',
+            ai_profile_id: group.ai_profile_id || "",
             assessment_skill_id: group.assessment_skill_id,
             research_skill_id: group.research_skill_id,
-            enable_research: group.enable_research,
             research_instructions: group.research_instructions,
             repository_connection_id: group.route.repository_connection_id,
             base_path: group.route.base_path,
           }
         : {
             ...initialForm,
-            repository_connection_id: repos[0]?.id || '',
+            repository_connection_id: repos[0]?.id || "",
             ai_profile_id:
-              profiles.find((profile) => profile.is_primary)?.id || '',
+              profiles.find((profile) => profile.is_primary)?.id || "",
           },
     );
     setOpen(true);
@@ -161,7 +164,7 @@ export function PipelinesPage() {
                 {group.name}
               </h3>
               <p className="mt-1 text-sm text-neutral-500">
-                {group.description || '未设置主题说明'}
+                {group.description || "未设置主题说明"}
               </p>
               <p className="mt-2 text-xs text-neutral-500">
                 定时执行：{group.schedule_cron} · {group.timezone}
@@ -188,24 +191,44 @@ export function PipelinesPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={run.isPending || runs.some(run => run.group_id === group.id && run.status === 'running')}
+                disabled={
+                  run.isPending ||
+                  runs.some(
+                    (run) =>
+                      run.group_id === group.id && run.status === "running",
+                  )
+                }
                 onClick={() => run.mutate(group.id)}
               >
                 <Play className="mr-1 h-3 w-3" />
-                {runs.some(run => run.group_id === group.id && run.status === 'running') ? '正在执行…' : '立即运行'}
+                {runs.some(
+                  (run) =>
+                    run.group_id === group.id && run.status === "running",
+                )
+                  ? "正在执行…"
+                  : "立即运行"}
               </Button>
             </div>
           </div>
-          {runs.find(run => run.group_id === group.id)?.status === 'failed' && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">最近运行失败：{runs.find(run => run.group_id === group.id)?.error_message}。修复后可重新运行。</p>}
+          {runs.find((run) => run.group_id === group.id)?.status ===
+            "failed" && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"
+            >
+              最近运行失败：
+              {runs.find((run) => run.group_id === group.id)?.error_message}
+              。修复后可重新运行。
+            </p>
+          )}
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border bg-blue-50/40 p-4">
               <h4 className="flex items-center gap-2 text-sm font-semibold">
                 <Bot className="h-4 w-4" />1 · 审核与调研
               </h4>
               <p className="text-sm">
-                池内未处理文章全部评估 → 精选最多 {group.max_selected} 篇
-                → 深度调研{' '}
-                {group.enable_research ? group.deep_analysis_count : 0} 篇
+                全池有效评分排序 → 每次最多深度调研 {group.deep_analysis_count}{" "}
+                篇
               </p>
               <p className="text-xs text-neutral-500">
                 池内范围：
@@ -216,11 +239,11 @@ export function PipelinesPage() {
                           sources.find((source) => source.id === id)?.name ||
                           id,
                       )
-                      .join('、')
-                  : '全部来源'}
+                      .join("、")
+                  : "全部来源"}
               </p>
               <p className="text-xs text-neutral-500">
-                范围内未精选的文章全部评估，不限制候选数量。
+                范围内未完成调研的文章全部参与，复用有效评分，不限入池日期。
               </p>
             </div>
             <div className="space-y-2 rounded-lg border bg-emerald-50/40 p-4">
@@ -230,7 +253,7 @@ export function PipelinesPage() {
               <p className="text-sm">
                 {repos.find(
                   (repo) => repo.id === group.route.repository_connection_id,
-                )?.name || '仓库未配置'}
+                )?.name || "仓库未配置"}
               </p>
               <p className="break-all font-mono text-xs text-neutral-500">
                 {group.route.base_path}
@@ -277,10 +300,10 @@ export function PipelinesPage() {
                 <Pencil className="h-5 w-5 text-neutral-700" />
                 <div>
                   <h3 id="pipeline-title" className="text-base font-semibold">
-                    {editingId ? '编辑流水线任务' : '新建流水线任务'}
+                    {editingId ? "编辑流水线任务" : "新建流水线任务"}
                   </h3>
                   <p className="mt-0.5 text-[11px] text-neutral-400">
-                    定义主题与审核方式，让精选结果自动沉淀到知识库
+                    定义主题与审核方式，让高分文章的调研结果沉淀到知识库
                   </p>
                 </div>
               </div>
@@ -309,7 +332,7 @@ export function PipelinesPage() {
                     className="mt-1.5 h-9 text-sm"
                     required
                     value={form.name}
-                    onChange={(event) => update('name', event.target.value)}
+                    onChange={(event) => update("name", event.target.value)}
                     placeholder="例如 Agent 工程实践"
                   />
                 </label>
@@ -319,7 +342,7 @@ export function PipelinesPage() {
                     className="mt-1.5 h-9 text-sm"
                     value={form.description}
                     onChange={(event) =>
-                      update('description', event.target.value)
+                      update("description", event.target.value)
                     }
                     placeholder="说明学习方向与关注重点"
                   />
@@ -333,7 +356,7 @@ export function PipelinesPage() {
                     required
                     value={form.schedule_cron}
                     onChange={(event) =>
-                      update('schedule_cron', event.target.value)
+                      update("schedule_cron", event.target.value)
                     }
                   />
                   <span className="mt-1 block text-[11px] font-normal text-neutral-400">
@@ -346,13 +369,13 @@ export function PipelinesPage() {
                     className="mt-1.5 h-8 bg-white text-xs"
                     required
                     value={form.timezone}
-                    onChange={(event) => update('timezone', event.target.value)}
+                    onChange={(event) => update("timezone", event.target.value)}
                   />
                 </label>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-neutral-500">
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                  1 · 审核精选
+                  1 · 审核评分
                 </span>
                 <span>→</span>
                 <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-700">
@@ -369,7 +392,7 @@ export function PipelinesPage() {
                     1
                   </span>
                   <div>
-                    <h4 className="text-sm font-semibold">内容审核与精选</h4>
+                    <h4 className="text-sm font-semibold">内容审核与评分</h4>
                     <p className="mt-0.5 text-[11px] text-neutral-500">
                       读取内容池 → 审核 Skill 评分 → 选出目标篇数
                     </p>
@@ -377,7 +400,7 @@ export function PipelinesPage() {
                 </div>
                 <fieldset>
                   <legend className="mb-2 text-xs font-medium text-neutral-600">
-                    池内来源范围{' '}
+                    池内来源范围{" "}
                     <span className="font-normal text-neutral-400">
                       · 不勾选表示全部来源
                     </span>
@@ -386,7 +409,7 @@ export function PipelinesPage() {
                     {sources.map((source) => (
                       <label
                         key={source.id}
-                        className={`flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs ${form.source_ids.includes(source.id) ? 'border-blue-200' : 'border-neutral-200'}`}
+                        className={`flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs ${form.source_ids.includes(source.id) ? "border-blue-200" : "border-neutral-200"}`}
                       >
                         <input
                           className="accent-blue-600"
@@ -394,7 +417,7 @@ export function PipelinesPage() {
                           checked={form.source_ids.includes(source.id)}
                           onChange={(event) =>
                             update(
-                              'source_ids',
+                              "source_ids",
                               event.target.checked
                                 ? [...form.source_ids, source.id]
                                 : form.source_ids.filter(
@@ -408,48 +431,30 @@ export function PipelinesPage() {
                     ))}
                   </div>
                 </fieldset>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs text-neutral-600">
-                    精选篇数
-                    <Input
-                      className="mt-1.5 h-8 bg-white text-xs"
-                      type="number"
-                      min={1}
-                      max={100}
-                      required
-                      value={form.max_selected}
-                      onChange={(event) =>
-                        update('max_selected', Number(event.target.value))
-                      }
-                    />
-                  </label>
-                </div>
-                    <label className="block text-xs text-neutral-600">
-                      从精选中确定调研篇数
-                      <Input
-                        className="mt-1.5 h-8 w-32 bg-white text-xs"
-                        type="number"
-                        min={0}
-                        max={form.max_selected}
-                        required
-                        value={form.deep_analysis_count}
-                        onChange={(event) =>
-                          update(
-                            'deep_analysis_count',
-                            Number(event.target.value),
-                          )
-                        }
-                      />
-                    </label>
+                <label className="block text-xs text-neutral-600">
+                  每次最多调研篇数（M）
+                  <Input
+                    className="mt-1.5 h-8 w-32 bg-white text-xs"
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={form.deep_analysis_count}
+                    onChange={(event) =>
+                      update("deep_analysis_count", Number(event.target.value))
+                    }
+                  />
+                </label>
                 <p className="text-[11px] text-neutral-400">
-                  范围内尚未精选的文章全部参与审核，不限制候选数量。
+                  全池合格文章按本任务分数排序，不限当天；未被取到的文章下轮继续参与。0
+                  表示只评分。
                 </p>
                 <SkillPicker
                   label="审核 Skill"
                   type="extraction"
                   value={form.assessment_skill_id}
                   skills={skills}
-                  onChange={(id) => update('assessment_skill_id', id)}
+                  onChange={(id) => update("assessment_skill_id", id)}
                   prompt={buildAssessmentPrompt(form.assessment_skill_id, form)}
                 />
                 <label className="block text-xs font-medium text-neutral-600">
@@ -458,7 +463,7 @@ export function PipelinesPage() {
                     className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
                     value={form.preferences}
                     onChange={(event) =>
-                      update('preferences', event.target.value)
+                      update("preferences", event.target.value)
                     }
                     placeholder="例如：优先工程落地与可复用实现，排除纯营销、融资和招聘动态。"
                   />
@@ -472,53 +477,42 @@ export function PipelinesPage() {
                     </span>
                     <div>
                       <h4 className="text-sm font-semibold">
-                        精选文章深度调研
+                        按评分选择深度调研
                       </h4>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
-                        承接审核精选结果，再调用调研 Skill
+                        从全池合格文章中取分数最高的 M 篇
                       </p>
                     </div>
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs text-neutral-600">
-                    <input
-                      type="checkbox"
-                      className="accent-violet-600"
-                      checked={form.enable_research}
-                      onChange={(event) =>
-                        update('enable_research', event.target.checked)
-                      }
-                    />
-                    启用
-                  </label>
                 </div>
-                {form.enable_research ? (
-                  <>
-                    <p className="text-xs text-neutral-500">接收审核阶段确定的 {form.deep_analysis_count} 篇文章，逐篇生成独立的新文章。</p>
-                    <SkillPicker
-                      label="深度调研 Skill"
-                      type="research"
-                      value={form.research_skill_id}
-                      skills={skills}
-                      onChange={(id) => update('research_skill_id', id)}
-                      prompt={buildResearchPrompt(form.research_skill_id, form.research_instructions)}
-                    />
-                    <label className="block text-xs font-medium text-neutral-600">
-                      附加调研 Prompt
-                      <textarea
-                        className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-violet-400 focus:outline-none"
-                        value={form.research_instructions}
-                        onChange={(event) =>
-                          update('research_instructions', event.target.value)
-                        }
-                        placeholder="例如：深入解释底层机制、架构取舍，并给出能直接复用的实现建议。"
-                      />
-                    </label>
-                  </>
-                ) : (
-                  <p className="text-xs text-neutral-400">
-                    本任务跳过调研，精选文章直接进入归档。
+                <>
+                  <p className="text-xs text-neutral-500">
+                    从所有未完成调研的合格文章中选择最多{" "}
+                    {form.deep_analysis_count} 篇，逐篇生成独立的新文章。
                   </p>
-                )}
+                  <SkillPicker
+                    label="深度调研 Skill"
+                    type="research"
+                    value={form.research_skill_id}
+                    skills={skills}
+                    onChange={(id) => update("research_skill_id", id)}
+                    prompt={buildResearchPrompt(
+                      form.research_skill_id,
+                      form.research_instructions,
+                    )}
+                  />
+                  <label className="block text-xs font-medium text-neutral-600">
+                    附加调研 Prompt
+                    <textarea
+                      className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-violet-400 focus:outline-none"
+                      value={form.research_instructions}
+                      onChange={(event) =>
+                        update("research_instructions", event.target.value)
+                      }
+                      placeholder="例如：深入解释底层机制、架构取舍，并给出能直接复用的实现建议。"
+                    />
+                  </label>
+                </>
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center gap-2">
@@ -534,7 +528,7 @@ export function PipelinesPage() {
                     className="mt-1.5 h-9 w-full rounded-md border border-neutral-200 bg-white px-3 text-xs"
                     value={form.repository_connection_id}
                     onChange={(event) =>
-                      update('repository_connection_id', event.target.value)
+                      update("repository_connection_id", event.target.value)
                     }
                   >
                     <option value="">选择仓库连接</option>
@@ -552,7 +546,7 @@ export function PipelinesPage() {
                     required
                     value={form.base_path}
                     onChange={(event) =>
-                      update('base_path', event.target.value)
+                      update("base_path", event.target.value)
                     }
                   />
                 </label>
@@ -564,7 +558,7 @@ export function PipelinesPage() {
                     className="mt-1.5 h-9 w-full rounded-md border border-neutral-200 bg-white px-3 text-xs"
                     value={form.ai_profile_id}
                     onChange={(event) =>
-                      update('ai_profile_id', event.target.value)
+                      update("ai_profile_id", event.target.value)
                     }
                   >
                     <option value="">使用默认执行器</option>
@@ -585,7 +579,7 @@ export function PipelinesPage() {
                 <input
                   type="checkbox"
                   checked={form.enabled}
-                  onChange={(event) => update('enabled', event.target.checked)}
+                  onChange={(event) => update("enabled", event.target.checked)}
                 />
                 启用定时执行
               </label>
@@ -598,7 +592,7 @@ export function PipelinesPage() {
                   取消
                 </Button>
                 <Button type="submit" disabled={save.isPending}>
-                  {save.isPending ? '保存中…' : '保存任务'}
+                  {save.isPending ? "保存中…" : "保存任务"}
                 </Button>
               </div>
             </div>
@@ -644,7 +638,10 @@ function SkillPicker({
         </select>
       </label>
       <p className="text-[11px] leading-relaxed text-neutral-500">
-        {skill?.description || (skills.length === 0 ? '该执行器尚未提供可用 Skill，请检查目录或启动 Worker，并测试连接。' : '所选 Skill 不可用，请重新选择。')}
+        {skill?.description ||
+          (skills.length === 0
+            ? "该执行器尚未提供可用 Skill，请检查目录或启动 Worker，并测试连接。"
+            : "所选 Skill 不可用，请重新选择。")}
       </p>
       <details className="border-t border-neutral-100 pt-2">
         <summary className="cursor-pointer text-[11px] text-blue-700">
@@ -657,7 +654,17 @@ function SkillPicker({
           {prompt}
         </pre>
       </details>
-      <details className="border-t border-neutral-100 pt-2"><summary className="cursor-pointer text-[11px] text-neutral-500">查看 Skill 文件内容</summary><p className="mt-2 break-all text-[10px] text-neutral-400">{skill?.file_path} · {skill?.version || '未标注版本'}</p><pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-50 p-3 text-[11px]">{skill?.system_prompt}</pre></details>
+      <details className="border-t border-neutral-100 pt-2">
+        <summary className="cursor-pointer text-[11px] text-neutral-500">
+          查看 Skill 文件内容
+        </summary>
+        <p className="mt-2 break-all text-[10px] text-neutral-400">
+          {skill?.file_path} · {skill?.version || "未标注版本"}
+        </p>
+        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-50 p-3 text-[11px]">
+          {skill?.system_prompt}
+        </pre>
+      </details>
     </div>
   );
 }

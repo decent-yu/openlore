@@ -33,8 +33,8 @@ export function ReportTemplateEditor({
     date: new Date().toLocaleDateString("en-CA"),
     task_count: taskNames.length || 1,
     article_count: 2,
-    deep_count: 1,
-    content: `### ${taskNames[0] || "Agent 工程"}\n\n- [Agent 工具调用的可恢复执行](https://wiki.example.com/agent/research) · 含深度调研\n  通过任务标识、持久状态和结果核对，处理执行中断与恢复。\n\n- [上下文证据的结构化整理](https://wiki.example.com/context/article)\n  将原文证据按片段组织，让结论和出处可以回查。`,
+    deep_count: 2,
+    content: `### ${taskNames[0] || "Agent 工程"}\n\n- [Agent 工具调用的可恢复执行](https://wiki.example.com/agent/research) · 含深度调研\n  通过任务标识、持久状态和结果核对，处理执行中断与恢复。\n\n- [上下文证据的结构化整理](https://wiki.example.com/context/research)\n  将原文证据按片段组织，让结论和出处可以回查。`,
   };
   return (
     <>

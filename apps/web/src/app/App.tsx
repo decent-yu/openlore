@@ -33,7 +33,7 @@ export function App() {
             <Route path="pool" element={<LibraryPage />} />
             <Route path="research" element={<Navigate to="/pool" replace />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<div className="rounded-xl border bg-white p-10"><h1 className="text-xl font-semibold">页面不存在</h1><p className="mt-3 text-sm text-neutral-500">请通过左侧导航继续，或返回每日精选。</p><a href="/" className="mt-4 inline-block text-sm text-blue-700 underline">返回每日精选</a></div>} />
+            <Route path="*" element={<div className="rounded-xl border bg-white p-10"><h1 className="text-xl font-semibold">页面不存在</h1><p className="mt-3 text-sm text-neutral-500">请通过左侧导航继续，或返回每日研报。</p><a href="/" className="mt-4 inline-block text-sm text-blue-700 underline">返回每日研报</a></div>} />
           </Route>
         </Routes>
       </BrowserRouter>

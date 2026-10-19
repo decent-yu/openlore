@@ -57,7 +57,7 @@ export function PipelineRunCard({
       <div className="mt-3 flex flex-wrap gap-4 text-sm">
         <span>扫描文章 {run.counts.observed}</span>
         <span>参与评估 {run.counts.candidate}</span>
-        <span>精选 {run.counts.selected}</span>
+        <span>本次调研 {run.counts.planned}</span>
         <span>
           调研{" "}
           {run.output?.entries.filter((entry) => entry.is_deep_analyzed)
@@ -65,7 +65,7 @@ export function PipelineRunCard({
         </span>
         <span>审核排除 {run.counts.excluded}</span>
         {!!run.counts.deferred && <span>合格待选 {run.counts.deferred}</span>}
-        <span>已精选/调研跳过 {run.counts.already_processed}</span>
+        <span>已归档/执行中跳过 {run.counts.already_processed}</span>
       </div>
       {run.status === "running" &&
         run.stage === "processing" &&
@@ -77,7 +77,7 @@ export function PipelineRunCard({
             <p>
               已完成审核{" "}
               {run.ai_logs.filter((log) => log.task_type === "assess").length} /{" "}
-              {run.counts.candidate} 篇 · 审核完成后统一精选
+              {run.counts.candidate} 篇 · 按有效评分排序调研
             </p>
             <progress
               aria-label="文章审核进度"
@@ -90,7 +90,7 @@ export function PipelineRunCard({
           </div>
         )}
       <p className="mt-2 text-xs text-neutral-500">
-        来源范围内，除已精选或已深度调研外，池内文章全部参与评估；精选篇数只限制输出。
+        来源范围内，全池未完成调研的文章按有效评分竞争本次调研名额，已归档和执行中的文章不重复领取。
       </p>
       {run.error_message && (
         <p role="alert" className="mt-2 text-sm text-red-600">

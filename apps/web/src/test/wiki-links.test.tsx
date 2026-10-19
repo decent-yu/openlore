@@ -75,12 +75,10 @@ it("links featured and remaining research titles directly to Wiki without nested
     available_dates: ["2026-10-19"],
     stats: {
       pool_count: 2,
-      total_selected_count: 2,
-      deep_analyzed_count: 2,
-      candidate_remaining_count: 0,
+        deep_analyzed_count: 2,
+      pending_count: 0,
     },
     deep_articles: [article],
-    candidate_articles: [{ ...article, id: "second" }],
   });
   const html = renderToStaticMarkup(
     <QueryClientProvider client={client}>
@@ -90,7 +88,7 @@ it("links featured and remaining research titles directly to Wiki without nested
     </QueryClientProvider>,
   );
   expect(html.match(new RegExp(`href="${base}/research"`, "g"))).toHaveLength(
-    4,
+    2,
   );
   expect(html).not.toMatch(/<a\b[^>]*>\s*<a\b/);
   client.clear();

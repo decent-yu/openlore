@@ -35,8 +35,8 @@ it("separates discovery and publication rows and shows custom date controls for 
     "发现结束日期",
     "发布开始日期",
     "发布结束日期",
-    "暂未入选",
-    "精选入围",
+    "未审核",
+    "已评分",
     "深度分析",
     "感兴趣",
   ])
@@ -84,26 +84,39 @@ it("keeps status and interest active simultaneously and validates dates before a
 it("displays exactly one article state with deep analysis taking precedence over selection", () => {
   const deep = renderToStaticMarkup(
     <LibraryArticleStatus
-      article={{ is_selected: true, is_deep_analyzed: true }}
+      article={{ assessments: [], is_deep_analyzed: true }}
     />,
   );
   expect(deep).toContain("深度分析");
-  expect(deep).not.toContain("精选入围");
-  expect(deep).not.toContain("暂未入选");
+  expect(deep).not.toContain("已评分");
+  expect(deep).not.toContain("未审核");
   expect(
     renderToStaticMarkup(
       <LibraryArticleStatus
-        article={{ is_selected: true, is_deep_analyzed: false }}
+        article={{
+          assessments: [
+            {
+              group_id: "g",
+              group_name: "G",
+              relevance: 80,
+              quality: 80,
+              overall: 80,
+              reason: "",
+              assessed_at: "2026-10-19T00:00:00Z",
+            },
+          ],
+          is_deep_analyzed: false,
+        }}
       />,
     ),
-  ).toContain("精选入围");
+  ).toContain("已评分");
   expect(
     renderToStaticMarkup(
       <LibraryArticleStatus
-        article={{ is_selected: false, is_deep_analyzed: false }}
+        article={{ assessments: [], is_deep_analyzed: false }}
       />,
     ),
-  ).toContain("暂未入选");
+  ).toContain("未审核");
 });
 
 it("sends both date ranges, article state and independent interest to the API", async () => {
@@ -114,7 +127,7 @@ it("sends both date ranges, article state and independent interest to the API", 
     discovered_from: "2026-10-18",
     discovered_to: "2026-10-19",
     published_range: "today",
-    status_filter: "selected",
+    status_filter: "scored",
     interested_only: true,
     page: 2,
   });
@@ -124,22 +137,17 @@ it("sends both date ranges, article state and independent interest to the API", 
     discovered_from: "2026-10-18",
     discovered_to: "2026-10-19",
     published_range: "today",
-    status_filter: "selected",
+    status_filter: "scored",
     interested_only: "true",
     page: "2",
   });
 });
 
-it("shows unselected review buckets with totals and sends the active review filter", async () => {
-  const value = {
-    ...DEFAULT_LIBRARY_FILTERS,
-    status_filter: "unselected" as const,
-    review_filter: "scored" as const,
-  };
+it("shows independent unreviewed, scored and archived states with counts", () => {
   const html = renderToStaticMarkup(
     <LibraryFilters
-      value={value}
-      timezone="Asia/Shanghai"
+      value={DEFAULT_LIBRARY_FILTERS}
+      timezone="UTC"
       onChange={() => {}}
       meta={{
         total_count: 8,
@@ -147,31 +155,17 @@ it("shows unselected review buckets with totals and sends the active review filt
         three_days_count: 6,
         published_today_count: 3,
         published_three_days_count: 4,
-        unselected_count: 5,
-        unreviewed_count: 2,
-        scored_count: 3,
-        selected_count: 1,
+        unreviewed_count: 4,
+        scored_count: 2,
         deep_count: 2,
         interested_count: 2,
       }}
     />,
   );
-  expect(html).toContain("暂未入选的审核状态");
-  expect(html).toContain("未审核 (2)");
-  expect(html).toContain("已评分 (3)");
-  expect(html).toContain("调用失败不计为已评分");
-  expect(libraryFilterParams(value).review_filter).toBe("scored");
-  expect(
-    libraryFilterParams({ ...value, status_filter: "selected" }),
-  ).not.toHaveProperty("review_filter");
-  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-  vi.stubGlobal("fetch", fetch);
-  await api.listLibrary(libraryFilterParams(value));
-  expect(
-    new URL(fetch.mock.calls[0][0], "http://localhost").searchParams.get(
-      "review_filter",
-    ),
-  ).toBe("scored");
+  expect(html).toContain("未审核");
+  expect(html).toContain("已评分");
+  expect(html).not.toContain("暂未入选");
+  expect(html).not.toContain("精选入围");
 });
 
 it("displays real scores, task names, reasons and zero values rather than fabricating a score for unreviewed articles", () => {

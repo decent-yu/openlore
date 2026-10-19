@@ -169,7 +169,7 @@ export const api = {
   // Library
   listLibrary: (params?: LibraryFilterParams) => {
     const q = new URLSearchParams();
-    for (const key of ['time_range', 'published_range', 'status_filter', 'review_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
+    for (const key of ['time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
       const value = params?.[key];
       if (value && value !== 'all') q.set(key, value);
     }
@@ -207,12 +207,10 @@ export const api = {
       available_dates: string[];
       stats: {
         pool_count: number;
-        total_selected_count: number;
         deep_analyzed_count: number;
-        candidate_remaining_count: number;
+        pending_count: number;
       };
       deep_articles: DailyFeedArticle[];
-      candidate_articles: DailyFeedArticle[];
     }>(`/feed${qs}`);
   },
   researchFeedArticle: (groupId: string, articleId: string) =>
