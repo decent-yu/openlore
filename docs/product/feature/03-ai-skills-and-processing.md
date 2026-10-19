@@ -4,11 +4,11 @@ AI 任务由云端编排，标准方式为独立 Runner 领取并执行；无需
 
 ## 流水线任务
 
-1. **审核评分**：使用 `assessment_skill_id`（默认 `tech-article-extractor`），通过 `$skill-name` 和工作区路径加载 Skill，传入任务定位和附加审核要求 `preferences`。全部备选文章逐篇评分后统一排序，保留合格评分供调研排序。
+1. **审核评分**：使用 `assessment_skill_id`（默认 `tech-article-extractor`），通过 `$skill-name` 和工作区路径加载 Skill，传入任务定位和审核要求 `preferences`。全部备选文章逐篇评分后统一排序，保留合格评分供调研排序。
 2. **深度调研**：从全量未完成调研的合格候选中选择最多 M 篇，使用 `research_skill_id`（默认 `deep-research-expert`），通过工作区加载该 Skill，并传入 `research_instructions`。
 3. **GitHub 归档**：完成文章与研报归档，不再调用简报 Skill。
 
-编辑器分阶段配置 Skill 和附加 Prompt，并展示实际任务指令。前后端共用 `packages/contracts/src/prompts.ts`，避免展示内容和实际调用不一致。AI 日志记录实际 Skill ID 和 Prompt。
+编辑器分阶段配置 Skill；展开“本阶段实际 Prompt · 查看与编辑”，可直接修改审核或调研要求，并实时查看完整指令。要求随任务保存，留空使用默认值，不再设置单独的“附加 Prompt”输入框。Skill 加载、评分输出格式和交付约束由系统固定。前后端共用 `packages/contracts/src/prompts.ts`，避免展示内容和实际调用不一致。AI 日志记录实际 Skill ID 和 Prompt。
 
 审核和调研阶段不混用 Skills。AI 返回失败或无效结果时明确报错，不生成通用模板冒充成功内容。
 

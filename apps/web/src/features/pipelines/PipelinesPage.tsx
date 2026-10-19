@@ -102,7 +102,7 @@ export function PipelinesPage() {
             preferences: group.preferences,
             enabled: group.enabled,
             schedule_cron: group.schedule_cron,
-            timezone: group.timezone,
+            timezone: initialForm.timezone,
             source_ids: group.source_ids,
             deep_analysis_count: group.deep_analysis_count,
             ai_profile_id: group.ai_profile_id || "",
@@ -285,7 +285,7 @@ export function PipelinesPage() {
           aria-labelledby="pipeline-title"
         >
           <form
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl"
+            className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl"
             onSubmit={(event) => {
               event.preventDefault();
               save.mutate({
@@ -325,7 +325,7 @@ export function PipelinesPage() {
                   {save.error.message}
                 </p>
               )}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <label className="space-y-1.5 text-xs font-medium text-neutral-700">
                   任务名称 *
                   <Input
@@ -337,22 +337,9 @@ export function PipelinesPage() {
                   />
                 </label>
                 <label className="space-y-1.5 text-xs font-medium text-neutral-700">
-                  关注领域与定位
-                  <Input
-                    className="mt-1.5 h-9 text-sm"
-                    value={form.description}
-                    onChange={(event) =>
-                      update("description", event.target.value)
-                    }
-                    placeholder="说明学习方向与关注重点"
-                  />
-                </label>
-              </div>
-              <div className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200/70 bg-neutral-50/70 p-3.5 sm:grid-cols-2">
-                <label className="text-xs font-medium text-neutral-600">
                   执行计划（Cron）
                   <Input
-                    className="mt-1.5 h-8 bg-white font-mono text-xs"
+                    className="mt-1.5 h-9 font-mono text-xs"
                     required
                     value={form.schedule_cron}
                     onChange={(event) =>
@@ -363,16 +350,35 @@ export function PipelinesPage() {
                     0 8 * * * 表示每天 08:00
                   </span>
                 </label>
-                <label className="text-xs font-medium text-neutral-600">
-                  时区
-                  <Input
-                    className="mt-1.5 h-8 bg-white text-xs"
-                    required
-                    value={form.timezone}
-                    onChange={(event) => update("timezone", event.target.value)}
-                  />
+                <label className="space-y-1.5 text-xs font-medium text-neutral-700">
+                  AI 执行器
+                  <select
+                    className="mt-1.5 h-9 w-full rounded-md border border-neutral-200 bg-white px-3 text-xs"
+                    value={form.ai_profile_id}
+                    onChange={(event) =>
+                      update("ai_profile_id", event.target.value)
+                    }
+                  >
+                    <option value="">使用默认执行器</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
+              <label className="block text-xs font-medium text-neutral-700">
+                关注领域与定位
+                <textarea
+                  className="mt-1.5 min-h-28 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
+                  value={form.description}
+                  onChange={(event) =>
+                    update("description", event.target.value)
+                  }
+                  placeholder="说明学习方向、关注的技术领域，以及期望解决的问题"
+                />
+              </label>
               <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-neutral-500">
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
                   1 · 审核评分
@@ -431,24 +437,6 @@ export function PipelinesPage() {
                     ))}
                   </div>
                 </fieldset>
-                <label className="block text-xs text-neutral-600">
-                  每次最多调研篇数（M）
-                  <Input
-                    className="mt-1.5 h-8 w-32 bg-white text-xs"
-                    type="number"
-                    min={0}
-                    max={100}
-                    required
-                    value={form.deep_analysis_count}
-                    onChange={(event) =>
-                      update("deep_analysis_count", Number(event.target.value))
-                    }
-                  />
-                </label>
-                <p className="text-[11px] text-neutral-400">
-                  全池合格文章按本任务分数排序，不限当天；未被取到的文章下轮继续参与。0
-                  表示只评分。
-                </p>
                 <SkillPicker
                   label="审核 Skill"
                   type="extraction"
@@ -456,18 +444,11 @@ export function PipelinesPage() {
                   skills={skills}
                   onChange={(id) => update("assessment_skill_id", id)}
                   prompt={buildAssessmentPrompt(form.assessment_skill_id, form)}
+                  instructionsLabel="审核要求"
+                  instructions={form.preferences}
+                  onInstructionsChange={(value) => update("preferences", value)}
+                  instructionsPlaceholder="按任务定位判断相关性与质量"
                 />
-                <label className="block text-xs font-medium text-neutral-600">
-                  附加审核 Prompt
-                  <textarea
-                    className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
-                    value={form.preferences}
-                    onChange={(event) =>
-                      update("preferences", event.target.value)
-                    }
-                    placeholder="例如：优先工程落地与可复用实现，排除纯营销、融资和招聘动态。"
-                  />
-                </label>
               </section>
               <section className="space-y-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -485,34 +466,42 @@ export function PipelinesPage() {
                     </div>
                   </div>
                 </div>
-                <>
-                  <p className="text-xs text-neutral-500">
-                    从所有未完成调研的合格文章中选择最多{" "}
-                    {form.deep_analysis_count} 篇，逐篇生成独立的新文章。
-                  </p>
-                  <SkillPicker
-                    label="深度调研 Skill"
-                    type="research"
-                    value={form.research_skill_id}
-                    skills={skills}
-                    onChange={(id) => update("research_skill_id", id)}
-                    prompt={buildResearchPrompt(
-                      form.research_skill_id,
-                      form.research_instructions,
-                    )}
+                <label className="block text-xs font-medium text-neutral-600">
+                  每次最多调研篇数（M）
+                  <Input
+                    className="mt-1.5 h-8 w-32 bg-white text-xs"
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={form.deep_analysis_count}
+                    onChange={(event) =>
+                      update("deep_analysis_count", Number(event.target.value))
+                    }
                   />
-                  <label className="block text-xs font-medium text-neutral-600">
-                    附加调研 Prompt
-                    <textarea
-                      className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-violet-400 focus:outline-none"
-                      value={form.research_instructions}
-                      onChange={(event) =>
-                        update("research_instructions", event.target.value)
-                      }
-                      placeholder="例如：深入解释底层机制、架构取舍，并给出能直接复用的实现建议。"
-                    />
-                  </label>
-                </>
+                </label>
+                <p className="text-xs text-neutral-500">
+                  从所有未完成调研的合格文章中选择最多{" "}
+                  {form.deep_analysis_count}{" "}
+                  篇，不限当天；未取到的文章下轮继续参与。M 为 0 时只评分。
+                </p>
+                <SkillPicker
+                  label="深度调研 Skill"
+                  type="research"
+                  value={form.research_skill_id}
+                  skills={skills}
+                  onChange={(id) => update("research_skill_id", id)}
+                  prompt={buildResearchPrompt(
+                    form.research_skill_id,
+                    form.research_instructions,
+                  )}
+                  instructionsLabel="调研要求"
+                  instructions={form.research_instructions}
+                  onInstructionsChange={(value) =>
+                    update("research_instructions", value)
+                  }
+                  instructionsPlaceholder="深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。"
+                />
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center gap-2">
@@ -551,28 +540,6 @@ export function PipelinesPage() {
                   />
                 </label>
               </section>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-xs font-medium text-neutral-600">
-                  AI 执行器
-                  <select
-                    className="mt-1.5 h-9 w-full rounded-md border border-neutral-200 bg-white px-3 text-xs"
-                    value={form.ai_profile_id}
-                    onChange={(event) =>
-                      update("ai_profile_id", event.target.value)
-                    }
-                  >
-                    <option value="">使用默认执行器</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="self-end pb-1 text-[11px] leading-relaxed text-neutral-400">
-                  审核和调研按上方顺序执行。简报在独立的汇报方案中生成。
-                </p>
-              </div>
             </div>
             <div className="flex shrink-0 items-center justify-between border-t border-neutral-100 bg-neutral-50 px-6 py-4">
               <label className="flex items-center gap-2 text-xs text-neutral-600">
@@ -610,6 +577,10 @@ function SkillPicker({
   skills,
   onChange,
   prompt,
+  instructionsLabel,
+  instructions,
+  onInstructionsChange,
+  instructionsPlaceholder,
 }: {
   label: string;
   type: string;
@@ -617,6 +588,10 @@ function SkillPicker({
   skills: Skill[];
   onChange: (id: string) => void;
   prompt: string;
+  instructionsLabel: string;
+  instructions: string;
+  onInstructionsChange: (value: string) => void;
+  instructionsPlaceholder: string;
 }) {
   const skill = skills.find((item) => item.id === value);
   return (
@@ -645,10 +620,26 @@ function SkillPicker({
       </p>
       <details className="border-t border-neutral-100 pt-2">
         <summary className="cursor-pointer text-[11px] text-blue-700">
-          查看本阶段实际 Prompt
+          本阶段实际 Prompt · 查看与编辑
         </summary>
-        <p className="mt-2 text-[10px] text-neutral-400">
-          实际任务指令；Skill 文件在执行工作区加载，不在这里展开。
+        <label className="mt-3 block text-xs font-medium text-neutral-600">
+          {instructionsLabel}
+          <textarea
+            className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
+            value={instructions}
+            onChange={(event) => onInstructionsChange(event.target.value)}
+            placeholder={instructionsPlaceholder}
+          />
+        </label>
+        <p className="mt-2 text-[11px] text-neutral-500">
+          留空使用默认要求，随任务一起保存。Skill
+          加载、输出格式与交付约束由系统固定。
+        </p>
+        <p className="mt-3 text-[11px] font-medium text-neutral-600">
+          完整指令预览（实时更新）
+        </p>
+        <p className="mt-1 text-[10px] text-neutral-400">
+          Skill 文件在执行工作区加载，不在这里展开。
         </p>
         <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-50 p-3 text-[11px] leading-relaxed text-neutral-600">
           {prompt}
