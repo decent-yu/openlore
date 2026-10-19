@@ -13,6 +13,11 @@ export interface AIExecutionAttempt {
   finished_at?: string;
   duration_ms?: number;
   status: string;
+  phase?: "execute" | "correction";
+  correction_of?: number;
+  validation_issues?: Array<{ path: string; code: string; message: string }>;
+  session_id?: string;
+  resumed?: boolean;
   progress_at?: string;
   last_output_at?: string;
   error?: ExecutionResult["error"];
@@ -39,6 +44,35 @@ export interface AIExecutionLog {
   status: string;
   error_message?: string;
   attempts: AIExecutionAttempt[];
+  usage_summary?: {
+    recorded_attempts: number;
+    total_attempts: number;
+    usage: NonNullable<ExecutionResult["usage"]>;
+  };
+}
+export function summarizeExecutionUsage(
+  attempts: AIExecutionAttempt[],
+): NonNullable<AIExecutionLog["usage_summary"]> {
+  const recorded = attempts.filter((attempt) => attempt.usage);
+  const usage: NonNullable<ExecutionResult["usage"]> = {};
+  for (const key of [
+    "promptTokens",
+    "completionTokens",
+    "totalTokens",
+    "cachedTokens",
+    "reasoningTokens",
+  ] as const) {
+    const values = recorded.flatMap((attempt) =>
+      typeof attempt.usage?.[key] === "number" ? [attempt.usage[key]!] : [],
+    );
+    if (values.length)
+      usage[key] = values.reduce((sum, value) => sum + value, 0);
+  }
+  return {
+    recorded_attempts: recorded.length,
+    total_attempts: attempts.length,
+    usage,
+  };
 }
 export interface AIExecutionLogDetail extends AIExecutionLog {
   input: Pick<

@@ -64,7 +64,15 @@ Runner 空闲循环约 2 秒一次，每约 10 秒更新配置和心跳；单请
 
 ## 工作区与材料
 
-每个 AI 请求独立创建 `<workspace_root>/jobs/job-*/`，包含 `.agents/skills/`、`input/article.md`、`output/`、`prompt.txt`、`manifest.json` 等。Skill 包按哈希和路径校验，不安装到全局目录。
+### 校验修正与会话
+
+初审验证在同一业务调用内进行：原结果不合格时，保留原始输出和逐项错误，最多追加一次校验修正。修正使用明确的 CLI 会话 ID 和原工作区，Gemini 使用 `--resume <id>`，Codex 使用 `exec resume <id>`；不使用 `latest/--last`。首次 Codex 执行保存会话，不再使用 `--ephemeral`。
+
+会话句柄绑定 Job、文章 ID、材料、Skill 版本、执行器配置和输出 Schema；执行机核对私有会话记录、正文与 Skill 文件，拒绝跨任务、材料变化、目录越界、符号链接和同工作区并发执行。句柄随 Worker/SSH 请求及结果传递，不能把不同机器的路径当作可迁移会话。会话丢失明确失败，不悄悄重新初审；执行异常需要备用接管时，备用执行器接收已有结果和错误，明确记录为新的执行器尝试。
+
+调用日志保存首次执行与修正的独立输出、错误、会话 ID 和耗时，但以同一个 Job 汇总。工作区 `prompt.txt` 保留最初任务，`correction-prompt.txt` 保存修正要求。CLI 自身的会话历史由对应 CLI 管理，工作区 7 天清理不等于清理 CLI 全局会话库。当前续聊用于在途业务修正，不承诺服务重启后的自动续跑。
+
+每个新业务执行独立创建 `<workspace_root>/jobs/job-*/`，校验修正复用该工作区，包含 `.agents/skills/`、`input/article.md`、`output/`、`prompt.txt`、`manifest.json` 等。Skill 包按哈希和路径校验，不安装到全局目录。
 
 同步模式传入服务器管理的 Skill 版本；本地模式由执行机读取配置目录，并检查已选版本。默认保留完成目录 7 天，清理由后续任务启动时触发；不是独立定时清理服务。
 

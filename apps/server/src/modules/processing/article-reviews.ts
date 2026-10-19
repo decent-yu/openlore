@@ -16,7 +16,11 @@ import {
 } from "../../infrastructure/ai/fallback_runner.js";
 import { executionLogs } from "../../infrastructure/ai/execution_logs.js";
 import { skillsService } from "../skills/service.js";
-import { assessmentMaterial, hasGroundedEvidence } from "./assessment.js";
+import {
+  assessmentMaterial,
+  hasGroundedEvidence,
+  evidenceIssues,
+} from "./assessment.js";
 
 const SKILL_ID = "tech-article-extractor";
 type ReviewRow = {
@@ -219,25 +223,25 @@ export class ArticleReviewsService {
         );
         throw new Error(message);
       }
-      let result = await adapter.execute(input);
+      const result = await adapter.execute(input, undefined, {
+        onStart: (id) => {
+          logId = id;
+          db.prepare(
+            "UPDATE article_reviews SET log_id=? WHERE article_id=? AND revision_hash=?",
+          ).run(id, row.article_id, row.revision_hash);
+        },
+        validateResult: (candidate) => {
+          const parsed = ArticleAssessmentSchema.safeParse(candidate);
+          if (!parsed.success)
+            return parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              code: issue.code,
+              message: issue.message,
+            }));
+          return evidenceIssues(parsed.data, content);
+        },
+      });
       logId = result.trace_id;
-      if (
-        result.status === "success" &&
-        !hasGroundedEvidence(result.result || {}, content)
-      ) {
-        executionLogs.invalidate(
-          logId,
-          "初审引用未通过正文核验，已要求重新返回",
-        );
-        result = await adapter.execute({
-          ...input,
-          jobId: `${input.jobId}_evidence_retry`,
-          prompt:
-            input.prompt +
-            "\n上次返回的 evidence_refs 未通过原文核验，请逐字复制至少16字符的完整正文原句，重新返回完整 JSON。",
-        });
-        logId = result.trace_id;
-      }
       if (result.status !== "success")
         throw new Error(result.error?.message || "内容初审失败");
       const parsed = ArticleAssessmentSchema.safeParse(result.result);

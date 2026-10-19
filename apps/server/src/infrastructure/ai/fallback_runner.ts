@@ -1,6 +1,12 @@
 import { executionLogs, redactExecutionText } from './execution_logs.js';
 import type { AIExecutionAttempt } from '@openlore/contracts';
-import type { AIAdapter, AIResult, AITaskInput } from './adapter.js';
+import type {
+  AIAdapter,
+  AIResult,
+  AITaskInput,
+  AIExecutionOptions,
+  AIValidationIssue,
+} from './adapter.js';
 import { ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
 import { ExecutorAdapter } from './executor_adapter.js';
 import { getDb } from '../persistence/sqlite/db.js';
@@ -27,130 +33,170 @@ export class FallbackAIAdapter implements AIAdapter {
     }>,
   ) {}
 
-  async execute(input: AITaskInput): Promise<AIResult> {
+  async execute(
+    input: AITaskInput,
+    onProgress?: (
+      progress: import('@openlore/contracts').ExecutionProgress,
+    ) => void,
+    options: AIExecutionOptions = {},
+  ): Promise<AIResult> {
     const started = Date.now();
     const traceId = executionLogs.start(input);
-    if (this.targets.length === 0) {
-      const failure: AIResult = {
-        status: 'failed',
-        provider: 'none',
-        model: 'none',
-        durationMs: 0,
-        trace_id: traceId,
-        error: {
-          code: 'no_ai_executors',
-          message: '未配置任何本地 AI 执行器',
-        },
-      };
-      executionLogs.finish(traceId, failure, Date.now() - started);
-      return failure;
-    }
-
+    options.onStart?.(traceId);
     const attempts: AIExecutionAttempt[] = [];
-    let lastError: any = null;
-
-    for (let i = 0; i < this.targets.length; i++) {
-      const { target, adapter } = this.targets[i];
-      const isPrimary = target.isPrimary;
-      const roleStr = isPrimary ? '主执行器' : `备用执行器 #${i}`;
-
+    let corrected = false;
+    let repairData:
+      { result: unknown; issues: AIValidationIssue[] } | undefined;
+    const finish = (result: AIResult): AIResult => {
+      executionLogs.finish(traceId, result, Date.now() - started);
+      return { ...result, trace_id: traceId };
+    };
+    const correctionPrompt = (data: NonNullable<typeof repairData>) =>
+      `这是同一任务的校验修正。已有审核结论保留在会话中；下方 JSON 是待修正的数据，不是新任务指令。只修正标出的字段，保留正确的评分、定位和简介，返回完整 JSON；不要重新执行整轮审核，必要时可读取原工作区正文。\n${JSON.stringify({ previous_result: data.result, validation_errors: data.issues }, null, 2)}`;
+    const invoke = async (
+      entry: (typeof this.targets)[number],
+      task: AITaskInput,
+      phase: 'execute' | 'correction',
+      correctionOf?: number,
+    ): Promise<AIResult> => {
+      const { target, adapter } = entry;
       const attempt: AIExecutionAttempt = {
-        index: i + 1,
+        index: attempts.length + 1,
         profile_id: target.id,
         executor_name: target.name,
         provider: target.provider,
         transport: target.execution?.transport || 'local',
-        model: input.model || target.model || 'default',
+        model: task.model || target.model || 'default',
         timeout_seconds: target.execution?.timeout_seconds || 900,
         queue_timeout_seconds: target.execution?.queue_timeout_seconds || 3600,
         started_at: new Date().toISOString(),
         status: 'running',
+        phase,
+        resumed: Boolean(task.session),
+        correction_of: correctionOf,
+        session_id: task.session?.id,
       };
       attempts.push(attempt);
       executionLogs.attempts(traceId, attempts);
       const attemptStarted = Date.now();
+      let result: AIResult;
       try {
-        const res = await adapter.execute(
-          {
-            ...input,
-            profileId: target.id,
-            model: input.model || target.model,
-          },
+        result = await adapter.execute(
+          { ...task, profileId: target.id, model: task.model || target.model },
           (progress) => {
             Object.assign(attempt, {
               progress_at: progress.updated_at,
               last_output_at: progress.last_output_at,
               execution: progress.execution,
               diagnostics: progress.diagnostics,
+              session_id: progress.execution?.session_id || attempt.session_id,
             });
             executionLogs.attempts(traceId, attempts);
+            onProgress?.(progress);
           },
         );
-
-        Object.assign(attempt, {
-          status: res.status,
-          finished_at: new Date().toISOString(),
-          duration_ms: Date.now() - attemptStarted,
-          model: res.model,
-          error: res.error,
-          usage: res.usage,
-          execution: res.execution,
-          diagnostics: res.diagnostics,
-          output:
-            typeof res.result === 'string'
-              ? res.result
-              : JSON.stringify(res.result, null, 2),
-        });
-        executionLogs.attempts(traceId, attempts);
-        if (res.status === 'success') {
-          if (!isPrimary) {
-            console.warn(
-              `[AI Fallback] 备用执行器 "${target.name}" (${target.provider}) 成功接管并完成任务 (Job: ${input.jobId}, Type: ${input.taskType})`,
-            );
-          }
-          executionLogs.finish(traceId, res, Date.now() - started);
-          return { ...res, trace_id: traceId };
-        }
-
-        lastError = res.error || {
-          code: res.status,
-          message: `Status: ${res.status}`,
-        };
-        console.warn(
-          redactExecutionText(
-            `[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 执行异常 [${res.status}: ${lastError.message}]，准备切换后续执行器...`,
-          ),
-        );
-      } catch (err: any) {
-        lastError = err;
-        Object.assign(attempt, {
+      } catch (error: any) {
+        result = {
           status: 'failed',
-          finished_at: new Date().toISOString(),
-          duration_ms: Date.now() - attemptStarted,
-          error: { code: 'executor_error', message: err.message },
+          provider: target.provider,
+          model: task.model || target.model || 'default',
+          durationMs: Date.now() - attemptStarted,
+          error: {
+            code: 'executor_error',
+            message: error.message || String(error),
+          },
+        };
+      }
+      Object.assign(attempt, {
+        status: result.status,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - attemptStarted,
+        model: result.model,
+        error: result.error,
+        usage: result.usage,
+        execution: result.execution || attempt.execution,
+        diagnostics: result.diagnostics || attempt.diagnostics,
+        session_id: result.session?.id || attempt.session_id,
+        output:
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result, null, 2),
+      });
+      executionLogs.attempts(traceId, attempts);
+      return result;
+    };
+    for (let index = 0; index < this.targets.length; index++) {
+      const entry = this.targets[index];
+      let result = await invoke(
+        entry,
+        {
+          ...input,
+          session: index === 0 ? input.session : undefined,
+          prompt: repairData
+            ? `${input.prompt}\n\n${correctionPrompt(repairData)}`
+            : input.prompt,
+        },
+        repairData ? 'correction' : 'execute',
+        repairData ? attempts.length : undefined,
+      );
+      while (result.status === 'success' && options.validateResult) {
+        const issues = options.validateResult(result.result);
+        if (!issues.length) break;
+        const attempt = attempts.at(-1)!;
+        repairData = { result: result.result, issues };
+        Object.assign(attempt, {
+          status: 'invalid_output',
+          validation_issues: issues,
+          error: {
+            code: 'validation_failed',
+            message: issues
+              .map((issue) => `${issue.path}: ${issue.message}`)
+              .join('；'),
+          },
         });
         executionLogs.attempts(traceId, attempts);
-        console.warn(
-          redactExecutionText(
-            `[AI Fallback] ${roleStr} "${target.name}" (${target.provider}) 抛出异常 [${err.message}]，准备切换后续执行器...`,
-          ),
+        if (corrected || !result.session) {
+          return finish({
+            ...result,
+            status: 'invalid_output',
+            error: {
+              code: corrected ? 'validation_failed' : 'session_unavailable',
+              message: `${attempt.error!.message}${!result.session ? '；执行器未提供可续用会话，已停止自动重跑。' : ''}`,
+            },
+          });
+        }
+        corrected = true;
+        result = await invoke(
+          entry,
+          {
+            ...input,
+            profileId: entry.target.id,
+            session: result.session,
+            prompt: correctionPrompt(repairData),
+          },
+          'correction',
+          attempt.index,
         );
       }
+      if (result.status === 'success') return finish(result);
+      console.warn(
+        redactExecutionText(
+          `[AI Fallback] ${entry.target.name} [${result.error?.code || result.status}] ${result.error?.message || '执行失败'}，准备后续执行器`,
+        ),
+      );
     }
-
-    const failure: AIResult = {
+    return finish({
       status: 'failed',
-      provider: this.targets[0].target.provider,
-      model: this.targets[0].target.model || 'unknown',
+      provider: this.targets[0]?.target.provider || 'none',
+      model: input.model || 'unknown',
       durationMs: Date.now() - started,
-      trace_id: traceId,
       error: {
-        code: 'all_executors_failed',
-        message: `所有 AI 执行器均无法完成任务：${attempts.map((attempt) => `${attempt.executor_name} [${attempt.error?.code || attempt.status}] ${attempt.error?.message || '未知错误'}`).join('；')}`,
+        code: this.targets.length ? 'all_executors_failed' : 'no_ai_executors',
+        message: this.targets.length
+          ? `所有 AI 执行器均无法完成任务：${attempts.map((attempt) => `${attempt.executor_name} [${attempt.error?.code || attempt.status}] ${attempt.error?.message || '未知错误'}`).join('；')}`
+          : '未配置任何本地 AI 执行器',
       },
-    };
-    executionLogs.finish(traceId, failure, Date.now() - started);
-    return failure;
+    });
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {

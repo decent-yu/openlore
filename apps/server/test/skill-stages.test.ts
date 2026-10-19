@@ -251,7 +251,7 @@ it("leaves historical articles untouched until manually triggered and exposes in
   releaseResearchClaims("selected-run");
 });
 
-it("records invalid evidence as failed, then supports explicit retry without fake scores", async () => {
+it("records invalid evidence without restarting a non-resumable executor, then supports explicit retry", async () => {
   execute.mockResolvedValue({
     status: "success",
     provider: "mock",
@@ -263,16 +263,16 @@ it("records invalid evidence as failed, then supports explicit retry without fak
     },
   });
   await articleReviewsService.processPending();
-  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute).toHaveBeenCalledTimes(1);
   expect(getArticleReviews([id]).get(id)).toMatchObject({
     status: "failed",
     result: null,
-    error_message: "初审缺少可核验的正文证据",
+    error_message: expect.stringContaining('evidence_refs[0]'),
   });
   const logs = (
     await app.inject("/api/v1/execution-logs?task_type=assess&status=problem")
   ).json();
-  expect(logs.items).toHaveLength(2);
+  expect(logs.items).toHaveLength(1);
   execute.mockResolvedValue({
     status: "success",
     provider: "mock",

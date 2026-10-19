@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { summarizeExecutionUsage } from "@openlore/contracts";
 import type {
   AIExecutionLogDetail,
   AIExecutionLog,
@@ -78,6 +79,7 @@ function map(row: Row): AIExecutionLogDetail {
     error_message: row.error_message || undefined,
     input: JSON.parse(row.input_json),
     attempts: JSON.parse(row.attempts_json),
+    usage_summary: summarizeExecutionUsage(JSON.parse(row.attempts_json)),
   };
 }
 export const executionLogs = {

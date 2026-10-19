@@ -190,7 +190,13 @@ export function ExecutionLogs({
               </span>
               <span>
                 {log.attempts.length} 次尝试
-                {log.attempts.length > 1 ? " · 含主备切换" : ""}
+                {new Set(log.attempts.map((attempt) => attempt.profile_id))
+                  .size > 1
+                  ? " · 含主备切换"
+                  : ""}
+                {log.attempts.some((attempt) => attempt.phase === "correction")
+                  ? " · 含校验修正"
+                  : ""}
               </span>
               <span>
                 {log.attempts.at(-1)?.executor_name || "正在准备"} · 时限{" "}

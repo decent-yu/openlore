@@ -49,3 +49,72 @@ it("opens running calls on live diagnostics and exposes the last output time bef
   expect(html).toContain("900 秒");
   client.clear();
 });
+
+it("groups evidence correction under the same task and distinguishes it from executor failover", () => {
+  const client = new QueryClient();
+  client.setQueryData(["executionLog", "repair"], {
+    id: "repair",
+    job_id: "review",
+    task_type: "assess",
+    status: "success",
+    started_at: "2026-10-19T08:00:00Z",
+    finished_at: "2026-10-19T08:00:02Z",
+    duration_ms: 2000,
+    input: { prompt: "Review", material: "Article" },
+    output: "{}",
+    usage_summary: {
+      recorded_attempts: 2,
+      total_attempts: 2,
+      usage: { totalTokens: 50 },
+    },
+    attempts: [
+      {
+        index: 1,
+        profile_id: "same",
+        executor_name: "Local Codex",
+        provider: "codex_cli",
+        transport: "local",
+        model: "test",
+        timeout_seconds: 900,
+        queue_timeout_seconds: 3600,
+        started_at: "2026-10-19T08:00:00Z",
+        status: "invalid_output",
+        phase: "execute",
+        validation_issues: [
+          {
+            path: "evidence_refs[0]",
+            code: "invalid",
+            message: "引用来自标题",
+          },
+        ],
+      },
+      {
+        index: 2,
+        profile_id: "same",
+        executor_name: "Local Codex",
+        provider: "codex_cli",
+        transport: "local",
+        model: "test",
+        timeout_seconds: 900,
+        queue_timeout_seconds: 3600,
+        started_at: "2026-10-19T08:00:01Z",
+        status: "success",
+        phase: "correction",
+        resumed: true,
+        session_id: "precise-session-id",
+      },
+    ],
+  });
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <ExecutionLogDetail id="repair" onClose={() => {}} />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("原会话校验修正");
+  expect(html).toContain("evidence_refs[0]");
+  expect(html).toContain("引用来自标题");
+  expect(html).toContain("累计 Token 50");
+  expect(html).toContain("precise-session-id");
+  expect(html).not.toContain("（备用接管）");
+  client.clear();
+});

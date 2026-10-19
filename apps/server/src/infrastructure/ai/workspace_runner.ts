@@ -12,6 +12,12 @@ import {
 } from '@openlore/contracts';
 import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
+  sessionBinding,
+  resolveSessionWorkspace,
+  verifySession,
+  claimWorkspace,
+} from './workspace_session.js';
+import {
   scanSkillDirectory,
   safeRelativePath,
   validateBundle,
@@ -211,6 +217,7 @@ export async function executeInWorkspace(
   let diagnostics: ExecutionResult['diagnostics'];
   let execution: ExecutionResult['execution'];
   let usage: ExecutionResult['usage'];
+  let session: ExecutionResult['session'];
   const root = expand(
     config.workspace_root ||
       path.join(os.homedir(), '.openlore', 'executor-workspace'),
@@ -235,10 +242,28 @@ export async function executeInWorkspace(
     )
       fs.rmSync(path.dirname(completed), { recursive: true, force: true });
   }
-  const workspace = fs.mkdtempSync(path.join(root, 'jobs', 'job-'));
-  fs.mkdirSync(path.join(workspace, 'input'));
-  fs.mkdirSync(path.join(workspace, 'output'));
-  fs.mkdirSync(path.join(workspace, '.git'));
+  let workspace: string;
+  let release: () => void = () => {};
+  try {
+    workspace = input.session
+      ? resolveSessionWorkspace(root, input.session)
+      : fs.mkdtempSync(path.join(root, 'jobs', 'job-'));
+    release = claimWorkspace(workspace);
+    if (!input.session) {
+      fs.mkdirSync(path.join(workspace, 'input'));
+      fs.mkdirSync(path.join(workspace, 'output'));
+      fs.mkdirSync(path.join(workspace, '.git'));
+    }
+  } catch (error: any) {
+    release();
+    return {
+      status: 'failed',
+      provider: request.provider,
+      model,
+      durationMs: Date.now() - started,
+      error: { code: 'session_unavailable', message: error.message },
+    };
+  }
   let bundle: SkillBundle | undefined = input.skillBundle;
   try {
     if (input.skillId) {
@@ -257,49 +282,67 @@ export async function executeInWorkspace(
       const target = path.join(workspace, '.agents', 'skills', bundle.id);
       for (const file of bundle.files) {
         const dest = path.join(target, safeRelativePath(file.path));
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, Buffer.from(file.content, 'base64'), {
-          mode: file.executable ? 0o700 : 0o600,
-        });
+        const contents = Buffer.from(file.content, 'base64');
+        if (input.session) {
+          if (
+            fs.lstatSync(dest).isSymbolicLink() ||
+            !fs.readFileSync(dest).equals(contents)
+          )
+            throw new Error('会话 Skill 文件已变化，拒绝续用');
+        } else {
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.writeFileSync(dest, contents, {
+            mode: file.executable ? 0o700 : 0o600,
+          });
+        }
       }
     }
+    const binding = sessionBinding(request, bundle);
+    if (input.session)
+      verifySession(workspace, input.session, binding, input.material);
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
     const prompt = input.prompt;
+    if (!input.session)
+      fs.writeFileSync(
+        path.join(workspace, 'input', 'article.md'),
+        input.material,
+      );
     fs.writeFileSync(
-      path.join(workspace, 'input', 'article.md'),
-      input.material,
-    );
-    fs.writeFileSync(path.join(workspace, 'prompt.txt'), prompt);
-    fs.writeFileSync(
-      path.join(workspace, 'manifest.json'),
-      JSON.stringify(
-        {
-          job_id: input.jobId,
-          skill: bundle?.id,
-          revision: bundle?.revision,
-          mode,
-          created_at: new Date().toISOString(),
-        },
-        null,
-        2,
+      path.join(
+        workspace,
+        input.session ? 'correction-prompt.txt' : 'prompt.txt',
       ),
+      prompt,
     );
+    if (!input.session)
+      fs.writeFileSync(
+        path.join(workspace, 'manifest.json'),
+        JSON.stringify(
+          {
+            job_id: input.jobId,
+            skill: bundle?.id,
+            revision: bundle?.revision,
+            mode,
+            created_at: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      );
     const resultFile = path.join(workspace, 'response.txt');
+    if (fs.existsSync(resultFile)) {
+      if (fs.lstatSync(resultFile).isSymbolicLink())
+        throw new Error('无效的结果文件');
+      fs.unlinkSync(resultFile);
+    }
     let args: string[];
     if (request.provider === 'codex_cli') {
       args = ['--no-daemon', '-a', 'never'];
       if (config.config_profile) args.push('-p', config.config_profile);
-      args.push(
-        'exec',
-        '--ignore-rules',
-        '--sandbox',
-        'workspace-write',
-        '--skip-git-repo-check',
-        '--ephemeral',
-        '-C',
-        workspace,
-        '--json',
-      );
+      args.push('exec');
+      if (input.session) args.push('resume', input.session.id);
+      else args.push('--sandbox', 'workspace-write', '-C', workspace);
+      args.push('--ignore-rules', '--skip-git-repo-check', '--json');
       if (!config.inherit_user_config) args.push('--ignore-user-config');
       if (input.model) args.push('-m', input.model);
       if (input.outputSchema) {
@@ -319,6 +362,7 @@ export async function executeInWorkspace(
         '--skip-trust',
       ];
       if (input.model) args.push('-m', input.model);
+      if (input.session) args.push('--resume', input.session.id);
     }
     execution = {
       workspace,
@@ -338,6 +382,34 @@ export async function executeInWorkspace(
     let previousStdout = '',
       previousStderr = '';
     const progress = (stdout = '', stderr = '') => {
+      if (!session) {
+        for (const line of stdout.split('\n')) {
+          try {
+            const event = JSON.parse(line);
+            const id =
+              event.type === 'thread.started'
+                ? event.thread_id
+                : event.type === 'init'
+                  ? event.session_id
+                  : undefined;
+            if (
+              typeof id === 'string' &&
+              /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,199}$/.test(id)
+            ) {
+              session = { id, workspace, binding };
+              execution!.session_id = id;
+              fs.writeFileSync(
+                path.join(workspace, '.openlore-session.json'),
+                JSON.stringify(session),
+                { mode: 0o600 },
+              );
+              break;
+            }
+          } catch {
+            /* Incomplete JSONL events remain in the diagnostics. */
+          }
+        }
+      }
       if (stdout !== previousStdout || stderr !== previousStderr)
         lastOutputAt = new Date().toISOString();
       previousStdout = stdout;
@@ -414,6 +486,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        session,
         diagnostics,
       };
     if (res.timedOut)
@@ -423,6 +496,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        session,
         diagnostics,
         error: {
           code: 'timeout',
@@ -436,6 +510,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        session,
         diagnostics,
         error: {
           code: 'cli_failed',
@@ -484,19 +559,21 @@ export async function executeInWorkspace(
             (a[1].tokens?.total || a[1].api?.totalRequests || 0),
         )[0][0];
       if (models.some(([, metrics]) => metrics.tokens)) {
-        usage = {
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: 0,
-          cachedTokens: 0,
-          reasoningTokens: 0,
-        };
-        for (const [, metrics] of models) {
-          usage.promptTokens! += metrics.tokens?.prompt || 0;
-          usage.completionTokens! += metrics.tokens?.candidates || 0;
-          usage.totalTokens! += metrics.tokens?.total || 0;
-          usage.cachedTokens! += metrics.tokens?.cached || 0;
-          usage.reasoningTokens! += metrics.tokens?.thoughts || 0;
+        usage = {};
+        for (const [key, field] of [
+          ['promptTokens', 'prompt'],
+          ['completionTokens', 'candidates'],
+          ['totalTokens', 'total'],
+          ['cachedTokens', 'cached'],
+          ['reasoningTokens', 'thoughts'],
+        ] as const) {
+          const values = models.flatMap(([, metrics]) =>
+            typeof metrics.tokens?.[field] === 'number'
+              ? [metrics.tokens[field]]
+              : [],
+          );
+          if (values.length)
+            usage[key] = values.reduce((sum, value) => sum + value, 0);
         }
       }
       if (envelope.error) throw new Error('Gemini CLI returned an error');
@@ -529,6 +606,7 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      session,
       diagnostics,
       usage,
       artifacts: collectArtifacts(path.join(workspace, 'output')),
@@ -540,10 +618,15 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      session,
       diagnostics,
       error: { code: 'execution_failed', message: error.message },
     };
   } finally {
-    fs.writeFileSync(path.join(workspace, '.openlore-completed'), '');
+    try {
+      fs.writeFileSync(path.join(workspace, '.openlore-completed'), '');
+    } finally {
+      release();
+    }
   }
 }

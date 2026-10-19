@@ -257,5 +257,22 @@
     "Short dialogue overlapped the same-prompt trial; provider-side concurrency or routing effects were not isolated.",
     "Raw source website was not re-fetched; missing content is confirmed in supplied material, not attributed to a specific extractor defect.",
     "No global settings were disabled, so network, model routing, Hooks and telemetry effects were not isolated."
-  ]
+  ],
+  "post_fix_codex_session_validation": {
+    "first": {
+      "status": "success",
+      "duration_ms": 9548,
+      "session_id": "01a153a8-d64b-79f3-81ab-49bd80ad23a2",
+      "marker_matches": true
+    },
+    "continuation": {
+      "status": "success",
+      "duration_ms": 5366,
+      "session_id": "01a153a8-d64b-79f3-81ab-49bd80ad23a2",
+      "marker_matches": true,
+      "same_workspace": true,
+      "tool_calls": 0
+    },
+    "purpose": "Post-fix synthetic Codex session continuity; the resumed prompt contains no marker and requests no new tool calls. Not the release-article latency benchmark."
+  }
 }

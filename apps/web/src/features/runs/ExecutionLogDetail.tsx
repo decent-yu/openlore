@@ -136,6 +136,15 @@ export function ExecutionLogDetail({
                       : duration(detail.duration_ms)}
                   </span>
                   <span>{detail.attempts.length} 次尝试</span>
+                  {detail.usage_summary &&
+                    detail.usage_summary.recorded_attempts > 0 && (
+                      <span>
+                        累计 Token{" "}
+                        {detail.usage_summary.usage.totalTokens ?? "—"}（已记录{" "}
+                        {detail.usage_summary.recorded_attempts}/
+                        {detail.usage_summary.total_attempts} 次，含缓存）
+                      </span>
+                    )}
                 </div>
               )}
             </div>
@@ -332,7 +341,13 @@ export function ExecutionLogDetail({
                       <div className="flex flex-wrap justify-between gap-2">
                         <h4 className="text-sm font-semibold">
                           第 {attempt.index} 次 · {attempt.executor_name}
-                          {attempt.index > 1 ? "（备用接管）" : ""}
+                          {attempt.phase === "correction"
+                            ? attempt.resumed
+                              ? "（原会话校验修正）"
+                              : "（接管修正）"
+                            : attempt.index > 1
+                              ? "（备用接管）"
+                              : ""}
                         </h4>
                         <span
                           className={`rounded px-2 py-1 text-xs ${color(attempt.status)}`}
@@ -365,6 +380,7 @@ export function ExecutionLogDetail({
                           最近进程输出: attempt.last_output_at
                             ? time(attempt.last_output_at)
                             : "尚无输出",
+                          会话: attempt.session_id || "执行器尚未提供",
                           "Token 用量": attempt.usage
                             ? `输入 ${attempt.usage.promptTokens ?? "—"} / 输出 ${attempt.usage.completionTokens ?? "—"} / 总量 ${attempt.usage.totalTokens ?? "—"}${attempt.usage.cachedTokens ? ` / 缓存 ${attempt.usage.cachedTokens}` : ""}${attempt.usage.reasoningTokens ? ` / 推理 ${attempt.usage.reasoningTokens}` : ""}`
                             : "执行器未提供",
@@ -388,10 +404,22 @@ export function ExecutionLogDetail({
                           {attempt.error.code}：{attempt.error.message}
                         </p>
                       )}
+                      {attempt.validation_issues?.length ? (
+                        <ul className="space-y-1 rounded bg-amber-50 p-3 text-xs text-amber-900">
+                          {attempt.validation_issues.map((issue, index) => (
+                            <li key={index}>
+                              {issue.path}：{issue.message}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                       {attempt.index < detail.attempts.length && (
                         <p className="text-xs text-amber-800">
-                          本次未成功，已切换到{" "}
-                          {detail.attempts[attempt.index].executor_name}。
+                          本次未通过；下一步为{" "}
+                          {detail.attempts[attempt.index].phase === "correction"
+                            ? "校验修正"
+                            : "备用接管"}{" "}
+                          · {detail.attempts[attempt.index].executor_name}。
                         </p>
                       )}
                       {attempt.execution && (
@@ -427,7 +455,8 @@ export function ExecutionLogDetail({
                           CLI 实时日志 · 标准输出与错误输出
                         </summary>
                         <p className="my-2 text-xs text-neutral-500">
-                          已对已知凭据脱敏。
+                          已对已知凭据脱敏。 工具事件未携带结果文本时，空 output
+                          不表示原文件为空。
                           {attempt.status === "running"
                             ? "运行中自动刷新；没有新日志不代表模型正在推理。"
                             : ""}

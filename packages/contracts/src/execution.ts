@@ -30,6 +30,12 @@ export const SkillBundleSchema = z.object({
   files: z.array(SkillFileSchema).max(500),
 });
 export type SkillBundle = z.infer<typeof SkillBundleSchema>;
+export const ExecutionSessionSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{7,199}$/),
+  workspace: z.string().min(1),
+  binding: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type ExecutionSession = z.infer<typeof ExecutionSessionSchema>;
 export const ExecutionInputSchema = z.object({
   jobId: z.string(),
   runId: z.string().optional(),
@@ -54,6 +60,7 @@ export const ExecutionInputSchema = z.object({
   material: z.string(),
   outputSchema: z.record(z.unknown()).optional(),
   model: z.string().optional(),
+  session: ExecutionSessionSchema.optional(),
 });
 export type ExecutionInput = z.infer<typeof ExecutionInputSchema>;
 export const ExecutionResultSchema = z.object({
@@ -70,6 +77,7 @@ export const ExecutionResultSchema = z.object({
   model: z.string(),
   durationMs: z.number(),
   trace_id: z.string().optional(),
+  session: ExecutionSessionSchema.optional(),
   diagnostics: z
     .object({
       stdout: z.string(),
@@ -95,6 +103,7 @@ export const ExecutionResultSchema = z.object({
   execution: z
     .object({
       workspace: z.string(),
+      session_id: z.string().optional(),
       skill_id: z.string().optional(),
       skill_revision: z.string().optional(),
       prompt: z.string(),
