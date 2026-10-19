@@ -1,25 +1,27 @@
 # 03 Skills 与 Prompt 调用流程
 
-AI 任务由云端编排，标准方式为独立 Runner 领取并执行；无需在执行机启动网站。部署边界见[系统架构](../../architecture/system-architecture.md)，配对与启动见[Runner 指引](../../guides/ai-executors.md)。
+AI 由云端编排，独立 Runner 执行。部署见[系统架构](../../architecture/system-architecture.md)，接入见[Runner 指引](../../guides/ai-executors.md)。
+
+## 内容池初审
+
+新文章成功入池或正文版本变化后自动排队，使用主 AI 执行器及其备用执行器，调用 `tech-article-extractor`（extraction 类型）。不带流水线定位，读取全文，输出内容质量分、定位、简介、标签、评分理由和可核验的原文证据。
+
+结果按文章、正文版本保存在 `article_reviews`，各流水线共享。采集不等待 AI 完成，初审失败不回滚入池。缺少执行器或 Skill 时明确失败，配置修复后手动重试。服务重启后继续已排队任务，在途初审标为失败并允许手动重试。
+
+已有历史文章不会因升级、新建任务或运行流水线而自动补审。内容池提供单篇、本页未审核文章的手动审核，以及失败重试、重新初审；接口 `POST /library/review` 接收 `article_ids` 和可选的 `force`。
 
 ## 流水线任务
 
-1. **审核评分**：使用 `assessment_skill_id`（默认 `tech-article-extractor`），通过 `$skill-name` 和工作区路径加载 Skill，传入任务定位和审核要求 `preferences`。全部备选文章逐篇评分后统一排序，保留合格评分供调研排序。
-2. **深度调研**：从全量未完成调研的合格候选中选择最多 M 篇，使用 `research_skill_id`（默认 `deep-research-expert`），通过工作区加载该 Skill，并传入 `research_instructions`。
-3. **GitHub 归档**：完成文章与研报归档，不再调用简报 Skill。
+1. **AI 批量选文**：`selection_skill_id` 默认 `article-selector`（selection 类型）。输入候选的 ID、标题、共享质量分、定位、标签和简介；根据任务定位、`preferences` 和调研要求选择最多 M 篇，输出 ID 和理由，不生成任务评分。
+2. **深度调研**：`research_skill_id` 默认 `deep-research-expert`（research 类型）。只对选中文章读取全文，按 `research_instructions` 生成研报。
+3. **GitHub 归档**：文章与研报归档成功才计为完成，不调用简报 Skill。
 
-编辑器分阶段配置 Skill；展开“本阶段实际 Prompt · 查看与编辑”，可直接修改审核或调研要求，并实时查看完整指令。要求随任务保存，留空使用默认值，不再设置单独的“附加 Prompt”输入框。Skill 加载、评分输出格式和交付约束由系统固定。前后端共用 `packages/contracts/src/prompts.ts`，避免展示内容和实际调用不一致。AI 日志记录实际 Skill ID 和 Prompt。
+候选过多时分批初选再合选，完整输入、输出与失败保留在每次选文调用中。初审引用必须能在正文核验；失败会要求纠正一次，再失败则不保存评分。不用模板伪造成功结果。
 
-审核和调研阶段不混用 Skills。AI 返回失败或无效结果时明确报错，不生成通用模板冒充成功内容。
+前后端共用 `packages/contracts/src/prompts.ts`。流水线编辑器分阶段选择选文和调研 Skill，可修改要求并预览完整 Prompt。初审独立于任务，不再在任务内配置审核 Skill。
 
-## 汇报方案
+## 汇报与 Skill 来源
 
-每个汇报方案选择一个或多个任务结果，由程序按可配置模板生成群汇报，不调用 AI。模板编辑、预览和变量见[汇报推送](06-reporting.md)。多个方案可使用不同任务组合、目标群和时间。
+汇报方案读取归档结果，按模板生成并发送，不调用 AI。
 
-## Skill 来源
-
-同步模式下，`skillsService` 从云端仓库 `skills/` 与业务数据目录 `skills/` 发现 SKILL.md，读取类型、说明、基础 Prompt 和引用材料。审核列表筛选 extraction 类型，调研列表筛选 research 类型。
-
-Skill 文件与任务指令分开展示。任务配置每次最多调研篇数 M，程序按审核分数确定调研名单，调研阶段只对选定文章生成新文章。Skills 随任务复制到 `.agents/skills/`，不会全局安装。
-
-执行机本地目录模式由 Runner 上报 Skill 清单，SSH 通过连接测试刷新，本机执行则直接读取；流水线列表按所选执行器获取对应 Skills。
+同步模式从仓库 `skills/` 与业务数据目录 `skills/` 发现 Skill 并复制到执行工作区；本地目录模式使用执行器上报的目录和清单。Skill 不全局安装。执行器需同时提供初审、选文和调研所需 Skill。

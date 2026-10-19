@@ -40,7 +40,7 @@
   <text x="100" y="555" class="small">Python 按需子进程，仅云端需要</text>
   <rect x="460" y="465" width="380" height="110" rx="12" class="box"/>
   <text x="480" y="500" class="label">流水线 / AI 任务编排</text>
-  <text x="480" y="531" class="body">审核与调研生成 AI 任务</text>
+  <text x="480" y="531" class="body">初审、选文与调研生成 AI 任务</text>
   <text x="480" y="555" class="small">冻结材料、Prompt、Skill 版本与约束</text>
   <path d="M650 425 V465" class="flow"/>
   <path d="M480 425 V445 H245 V465" class="flow"/>
