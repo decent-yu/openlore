@@ -60,12 +60,16 @@ export function LibraryAssessments({
               </span>
             ))}
           </div>
-          <p className="leading-relaxed text-neutral-600">{result.summary}</p>
           <details>
             <summary className="cursor-pointer text-neutral-500">
-              评分依据与原文证据
+              查看审核详情
             </summary>
+            <p className="mt-2 leading-relaxed text-neutral-600">
+              {result.summary}
+            </p>
+            <p className="mt-3 font-medium text-neutral-600">评分依据</p>
             <p className="mt-2">{result.reason}</p>
+            <p className="mt-3 font-medium text-neutral-600">原文证据</p>
             {result.evidence_refs.map((quote, i) => (
               <blockquote
                 key={i}
