@@ -1,3 +1,4 @@
+import { WikiReadingLinks } from '../../components/WikiReadingLinks.js';
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -350,7 +351,7 @@ export function LibraryPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <CardTitle className="text-base font-semibold leading-snug line-clamp-2">
-                      {art.title}
+                      {art.research?.wiki_url || art.wiki_url ? <a href={art.research?.wiki_url || art.wiki_url} target="_blank" rel="noreferrer" className="hover:text-blue-700 hover:underline">{art.title}</a> : art.title}
                     </CardTitle>
                     <CardDescription className="text-xs flex items-center gap-2 text-neutral-500">
                       <span>{art.author || '未知作者'}</span>
@@ -478,6 +479,8 @@ export function LibraryPage() {
                     {art.body_snippet || '暂无正文预览'}
                   </p>
                 )}
+
+                <WikiReadingLinks articleUrl={art.wiki_url} researchUrl={art.research?.wiki_url} />
 
                 {/* Bottom Actions */}
                 <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
@@ -679,7 +682,8 @@ export function LibraryPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <WikiReadingLinks articleUrl={viewingResearchArticle.wiki_url} researchUrl={viewingResearchArticle.research.wiki_url} />
                 <Button
                   size="sm"
                   variant="outline"

@@ -1,3 +1,4 @@
+import { getPublishedWikiLinks, wikiLinkKey } from '../delivery/wiki-links.js';
 import fs from 'node:fs';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { RunOutputSchema, type DailyFeedArticle, type Group } from '@openlore/contracts';
@@ -106,6 +107,7 @@ export class FeedService {
 
     const deepArticles: DailyFeedArticle[] = [];
     const candidateArticles: DailyFeedArticle[] = [];
+    const wikiLinks = getPublishedWikiLinks(groupItems.map((item) => item.articleId), group.id);
 
     // Latest delivery for commit sha/url
     const latestDelivery = db
@@ -147,7 +149,9 @@ export class FeedService {
 
       const isDeep = Boolean(gi.isDeepAnalyzed || (researchTask && researchTask.status === 'succeeded'));
 
+      const wiki = wikiLinks.get(wikiLinkKey(group.id, art.id));
       const feedArticle: DailyFeedArticle = {
+        wiki_url: wiki?.article_url,
         id: art.id,
         title: art.title || 'Untitled',
         slug: art.id,
@@ -166,6 +170,7 @@ export class FeedService {
               id: researchTask.id,
               status: researchTask.status,
               report_markdown: researchTask.reportMarkdown,
+              wiki_url: researchTask.status === 'succeeded' ? wiki?.research_url : undefined,
               questions: JSON.parse(researchTask.questionsJson || '[]'),
               evidence: JSON.parse(researchTask.evidenceJson || '[]'),
             }

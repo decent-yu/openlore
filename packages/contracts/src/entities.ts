@@ -74,6 +74,7 @@ export const SkillSchema = z.object({
 export type Skill = z.infer<typeof SkillSchema>;
 
 export const DailyFeedArticleSchema = z.object({
+  wiki_url: z.string().optional(),
   id: z.string(),
   title: z.string(),
   slug: z.string(),
@@ -93,6 +94,7 @@ export const DailyFeedArticleSchema = z.object({
       id: z.string(),
       status: z.string(),
       report_markdown: z.string(),
+      wiki_url: z.string().optional(),
       questions: z.array(z.string()).default([]),
       evidence: z.array(z.any()).default([]),
     })
@@ -218,6 +220,7 @@ export type ResearchTask = z.infer<typeof ResearchTaskSchema>;
 export const PoolStatusSchema = z.enum(['ready', 'pending', 'review', 'history', 'excluded', 'failed']);
 export type PoolStatus = z.infer<typeof PoolStatusSchema>;
 export const LibraryArticleSchema = z.object({
+  wiki_url: z.string().optional(),
   content_kind: z.string().default('unknown'),
   date_evidence: z.record(z.unknown()).default({}),
   id: z.string(),
@@ -248,6 +251,7 @@ export const LibraryArticleSchema = z.object({
       id: z.string(),
       status: z.string(),
       report_markdown: z.string().default(''),
+      wiki_url: z.string().optional(),
       questions: z.array(z.string()).default([]),
       evidence: z.array(z.any()).default([]),
       finished_at: z.string().nullable().optional(),

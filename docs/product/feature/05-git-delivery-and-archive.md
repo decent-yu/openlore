@@ -30,6 +30,23 @@
 - `.openlore/manifest.json` 描述托管文件与文章/批次位置；交付结果和 Commit 记录在云端数据库，不应把 manifest 当作完整提交历史账本。
 - 文章与研报一起归档成功后流水线才完成，汇报方案只消费成功结果。手动追加调研也要单独记录归档结果。
 
+## Wiki 阅读链接
+
+在“系统设置 → 外部集成与执行器 → GitHub 仓库连接”中配置 Wiki Base URL 与 Wiki 展示路由（仓库目录）。例如 Base URL 为 `https://wiki.mua5201314.com/raven/openlore-knowledge-vault`、目录为 `docs` 时：
+
+```text
+docs/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research.md
+→ https://wiki.mua5201314.com/raven/openlore-knowledge-vault/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research
+```
+
+移除完整目录前缀与 `.md`，按路径段编码后拼到 Base URL；目录留空表示仓库根目录，Base URL 留空关闭 Wiki 链接。目录外的文件不生成链接。
+
+首页、内容池的标题、正文和研报入口使用已成功归档的真实文件位置；研报弹窗保留 Wiki 入口。汇报中的深度调研文章优先链接到 Wiki 研报，否则使用 Wiki 正文或原有链接。修改配置后历史归档即时应用，无需重新生成文章。
+
+缺少独立交付记录的已完成研报，按已归档正文目录映射到同目录 `research` 页面；已有明确归档失败记录时不推断研报已发布。链接映射不等于逐页检查网站是否存在。
+
+该配置只负责阅读链接映射；GitHub 到 Wiki 的同步由现有网站集成负责，OpenLore 不验证或触发网站同步，因此归档成功后页面仍可能有同步延迟。
+
 ## 实现位置
 
 - `modules/delivery/service.ts`：批次分配、归档包、目录与 manifest。

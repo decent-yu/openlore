@@ -27,12 +27,13 @@ import {
 } from '../../components/ui/card.js';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
+import { WikiReadingLinks } from '../../components/WikiReadingLinks.js';
 
 export function DailyFeedPage() {
   const queryClient = useQueryClient();
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [activeReport, setActiveReport] = useState<{ title: string; markdown: string } | null>(null);
+  const [activeReport, setActiveReport] = useState<{ title: string; markdown: string; wikiUrl?: string; articleUrl?: string } | null>(null);
 
   const { data: settings } = useQuery({queryKey:['settings'],queryFn:api.getSettings});
   const todayStr = new Intl.DateTimeFormat('en-CA', {timeZone:settings?.timezone || 'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -296,7 +297,7 @@ export function DailyFeedPage() {
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base font-semibold leading-snug line-clamp-2 hover:text-amber-600">
-                      <a href={art.original_url || '#'} target="_blank" rel="noreferrer">
+                      <a href={art.research?.wiki_url || art.wiki_url || art.original_url || '#'} target="_blank" rel="noreferrer">
                         {art.title}
                       </a>
                     </CardTitle>
@@ -362,6 +363,8 @@ export function DailyFeedPage() {
                     </div>
                   )}
 
+                  <WikiReadingLinks articleUrl={art.wiki_url} researchUrl={art.research?.wiki_url} />
+
                   {/* Git Delivery Info */}
                   {art.delivery?.commit_sha && (
                     <div className="flex items-center space-x-1.5 text-[11px] text-neutral-500 bg-neutral-100/70 px-2 py-1 rounded">
@@ -382,6 +385,7 @@ export function DailyFeedPage() {
                         setActiveReport({
                           title: art.title,
                           markdown: art.research?.report_markdown || '研报准备中',
+                          wikiUrl: art.research?.wiki_url, articleUrl: art.wiki_url,
                         })
                       }
                       disabled={!art.research?.report_markdown}
@@ -446,7 +450,7 @@ export function DailyFeedPage() {
                       <div className="space-y-1">
                         <CardTitle className="text-base font-medium line-clamp-2 hover:text-blue-600">
                           <a
-                            href={art.original_url || '#'}
+                            href={art.research?.wiki_url || art.wiki_url || art.original_url || '#'}
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -511,6 +515,8 @@ export function DailyFeedPage() {
                       {art.summary}
                     </p>
 
+                    <WikiReadingLinks articleUrl={art.wiki_url} researchUrl={art.research?.wiki_url} />
+
                     <div className="flex items-center justify-between pt-2 border-t border-neutral-100">
                       {art.original_url ? (
                         <a
@@ -535,6 +541,7 @@ export function DailyFeedPage() {
                             setActiveReport({
                               title: art.title,
                               markdown: art.research?.report_markdown || '',
+                              wikiUrl: art.research?.wiki_url, articleUrl: art.wiki_url,
                             })
                           }
                         >
@@ -586,6 +593,8 @@ export function DailyFeedPage() {
                   {activeReport.title}
                 </h3>
               </div>
+              <div className="flex flex-wrap items-center gap-3">
+              <WikiReadingLinks articleUrl={activeReport.articleUrl} researchUrl={activeReport.wikiUrl} />
               <Button
                 variant="ghost"
                 size="sm"
@@ -593,6 +602,7 @@ export function DailyFeedPage() {
               >
                 关闭
               </Button>
+              </div>
             </div>
             <div className="p-6 overflow-y-auto prose prose-neutral prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>

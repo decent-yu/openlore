@@ -1,3 +1,4 @@
+import { getPublishedWikiLinks, wikiLinkKey } from '../../modules/delivery/wiki-links.js';
 import fs from 'node:fs';
 import type { FastifyPluginAsync } from 'fastify';
 import type { LibraryArticle, LibraryResponse } from '@openlore/contracts';
@@ -160,13 +161,16 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       }>;
 
     const articleIds = pageRows.map((r) => r.id);
+    const wikiLinks = getPublishedWikiLinks(articleIds, groupId || undefined);
     const groupsByArticleId = new Map<string, Array<{ id: string; name: string; decision?: string; is_deep_analyzed?: boolean }>>();
     const sourcesByArticleId = new Map<string, string[]>();
     const snippetByRevision = new Map<string, string>();
+    const researchArticleWikiUrls = new Map<string, string>();
     const researchByArticleId = new Map<string, {
       id: string;
       status: string;
       report_markdown: string;
+      wiki_url?: string;
       questions: string[];
       evidence: any[];
       finished_at: string | null;
@@ -249,14 +253,15 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       // Fetch research tasks
       const researchRows = sqlite
         .prepare(`
-          SELECT id, article_id, status, questions_json, evidence_json, report_markdown, finished_at
+          SELECT id, article_id, group_id, status, questions_json, evidence_json, report_markdown, finished_at
           FROM research_tasks
-          WHERE article_id IN (${placeholders})
-          ORDER BY created_at DESC
+          WHERE article_id IN (${placeholders}) ${groupId ? 'AND group_id=?' : ''}
+          ORDER BY created_at DESC, rowid DESC
         `)
-        .all(...articleIds) as Array<{
+        .all(...articleIds, ...(groupId ? [groupId] : [])) as Array<{
           id: string;
           article_id: string;
+          group_id: string;
           status: string;
           questions_json: string;
           evidence_json: string;
@@ -266,6 +271,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
 
       for (const rr of researchRows) {
         if (!researchByArticleId.has(rr.article_id)) {
+          const articleWikiUrl = wikiLinks.get(wikiLinkKey(rr.group_id, rr.article_id))?.article_url;
+          if (articleWikiUrl) researchArticleWikiUrls.set(rr.article_id, articleWikiUrl);
           let questions: string[] = [];
           let evidence: any[] = [];
           try {
@@ -279,6 +286,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
             id: rr.id,
             status: rr.status,
             report_markdown: rr.report_markdown || '',
+            wiki_url: rr.status === 'succeeded' ? wikiLinks.get(wikiLinkKey(rr.group_id, rr.article_id))?.research_url : undefined,
             questions,
             evidence,
             finished_at: rr.finished_at,
@@ -302,6 +310,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       is_selected: Boolean(r.is_selected),
       is_deep_analyzed: Boolean(r.is_deep_analyzed),
       user_interested: Boolean(r.user_interested),
+      wiki_url: researchArticleWikiUrls.get(r.id) || (groupsByArticleId.get(r.id) || []).map((group) => wikiLinks.get(wikiLinkKey(group.id, r.id))?.article_url).find(Boolean),
       body_snippet: (r.latest_revision && snippetByRevision.get(r.latest_revision)) || '',
       research: researchByArticleId.get(r.id) || null,
     }));

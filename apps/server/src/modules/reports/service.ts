@@ -1,3 +1,4 @@
+import { getPublishedWikiLinks, wikiLinkKey } from '../delivery/wiki-links.js';
 import crypto from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
 import {
@@ -172,6 +173,11 @@ export class ReportService {
             entries.set(entry.article_id, entry);
         }
       }
+      const wikiLinks = getPublishedWikiLinks([...entries.keys()], id);
+      const readingUrl = (entry: RunOutput['entries'][number]) => {
+        const wiki = wikiLinks.get(wikiLinkKey(id, entry.article_id));
+        return wiki?.research_url || wiki?.article_url || entry.document_url || entry.original_url || undefined;
+      };
       result.tasks.push({
         id,
         name: group?.name || id,
@@ -192,7 +198,7 @@ export class ReportService {
             ? [...entries.values()]
                 .map(
                   (entry) =>
-                    `- [${entry.title}](${entry.document_url || entry.original_url || '#'})${entry.is_deep_analyzed ? ' · 含深度调研' : ''}\n  ${entry.summary}`,
+                    `- [${entry.title}](${readingUrl(entry) || '#'})${entry.is_deep_analyzed ? ' · 含深度调研' : ''}\n  ${entry.summary}`,
                 )
                 .join('\n')
             : status === 'succeeded'
@@ -207,7 +213,7 @@ export class ReportService {
           summary: entry.summary,
           url: previous?.is_deep_analyzed
             ? previous.url
-            : entry.document_url || entry.original_url || undefined,
+            : readingUrl(entry),
           is_deep_analyzed:
             entry.is_deep_analyzed || previous?.is_deep_analyzed || false,
         });
