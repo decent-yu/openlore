@@ -46,7 +46,7 @@ pnpm dev
 | `skills`                                                        | 服务端管理的业务 Skill 包                                       |
 | `apps/server/test`、`apps/web/src/test`、`workers/python/tests` | 各端测试                                                        |
 
-主链路：来源采集 → Python 解析 → SQLite 内容池 → 流水线审核/调研 → GitHub 归档 → 精选与汇报。AI 经 `executor_adapter.ts` 分派到本机、Worker 队列或 SSH，执行工作区由 `workspace_runner.ts` 管理。
+主链路：来源采集 → Python 解析 → SQLite 内容池 → 流水线审核/调研 → GitHub 归档 → 研报与汇报。AI 经 `executor_adapter.ts` 分派到本机、Worker 队列或 SSH，执行工作区由 `workspace_runner.ts` 管理。
 
 修改 API 时同步调整契约、服务端路由与前端客户端；外部能力通过适配层接入。Python 负责解析，不直接写业务数据库。
 

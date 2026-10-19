@@ -59,7 +59,7 @@
 
   <rect x="80" y="780" width="760" height="102" rx="12" class="box"/>
   <text x="100" y="815" class="label">结果校验 / 流水线推进 / 外部交付</text>
-  <text x="100" y="845" class="body">保存调用与产物 → GitHub 归档 → 每日精选 / 群汇报</text>
+  <text x="100" y="845" class="body">保存调用与产物 → GitHub 归档 → 每日研报 / 群汇报</text>
   <text x="100" y="868" class="small">GitHub Token、Webhook 留在云端；AI Runner 只生成并回传结果</text>
   <path d="M650 725 V780" class="return"/>
   <text x="668" y="757" class="small">校验有效结果</text>
