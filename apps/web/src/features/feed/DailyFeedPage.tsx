@@ -164,7 +164,7 @@ export function DailyFeedPage() {
                   className="h-px flex-1 bg-neutral-200"
                 />
               </header>
-              <div className="grid grid-cols-1 gap-4 @min-[35rem]:grid-cols-2 @min-[53rem]:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 @min-[35rem]:grid-cols-2">
                 {group.articles.map((article) => {
                   const cardArticle = LibraryArticleSchema.parse({
                     ...article,
