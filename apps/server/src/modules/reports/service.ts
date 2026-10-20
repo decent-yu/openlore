@@ -1,3 +1,5 @@
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { markdownLabel } from "../delivery/archive-layout.js";
 import { getPublishedWikiLinks, wikiLinkKey } from "../delivery/wiki-links.js";
 import crypto from "node:crypto";
 import { desc, eq } from "drizzle-orm";
@@ -24,6 +26,13 @@ import { calendarDayBounds } from "../../infrastructure/time/calendar.js";
 import { GenericWebhookSender } from "../../infrastructure/notifications/generic_webhook/sender.js";
 import { secretsStore } from "../../infrastructure/secrets/local_file/secrets_store.js";
 import { validateCron } from "../../infrastructure/time/cron.js";
+
+type TitleNode = { type: string; value?: string; children?: TitleNode[] };
+const titleText = (node: TitleNode): string => node.value ?? node.children?.map(titleText).join('') ?? '';
+function reportTitle(markdown: string, fallback: string): string {
+  const heading = fromMarkdown(markdown).children.find(node => node.type === 'heading' && node.depth === 1);
+  return (heading ? titleText(heading).trim().replace(/\s+/g, ' ') : '') || fallback;
+}
 
 export class ReportService {
   private sending = new Set<string>();
@@ -200,23 +209,10 @@ export class ReportService {
       for (const publication of publications) {
         if (entries.has(publication.article_id)) continue;
         const old = outputs.get(publication.article_id);
-        const cached = getSqliteDatabase()
-          .prepare(
-            "SELECT result_json FROM article_reviews WHERE article_id=? AND revision_hash=? AND status='succeeded'",
-          )
-          .get(publication.article_id, publication.revision_hash) as
-          { result_json: string } | undefined;
-        let summary = "";
-        if (cached) {
-          try {
-            const positioning = JSON.parse(cached.result_json).positioning;
-            if (typeof positioning === "string") summary = positioning.trim();
-          } catch {}
-        }
         entries.set(publication.article_id, {
           article_id: publication.article_id,
-          title: publication.title,
-          summary,
+          title: reportTitle(publication.report_markdown, publication.title),
+          summary: "",
           original_url: publication.canonical_url,
           document_url: old?.document_url,
           is_deep_analyzed: true,
@@ -252,7 +248,7 @@ export class ReportService {
             ? [...entries.values()]
                 .map(
                   (entry) =>
-                    `- [${entry.title}](${readingUrl(entry) || "#"})${entry.summary ? `  \n  ${entry.summary}` : ""}`,
+                    `- [${markdownLabel(entry.title)}](${readingUrl(entry) || "#"})`,
                 )
                 .join("\n\n")
             : status === "succeeded"

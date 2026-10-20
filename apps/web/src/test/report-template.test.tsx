@@ -29,6 +29,8 @@ it("shows the editable template, supported variables and generated preview witho
   expect(html).toContain("Agent 工程");
   expect(html).toContain("恢复默认模板");
   expect(html).toContain("不调用 AI");
+  expect(html).not.toContain("通过任务标识、持久状态和结果核对");
+  expect(html).toContain("仅展示研报标题链接");
   expect(html).not.toContain("<select");
 });
 

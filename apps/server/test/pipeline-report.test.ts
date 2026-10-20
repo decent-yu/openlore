@@ -300,11 +300,12 @@ describe('Task execution and independent multi-task reports', () => {
     expect(push?.ai_log_id).toBeUndefined();
     await report.deletePlan('digest-scope');
   });
-  it('uses the archived article initial positioning for both preview and delivery instead of long summaries', async () => {
+  it('uses the archived research title alone for both preview and delivery, even when review summaries exist', async () => {
     seedRun('positioning-run', 'agent', 'succeeded', 'article');
     const db = getSqliteDatabase();
     const positioning = '面向健康辅导等具有严格业务边界的对话系统，介绍如何结合单轮评测、动态多轮模拟、运行时安全检查与专家审核改进评测体系。适合参考评测架构、评分准则治理和发布门禁设计，属于工程实践案例，尚不足以作为安全有效性的验证报告。';
     db.prepare("UPDATE articles SET latest_revision='new-revision' WHERE id='article'").run();
+    db.prepare("UPDATE research_tasks SET report_markdown=? WHERE id='report_positioning-run'").run('```md\n# A heading in a code example\n```\n\n# **研报标题** [v2]\n\n正文');
     const insert = db.prepare("INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article',?,'succeeded',?,?)");
     insert.run('rev', JSON.stringify({positioning, summary: 'Long initial-review problem, method, conclusion and limitations'}), new Date().toISOString());
     insert.run('new-revision', JSON.stringify({positioning: 'Newer revision positioning must not replace the archived revision'}), new Date().toISOString());
@@ -314,18 +315,21 @@ describe('Task execution and independent multi-task reports', () => {
     const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({status: 'sent'});
 
     const preview = await report.preview('positioning-report');
-    expect(preview.articles[0].summary).toBe(positioning);
-    expect(preview.summary).toContain(positioning);
-    expect(preview.summary).toContain('[article](https://github.com/example/docs/article.md)');
+    expect(preview.articles[0].summary).toBe('');
+    expect(preview.articles[0].title).toBe('研报标题 [v2]');
+    expect(preview.summary).not.toContain(positioning);
+    expect(preview.summary).toContain('[研报标题 \\[v2\\]](https://github.com/example/docs/article.md)');
     for (const text of ['Summary', 'Long initial-review', 'Newer revision', '含深度调研']) expect(preview.summary).not.toContain(text);
     expect((await report.send('positioning-report')).state).toBe('sent');
     expect(sender.mock.calls[0][1].summary).toBe(preview.summary);
-    expect(sender.mock.calls[0][1].articles?.[0].summary).toBe(positioning);
+    expect(sender.mock.calls[0][1].articles?.[0].summary).toBe('');
+    expect(sender.mock.calls[0][1].articles?.[0].title).toBe('研报标题 [v2]');
     expect(ai).not.toHaveBeenCalled();
   });
 
-  it('keeps the article link without falling back to long text when positioning is missing', async () => {
+  it('falls back to the article title when the report has no top-level title', async () => {
     seedRun('missing-positioning-run', 'agent', 'succeeded', 'article');
+    getSqliteDatabase().prepare("UPDATE research_tasks SET report_markdown='正文，没有一级标题' WHERE id='report_missing-positioning-run'").run();
     getSqliteDatabase().prepare("INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article','rev','succeeded',?,?)")
       .run(JSON.stringify({summary: 'Long initial-review text'}), new Date().toISOString());
     await report.savePlan({id: 'missing-positioning', name: '日报', enabled: false, pipeline_ids: ['agent']});
@@ -591,7 +595,7 @@ describe('Task execution and independent multi-task reports', () => {
     expect((await report.send('plan-a')).state).toBe('sent');
     expect(sender.mock.calls[0][0]).toBe('https://example.com/group-a');
     expect(
-      sender.mock.calls[0][1].articles?.map((entry) => entry.title),
+      sender.mock.calls[0][1].articles?.map((entry) => entry.article_id),
     ).toEqual(['agent-article']);
     getSqliteDatabase()
       .prepare(
@@ -603,7 +607,7 @@ describe('Task execution and independent multi-task reports', () => {
     expect((await report.send('plan-b')).state).toBe('sent');
     expect(sender.mock.calls[1][0]).toBe('https://example.com/group-b');
     expect(
-      sender.mock.calls[1][1].articles?.map((entry) => entry.title),
+      sender.mock.calls[1][1].articles?.map((entry) => entry.article_id),
     ).toEqual(['frontend-article']);
     await report.send('plan-a');
     await report.send('plan-b');
