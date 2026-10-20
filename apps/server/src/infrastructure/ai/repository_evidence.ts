@@ -42,24 +42,34 @@ export function validateRepositoryEvidence(
   if (evidence.commit !== repository.commit)
     throw new Error("源码证据 Commit 不匹配");
   const root = fs.realpathSync(path.join(workspace, "input/repository"));
-  const tracked = new Set(
-    execFileSync(
-      "git",
-      [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "ls-tree",
-        "-rz",
-        "--name-only",
-        repository.commit,
-      ],
-      { cwd: root, encoding: "utf8", timeout: 10000 },
-    ).split("\0"),
-  );
   let implementation = false;
   for (const citation of evidence.citations) {
     const relative = safeRelativePath(citation.file);
-    if (!tracked.has(relative)) throw new Error("引用文件不属于本次跟踪源码");
+    // Check only the cited Git object. Enumerating all paths can overflow buffers
+    // in mature repositories (Orca currently has more than 38,000 tracked files).
+    let tracked = false;
+    try {
+      tracked =
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "core.hooksPath=/dev/null",
+            "cat-file",
+            "-t",
+            `${repository.commit}:${relative}`,
+          ],
+          {
+            cwd: root,
+            encoding: "utf8",
+            timeout: 10000,
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        ).trim() === "blob";
+    } catch {
+      /* Missing paths are reported as invalid evidence below. */
+    }
+    if (!tracked) throw new Error("引用文件不属于本次跟踪源码");
     if (relative.split("/").some((part) => part === ".git"))
       throw new Error("不能引用 Git 元数据");
     const file = path.join(root, relative);

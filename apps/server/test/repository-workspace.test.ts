@@ -320,3 +320,26 @@ it('validates evidence against tracked implementation, exact lines and commit; r
   write(evidence);
   expect(() => validateRepositoryEvidence(repo, folder, '# Report without links')).toThrow('行号链接');
 });
+
+it('validates evidence in a large tracked tree without overflowing a full-directory output buffer', async () => {
+  const { validateRepositoryEvidence } = await import('../src/infrastructure/ai/repository_evidence.js');
+  const folder = workspace();
+  const checkout = path.join(folder, 'input/repository');
+  fs.mkdirSync(checkout);
+  fs.mkdirSync(path.join(folder, 'output'));
+  const git = async (args: string[], input = '') => {
+    const result = await runProcess('git', args, checkout, input, 10000);
+    expect(result.code).toBe(0);
+    return result.stdout.trim();
+  };
+  await git(['init', '--quiet']);
+  const quote = 'export const implementation = true;';
+  const blob = await git(['hash-object', '-w', '--stdin'], quote);
+  const entries = ['core.ts', ...Array.from({ length: 20000 }, (_, i) => `${String(i).padStart(5, '0')}-${'implementation'.repeat(5)}.ts`)];
+  expect(entries.join('\0').length).toBeGreaterThan(1024 * 1024);
+  const tree = await git(['mktree'], entries.map(file => `100644 blob ${blob}\t${file}\n`).join(''));
+  const sha = await git(['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit-tree', tree], 'Large tree\n');
+  fs.writeFileSync(path.join(checkout, 'core.ts'), quote);
+  fs.writeFileSync(path.join(folder, 'output/evidence.json'), JSON.stringify({ complete: true, commit: sha, questions: ['How does the core work?'], citations: [{ claim: 'Core', file: 'core.ts', start_line: 1, end_line: 1, quote }] }));
+  expect(() => validateRepositoryEvidence({ url: repositoryUrl, commit: sha }, folder, `[Core](${repositoryUrl}/blob/${sha}/core.ts#L1)`)).not.toThrow();
+});
