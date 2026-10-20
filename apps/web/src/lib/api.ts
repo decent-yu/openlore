@@ -147,7 +147,7 @@ export const api = {
   saveReportPlan: (data: Omit<ReportPlan, 'id'> & { id?: string }) => request<ReportPlan>(data.id ? `/reports/${data.id}` : '/reports', { method: data.id ? 'PUT' : 'POST', body: JSON.stringify(data) }),
   deleteReportPlan: (id: string) => request<{ ok: boolean }>(`/reports/${id}`, { method: 'DELETE' }),
   previewReport: (id: string) => request<ReportPreview>(`/reports/${id}/preview`),
-  sendReport: (id: string) => request<{ ok: boolean; state: string; message: string }>(`/reports/${id}/send`, { method: 'POST' }),
+  sendReport: (id: string) => request<{ ok: boolean; state: string; message: string }>(`/reports/${id}/send`, { method: 'POST', body: JSON.stringify({ force: true }) }),
 
   listExecutionLogs: (filters: {run_id?:string;job_id?:string;log_id?:string;status?:string;task_type?:string;search?:string;page?:number} = {}) => {
     const params=new URLSearchParams();

@@ -71,9 +71,38 @@ export function renderReportCardTitle(
 
 /** Shared by the outbound Feishu/Lark payload and the browser simulation. */
 export function buildFeishuCard(title: string, markdown: string) {
+  // Card Markdown supports a different subset than the website's renderer.
+  // Use bold section labels for headings, leaving fenced code unchanged.
+  let fence: { marker: string; length: number } | undefined;
+  const content = markdown
+    .split(/\r?\n/)
+    .map((line) => {
+      const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (delimiter) {
+        const marker = delimiter[1][0];
+        if (!fence) fence = { marker, length: delimiter[1].length };
+        else if (
+          marker === fence.marker &&
+          delimiter[1].length >= fence.length &&
+          !delimiter[2].trim()
+        )
+          fence = undefined;
+        return line;
+      }
+      if (fence) return line;
+      return line.replace(
+        /^ {0,3}#{1,6}[ \t]+(.+?)\s*$/,
+        (_, heading: string) => {
+          const label = heading.replace(/[ \t]+#+$/, "");
+          return /^\*\*.*\*\*$/.test(label) ? label : `**${label}**`;
+        },
+      );
+    })
+    .join("\n");
   return {
-    config: { wide_screen_mode: true },
+    schema: "2.0",
+    config: { width_mode: "fill" },
     header: { title: { tag: "plain_text", content: title }, template: "blue" },
-    elements: [{ tag: "div", text: { tag: "lark_md", content: markdown } }],
+    body: { elements: [{ tag: "markdown", content }] },
   } as const;
 }

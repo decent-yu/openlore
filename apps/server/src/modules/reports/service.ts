@@ -252,9 +252,9 @@ export class ReportService {
             ? [...entries.values()]
                 .map(
                   (entry) =>
-                    `- [${entry.title}](${readingUrl(entry) || "#"})${entry.summary ? `\n  ${entry.summary}` : ""}`,
+                    `- [${entry.title}](${readingUrl(entry) || "#"})${entry.summary ? `  \n  ${entry.summary}` : ""}`,
                 )
-                .join("\n")
+                .join("\n\n")
             : status === "succeeded"
               ? "本次暂无新完成的研报。"
               : "等待任务成功完成归档。"),
@@ -297,6 +297,7 @@ export class ReportService {
 
   async send(
     id: string,
+    options: { force?: boolean } = {},
   ): Promise<{ ok: boolean; state: string; message: string }> {
     const config = await this.getPlan(id);
     const planId = config.id;
@@ -347,7 +348,7 @@ export class ReportService {
         .from(deliveriesTable)
         .where(eq(deliveriesTable.batchId, batchId))
         .all();
-      if (prior.some((delivery) => delivery.status === "sent"))
+      if (!options.force && prior.some((delivery) => delivery.status === "sent"))
         return {
           ok: true,
           state: "sent",
@@ -359,7 +360,7 @@ export class ReportService {
       ).length;
       const response = await GenericWebhookSender.send(url, {
         event: "daily_push.completed",
-        event_id: batchId,
+        event_id: options.force ? `${batchId}_${crypto.randomUUID()}` : batchId,
         status: "success",
         summary,
         card_title: preview.card_title,

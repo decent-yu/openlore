@@ -7,13 +7,22 @@ describe('API request bodies', () => {
     const fetch = vi.fn().mockResolvedValue({ok:true,json:async()=>({})});
     vi.stubGlobal('fetch',fetch);
     await api.triggerGroupRun('task');
-    await api.sendReport('report');
     await api.pollAllSources();
     for (const [, options] of fetch.mock.calls) {
       expect(options.method).toBe('POST');
       expect(options.body).toBeUndefined();
       expect(new Headers(options.headers).has('content-type')).toBe(false);
     }
+  });
+  it('explicitly allows repeated manual report sends', async () => {
+    const fetch = vi.fn().mockResolvedValue({ok:true,json:async()=>({})});
+    vi.stubGlobal('fetch',fetch);
+    await api.sendReport('report');
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('/api/v1/reports/report/send');
+    expect(options.method).toBe('POST');
+    expect(new Headers(options.headers).get('content-type')).toBe('application/json');
+    expect(JSON.parse(options.body)).toEqual({force:true});
   });
   it('labels requests with a JSON body correctly', async () => {
     const fetch = vi.fn().mockResolvedValue({ok:true,json:async()=>({})});

@@ -10,6 +10,7 @@ import {
   renderReportTemplate,
 } from "@openlore/contracts";
 import { ReportTemplateEditor } from "../features/reports/ReportTemplateEditor.js";
+import { FeishuCardPreview } from "../features/reports/FeishuCardPreview.js";
 
 it("shows the editable template, supported variables and generated preview without AI controls", () => {
   const html = renderToStaticMarkup(
@@ -109,4 +110,15 @@ it("shows an invalid-template error instead of rendering unsupported variables",
   );
   expect(html).toContain('role="alert"');
   expect(html).toContain("修正模板后显示示例预览");
+});
+
+it("previews the same card Markdown heading, list and links that are sent to Feishu", () => {
+  const html = renderToStaticMarkup(<FeishuCardPreview title="技术知识汇报" markdown={'### Agent 相关知识\n\n- [评测实践](https://wiki.example.com/agent/research)  \n  面向健康辅导的评测架构参考。'} />);
+  expect(html).toContain('<strong>Agent 相关知识</strong>');
+  expect(html).toContain('<ul>');
+  expect(html).toContain('<li>');
+  expect(html).toContain('<br/>');
+  expect(html).toContain('href="https://wiki.example.com/agent/research"');
+  expect(html).toContain('面向健康辅导的评测架构参考。');
+  expect(html).not.toContain('### Agent');
 });

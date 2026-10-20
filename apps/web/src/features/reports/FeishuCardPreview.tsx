@@ -36,7 +36,7 @@ export function FeishuCardPreview({
             ),
           }}
         >
-          {card.elements[0].text.content}
+          {card.body.elements[0].content}
         </ReactMarkdown>
       </div>
     </section>

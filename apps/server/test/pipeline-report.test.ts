@@ -336,6 +336,40 @@ describe('Task execution and independent multi-task reports', () => {
     expect(preview.summary).not.toContain('Summary');
   });
 
+  it('allows manual repeats with unique event IDs while scheduled delivery still skips the day', async () => {
+    seedRun('repeat-report-run', 'agent', 'succeeded', 'article');
+    await report.savePlan({id: 'repeat-report', name: '可重复测试日报', enabled: false, pipeline_ids: ['agent'], notification_connection_id: 'channel'});
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+    const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({status: 'sent'});
+    expect((await report.send('repeat-report', {force: true})).state).toBe('sent');
+    expect((await report.send('repeat-report', {force: true})).state).toBe('sent');
+    expect(sender).toHaveBeenCalledTimes(2);
+    expect(sender.mock.calls[0][1].event_id).not.toBe(sender.mock.calls[1][1].event_id);
+    const records = getSqliteDatabase().prepare("SELECT batch_id,status FROM deliveries WHERE group_id='repeat-report'").all() as Array<{batch_id: string; status: string}>;
+    expect(records).toHaveLength(2);
+    expect(records[0].batch_id).toBe(records[1].batch_id);
+    expect((await report.send('repeat-report')).message).toContain('未重复推送');
+    expect(sender).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not bypass readiness or the in-flight send lock for manual repeat sends', async () => {
+    seedRun('repeat-waiting-run', 'agent', 'running', 'article');
+    await report.savePlan({id: 'repeat-waiting', name: '测试等待', enabled: false, pipeline_ids: ['agent'], notification_connection_id: 'channel'});
+    const sender = vi.spyOn(GenericWebhookSender, 'send');
+    expect((await report.send('repeat-waiting', {force: true})).state).toBe('waiting');
+    expect(sender).not.toHaveBeenCalled();
+    seedRun('repeat-ready-run', 'agent', 'succeeded', 'ready-article');
+    getSqliteDatabase().prepare("DELETE FROM runs WHERE id='repeat-waiting-run'").run();
+    let finish!: (value: {status: 'sent'}) => void;
+    sender.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+    const first = report.send('repeat-waiting', {force: true});
+    await vi.waitFor(() => expect(sender).toHaveBeenCalledTimes(1));
+    expect((await report.send('repeat-waiting', {force: true})).message).toBe('汇报正在发送中');
+    finish({status: 'sent'});
+    expect((await first).state).toBe('sent');
+  });
+
   it('checks task schedules while a source request is still running and does not re-trigger within the minute', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-16T00:00:00Z'));
