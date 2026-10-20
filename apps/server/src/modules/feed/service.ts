@@ -155,7 +155,7 @@ export class FeedService {
       let summary = "";
       if (assessment) {
         try {
-          summary = JSON.parse(assessment.result_json).summary || "";
+          summary = JSON.parse(assessment.result_json).positioning || "";
         } catch {}
       }
       const sources = db

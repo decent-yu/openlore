@@ -67,7 +67,7 @@ it("does not cap published results by the per-run research quota", async () => {
   expect(feed.deep_articles).toHaveLength(2);
   expect(feed.stats.deep_analyzed_count).toBe(2);
 });
-it("includes the original publication time and deduplicated collection source names", async () => {
+it("includes the short introduction, original publication time, and deduplicated collection source names", async () => {
   report("report", "article", "2026-10-19T01:00:00Z");
   db.exec(`INSERT INTO sources(id,name,url) VALUES
     ('source','Cloudflare Blog','https://blog.cloudflare.com'),
@@ -75,7 +75,19 @@ it("includes the original publication time and deduplicated collection source na
     UPDATE articles SET published_at='2026-10-18T19:00:00Z' WHERE id='article';
     INSERT INTO source_items(id,source_id,article_id) VALUES
     ('duplicate','source','article'),('other','other-source','article')`);
+  db.prepare(
+    "UPDATE articles SET latest_revision='rev' WHERE id='article'",
+  ).run();
+  db.prepare(
+    "INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article','rev','succeeded',?,'2026-10-19T00:00:00Z')",
+  ).run(
+    JSON.stringify({
+      positioning: "短篇评论，讨论 AI 编程工具对职业乐趣的影响。",
+      summary: "这是详细摘要，不应显示在首页文章卡片中。",
+    }),
+  );
   const article = (await feedService.getDailyFeed()).deep_articles[0];
+  expect(article.summary).toBe("短篇评论，讨论 AI 编程工具对职业乐趣的影响。");
   expect(article.published_at).toBe("2026-10-18T19:00:00Z");
   expect(article.sources).toEqual([
     { id: "source", name: "Cloudflare Blog" },

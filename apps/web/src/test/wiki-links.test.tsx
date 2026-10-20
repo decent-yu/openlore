@@ -88,7 +88,7 @@ it("links research titles directly to Wiki and moves secondary links into the ca
     </QueryClientProvider>,
   );
   expect(html.match(new RegExp(`href="${base}/research"`, "g"))).toHaveLength(
-    1,
+    2,
   );
   expect(html).toContain("更多链接：Wiki research title");
   expect(html).not.toContain(`href="${base}/article"`);

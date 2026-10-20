@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   BookOpen,
   Heart,
@@ -15,8 +13,6 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { api } from "../../lib/api.js";
 import { Button } from "../../components/ui/button.js";
-import { WikiReadingLinks } from "../../components/WikiReadingLinks.js";
-import { useDialog } from "../../lib/useDialog.js";
 import {
   Tooltip,
   TooltipContent,
@@ -32,13 +28,6 @@ export function DailyFeedPage() {
   });
   const timezone = settings?.timezone || "Asia/Shanghai";
   const [date, setDate] = useState("");
-  const [report, setReport] = useState<{
-    title: string;
-    markdown: string;
-    wikiUrl?: string;
-    articleUrl?: string;
-  } | null>(null);
-  useDialog(Boolean(report), () => setReport(null));
   const {
     data: feed,
     isLoading,
@@ -155,7 +144,7 @@ export function DailyFeedPage() {
               <section
                 key={group.id}
                 aria-labelledby={`feed-group-${group.id}`}
-                className="space-y-4"
+                className="@container space-y-4"
               >
                 <header className="flex items-center gap-3">
                   <h3
@@ -172,7 +161,7 @@ export function DailyFeedPage() {
                     className="h-px flex-1 bg-neutral-200"
                   />
                 </header>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-4">
+                <div className="grid grid-cols-1 gap-4 @min-[35rem]:grid-cols-2 @min-[53rem]:grid-cols-3">
                   {group.articles.map((article) => (
                     <article
                       key={`${article.group_id}:${article.id}`}
@@ -289,21 +278,27 @@ export function DailyFeedPage() {
                             已归档
                           </span>
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                setReport({
-                                  title: article.title,
-                                  markdown: article.research!.report_markdown,
-                                  wikiUrl: article.research?.wiki_url,
-                                  articleUrl: article.wiki_url,
-                                })
-                              }
-                            >
-                              <BookOpen className="mr-1 h-3 w-3" />
-                              阅读研报
-                            </Button>
+                            {article.research?.wiki_url ? (
+                              <a
+                                href={article.research.wiki_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium shadow-sm transition-colors hover:bg-neutral-100"
+                              >
+                                <BookOpen className="mr-1 h-3 w-3" />
+                                阅读研报
+                              </a>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled
+                                title="暂无 Wiki 阅读链接"
+                              >
+                                <BookOpen className="mr-1 h-3 w-3" />
+                                阅读研报
+                              </Button>
+                            )}
                             {(article.original_url ||
                               article.wiki_url ||
                               article.research?.wiki_url ||
@@ -367,38 +362,6 @@ export function DailyFeedPage() {
             ))}
           </div>
         </TooltipProvider>
-      )}
-      {report && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={report.title}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-neutral-50 p-4">
-              <h3 className="font-semibold">{report.title}</h3>
-              <div className="flex gap-3">
-                <WikiReadingLinks
-                  researchUrl={report.wikiUrl}
-                  articleUrl={report.articleUrl}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setReport(null)}
-                >
-                  关闭
-                </Button>
-              </div>
-            </header>
-            <div className="prose prose-sm max-w-none overflow-y-auto p-6">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {report.markdown}
-              </ReactMarkdown>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
