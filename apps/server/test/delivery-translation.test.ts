@@ -118,9 +118,14 @@ it("archives original, full Chinese translation and one shared image with correc
   expect(assets).toHaveLength(1);
   expect(Buffer.from(assets[0].content_bytes!, "base64")).toEqual(image);
   expect(bundle.assets).toHaveLength(1);
+  const directory = bundle.entries[0].directory;
+  expect(directory).toMatch(/^articles\/\d{8}-recovery$/);
+  expect(chinese.path).toBe(`docs/task/${directory}/article-zh-CN.md`);
   expect(
-    decode(bundle.files.find((f) => /\/\d{8}-\d{2}\/README.md$/.test(f.path))!),
-  ).toContain("[简体中文](01-recovery/article-zh-CN.md)");
+    decode(
+      bundle.files.find((f) => /\/batches\/\d{8}-\d{2}\.md$/.test(f.path))!,
+    ),
+  ).toContain(`[简体中文](../${directory}/article-zh-CN.md)`);
   const manifest = JSON.parse(
     decode(bundle.files.find((f) => f.path.endsWith("/manifest.json"))!),
   );

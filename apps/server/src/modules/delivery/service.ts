@@ -13,8 +13,19 @@ import type {
   ResearchTask,
   StructuredEntry,
 } from "@openlore/contracts";
-import { getAppPaths } from "../../infrastructure/config/paths.js";
-import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
+import {
+  getDb,
+  getSqliteDatabase,
+} from "../../infrastructure/persistence/sqlite/db.js";
+import { ManifestSchema } from "@openlore/contracts";
+import {
+  articleSlug,
+  articleOverview,
+  archiveDate,
+  markdownFile,
+  navigationFiles,
+  finalizeManifest,
+} from "./archive-layout.js";
 import {
   articlesTable,
   articleRevisionsTable,
@@ -34,13 +45,13 @@ import {
 
 function buildArticleMarkdown(
   entry: StructuredEntry,
-  research?: ResearchTask,
+  hasResearch: boolean,
 ): string {
   return (
     `# ${entry.title}\n\n` +
     `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
     `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
-    (research ? `> **深度调研**: [查看专题调研报告](research.md)  \n` : "") +
+    (hasResearch ? `> **深度调研**: [查看专题调研报告](research.md)  \n` : "") +
     `> **标签**: ${entry.tags.join(", ")}\n\n` +
     `---\n\n` +
     `## AI 导读\n\n${entry.summary}\n\n` +
@@ -50,6 +61,37 @@ function buildArticleMarkdown(
 }
 
 export class DeliveryService {
+  private loadManifest(group: Group): Manifest {
+    const rows = getSqliteDatabase()
+      .prepare(
+        `
+      SELECT b.bundle_json FROM artifact_bundles b
+      JOIN deliveries d ON d.batch_id=b.batch_id AND d.group_id=b.group_id
+      WHERE b.group_id=? AND d.target_kind='github' AND d.status IN ('updated','unchanged')
+      ORDER BY d.created_at DESC, d.rowid DESC
+    `,
+      )
+      .all(group.id) as Array<{ bundle_json: string }>;
+    const manifestPath = `${group.route.base_path}/.openlore/manifest.json`;
+    for (const row of rows) {
+      const bundle = JSON.parse(row.bundle_json) as ArtifactBundle;
+      const file = bundle.files.find((file) => file.path === manifestPath);
+      if (file?.content_bytes)
+        return ManifestSchema.parse(
+          JSON.parse(
+            Buffer.from(file.content_bytes, "base64").toString("utf8"),
+          ),
+        );
+    }
+    return {
+      group_id: group.id,
+      article_locations: {},
+      collection_locations: {},
+      delivered_batches: [],
+      managed_files: {},
+    };
+  }
+
   async allocateCollectionSequence(
     groupId: string,
     timezone: string = "Asia/Shanghai",
@@ -98,9 +140,8 @@ export class DeliveryService {
   }): Promise<{ bundle: ArtifactBundle; syncResult: RepositorySyncResult }> {
     const { group, runId, entries, researchTasks = [] } = options;
     const db = getDb();
-    const paths = getAppPaths();
-    const batchId = `batch_${Date.now()}`;
-    const basePath = group.route.base_path; // e.g. "docs/agent-leaning"
+    const batchId = `batch_${crypto.randomUUID()}`;
+    const basePath = group.route.base_path; // e.g. "docs/agent-learning"
 
     if (entries.length === 0) {
       // Zero new entries = zero files = zero empty commit
@@ -125,12 +166,15 @@ export class DeliveryService {
       };
     }
 
+    const manifest = this.loadManifest(group);
+
     // Complete and validate every translation before allocating archive locations or publishing.
     const articles: Array<{ original: string; chinese: string }> = [];
     for (const entry of entries) {
       const original = buildArticleMarkdown(
         entry,
-        researchTasks.find((task) => task.article_id === entry.article_id),
+        researchTasks.some((task) => task.article_id === entry.article_id) ||
+          !!manifest.article_locations[entry.article_id]?.has_research,
       );
       articles.push({
         original,
@@ -153,31 +197,60 @@ export class DeliveryService {
     const bundleAssets: ArtifactBundleAsset[] = [];
     const articleEntries: ArtifactBundle["entries"] = [];
 
-    // Map manifest locations
-    const manifestArticleLocations: Record<
-      string,
-      { collection_id: string; directory: string; slug: string }
-    > = {};
+    const now = new Date().toISOString();
 
     // 2. Process each article
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      const order = String(i + 1).padStart(2, "0");
-      const articleDirName = `${order}-${entry.slug}`;
-      const articleRelDir = `${dateSequence}/${articleDirName}`;
+      const existing = manifest.article_locations[entry.article_id];
+      let slug = existing?.slug || articleSlug(entry.slug || entry.title);
+      let articleRelDir =
+        existing?.directory ||
+        `articles/${archiveDate(now, group.timezone)}-${slug}`;
+      // Two distinct sources may have the same title. Never overwrite their directories.
+      const occupied = db
+        .select()
+        .from(articleLocationsTable)
+        .where(eq(articleLocationsTable.groupId, group.id))
+        .all();
+      if (
+        !existing &&
+        occupied.some(
+          (location) =>
+            location.articleId !== entry.article_id &&
+            location.directory === articleRelDir,
+        )
+      ) {
+        slug += `-${crypto.createHash("sha256").update(entry.article_id).digest("hex").slice(0, 12)}`;
+        articleRelDir = `articles/${archiveDate(now, group.timezone)}-${slug}`;
+      }
       const articleFullPath = `${basePath}/${articleRelDir}`;
-
+      const research = researchTasks.find(
+        (task) => task.article_id === entry.article_id,
+      );
+      const hasResearch = !!research || !!existing?.has_research;
       articleEntries.push({
         article_id: entry.article_id,
-        slug: entry.slug,
+        slug,
         directory: articleRelDir,
       });
-
-      manifestArticleLocations[entry.article_id] = {
-        collection_id: collectionId,
+      manifest.article_locations[entry.article_id] = {
+        collection_id: existing?.collection_id || collectionId,
         directory: articleRelDir,
-        slug: entry.slug,
+        slug,
+        title: entry.title,
+        original_url: entry.original_url || "",
+        tags: entry.tags,
+        collected_at: existing?.collected_at || now,
+        updated_at: now,
+        has_research: hasResearch,
       };
+      bundleFiles.push(
+        markdownFile(
+          `${articleFullPath}/README.md`,
+          articleOverview(manifest.article_locations[entry.article_id], true),
+        ),
+      );
 
       // Record in article_locations table
       db.insert(articleLocationsTable)
@@ -187,26 +260,19 @@ export class DeliveryService {
           articleId: entry.article_id,
           collectionId,
           orderSeq: i + 1,
-          slug: entry.slug,
+          slug,
           directory: articleRelDir,
           createdAt: new Date().toISOString(),
         })
         .run();
 
-      const research = researchTasks.find(
-        (task) => task.article_id === entry.article_id,
-      );
       for (const [filename, content] of [
         ["article.md", articles[i].original],
         [CHINESE_ARTICLE_FILENAME, articles[i].chinese],
       ]) {
-        bundleFiles.push({
-          path: `${articleFullPath}/${filename}`,
-          content_bytes: Buffer.from(content, "utf-8").toString("base64"),
-          encoding: "utf-8",
-          sha256: crypto.createHash("sha256").update(content).digest("hex"),
-          media_type: "text/markdown",
-        });
+        bundleFiles.push(
+          markdownFile(`${articleFullPath}/${filename}`, content),
+        );
       }
 
       if (research) {
@@ -256,95 +322,38 @@ export class DeliveryService {
       }
     }
 
-    // 3. Batch navigation README.md
-    const batchReadmeContent =
-      `# 任务批次：${dateSequence}\n\n` +
-      `生成时间：${new Date().toISOString()}  \n` +
-      `本批共包含 ${entries.length} 篇调研文章：\n\n` +
-      entries
-        .map(
-          (e, idx) =>
-            `- [${e.title}](${String(idx + 1).padStart(2, "0")}-${e.slug}/article.md)` +
-            ` ([简体中文](${String(idx + 1).padStart(2, "0")}-${e.slug}/${CHINESE_ARTICLE_FILENAME}))` +
-            (researchTasks.some((task) => task.article_id === e.article_id)
-              ? ` ([调研报告](${String(idx + 1).padStart(2, "0")}-${e.slug}/research.md))`
-              : ""),
-        )
-        .join("\n") +
-      "\n";
-
-    const batchReadmeSha = crypto
-      .createHash("sha256")
-      .update(batchReadmeContent)
-      .digest("hex");
-    bundleFiles.push({
-      path: `${basePath}/${dateSequence}/README.md`,
-      content_bytes: Buffer.from(batchReadmeContent, "utf-8").toString(
-        "base64",
+    const batchPath = `${basePath}/batches/${dateSequence}.md`;
+    manifest.collection_locations[collectionId] = {
+      path: batchPath,
+      date_sequence: dateSequence,
+      created_at: now,
+      article_ids: entries.map((entry) => entry.article_id),
+    };
+    bundleFiles.push(
+      markdownFile(
+        batchPath,
+        `# 采集批次：${dateSequence}\n\n生成时间：${now}  \n本批共包含 ${entries.length} 篇文章：\n\n` +
+          articleEntries
+            .map((entry) => {
+              const article = manifest.article_locations[entry.article_id];
+              return (
+                `- [${article.title}](../${entry.directory}/README.md)` +
+                ` · [简体中文](../${entry.directory}/${CHINESE_ARTICLE_FILENAME})` +
+                (article.has_research
+                  ? ` · [调研](../${entry.directory}/research.md)`
+                  : "")
+              );
+            })
+            .join("\n") +
+          "\n\n[返回知识首页](../README.md)\n",
       ),
-      encoding: "utf-8",
-      sha256: batchReadmeSha,
-      media_type: "text/markdown",
-    });
-
-    // 5. Root group README.md
-    const groupReadmeContent =
-      `# ${group.name}\n\n` +
-      `${group.description}\n\n` +
-      `## 历史任务批次\n\n` +
-      `- [批次 ${dateSequence}](${dateSequence}/README.md)（${entries.length} 篇文章）\n`;
-
-    const groupReadmeSha = crypto
-      .createHash("sha256")
-      .update(groupReadmeContent)
-      .digest("hex");
-    bundleFiles.push({
-      path: `${basePath}/README.md`,
-      content_bytes: Buffer.from(groupReadmeContent, "utf-8").toString(
-        "base64",
-      ),
-      encoding: "utf-8",
-      sha256: groupReadmeSha,
-      media_type: "text/markdown",
-    });
-
-    // Retries may encounter the same media path; send one final version per repository path.
+    );
+    bundleFiles.push(...navigationFiles(group, manifest, bundleFiles));
+    // Retries may encounter the same media path; send one final version per path.
     const uniqueFiles = new Map(bundleFiles.map((file) => [file.path, file]));
     bundleFiles.splice(0, bundleFiles.length, ...uniqueFiles.values());
-    // 6. Manifest .openlore/manifest.json
-    const manifest: Manifest = {
-      group_id: group.id,
-      article_locations: manifestArticleLocations,
-      collection_locations: {
-        [collectionId]: { directory: `${basePath}/${dateSequence}` },
-      },
-      delivered_batches: [batchId],
-      managed_files: Object.fromEntries(
-        bundleFiles.map((f) => [
-          f.path,
-          {
-            sha256: f.sha256,
-            media_type: f.media_type,
-            size: f.content_bytes
-              ? Buffer.from(f.content_bytes, "base64").length
-              : 0,
-          },
-        ]),
-      ),
-    };
-
-    const manifestJson = JSON.stringify(manifest, null, 2);
-    const manifestSha = crypto
-      .createHash("sha256")
-      .update(manifestJson)
-      .digest("hex");
-    bundleFiles.push({
-      path: `${basePath}/.openlore/manifest.json`,
-      content_bytes: Buffer.from(manifestJson, "utf-8").toString("base64"),
-      encoding: "utf-8",
-      sha256: manifestSha,
-      media_type: "application/json",
-    });
+    manifest.delivered_batches.push(batchId);
+    finalizeManifest(basePath, manifest, bundleFiles);
 
     // 7. Save artifact bundle
     const bundle: ArtifactBundle = {
@@ -467,6 +476,7 @@ export class DeliveryService {
           eq(articleLocationsTable.articleId, task.article_id),
         ),
       )
+      .orderBy(desc(articleLocationsTable.createdAt))
       .get();
 
     if (!loc) {
@@ -572,6 +582,82 @@ export class DeliveryService {
               sha256: asset.sha256,
             });
           }
+        }
+
+        const manifest = this.loadManifest(group);
+        const article = manifest.article_locations[task.article_id];
+        if (article) {
+          article.has_research = true;
+          article.updated_at = new Date().toISOString();
+          const files: ArtifactBundleFile[] = filesToSync.map((file) => ({
+            path: file.path,
+            content_bytes: file.content,
+            encoding: file.encoding,
+            sha256: file.sha256,
+            media_type: file.path.endsWith(".md")
+              ? "text/markdown"
+              : "application/octet-stream",
+          }));
+          files.push(
+            markdownFile(
+              `${basePath}/${article.directory}/README.md`,
+              articleOverview(
+                article,
+                !!manifest.managed_files[
+                  `${basePath}/${article.directory}/${CHINESE_ARTICLE_FILENAME}`
+                ],
+              ),
+            ),
+            ...navigationFiles(group, manifest),
+          );
+          const batchId = `research_${task.id}`;
+          if (!manifest.delivered_batches.includes(batchId))
+            manifest.delivered_batches.push(batchId);
+          finalizeManifest(basePath, manifest, files);
+          filesToSync.splice(
+            0,
+            filesToSync.length,
+            ...files.map((file) => ({
+              path: file.path,
+              content: file.content_bytes!,
+              encoding: file.encoding,
+              sha256: file.sha256,
+            })),
+          );
+          const bundle: ArtifactBundle = {
+            group_id: group.id,
+            run_id: batchId,
+            collection_id: loc.collectionId,
+            batch_id: batchId,
+            snapshot_ref: `snap_${batchId}`,
+            kind: "research",
+            entries: [
+              {
+                article_id: task.article_id,
+                slug: article.slug,
+                directory: article.directory,
+              },
+            ],
+            assets: [],
+            files,
+          };
+          db.insert(artifactBundlesTable)
+            .values({
+              id: `bun_${batchId}`,
+              groupId: group.id,
+              runId: batchId,
+              collectionId: loc.collectionId,
+              batchId,
+              snapshotRef: bundle.snapshot_ref,
+              kind: "research",
+              bundleJson: JSON.stringify(bundle),
+              createdAt: new Date().toISOString(),
+            })
+            .onConflictDoUpdate({
+              target: artifactBundlesTable.id,
+              set: { bundleJson: JSON.stringify(bundle) },
+            })
+            .run();
         }
 
         const ghRes = await GitHubClient.syncFiles({

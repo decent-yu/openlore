@@ -31,16 +31,8 @@ export interface ProcessedBatchResult {
     unreviewed: number;
   };
 }
-export function slugify(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .slice(0, 40) || "article"
-  );
-}
+export { articleSlug as slugify } from "../delivery/archive-layout.js";
+import { articleSlug as slugify } from "../delivery/archive-layout.js";
 const MATERIAL_LIMIT = 48000;
 type Candidate = {
   article_id: string;

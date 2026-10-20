@@ -4,23 +4,27 @@
 
 ## 文件结构
 
-每条流水线配置仓库、分支与相对目录 `base_path`（如 `docs/agent-learning`）。批次按任务时区的日期和当天序号组织：
+每条流水线配置仓库、分支与相对目录 `base_path`（如 `docs/agent-learning`）。文章平铺，目录使用首次收录日期（`YYYYMMDD`）加语义名称：
 
 ```text
 <base_path>/
-├── README.md
-├── .openlore/manifest.json
-└── 20261016-01/
-    ├── README.md
-    ├── 01-article-slug/
-    │   ├── article.md          # 原文整理
-    │   ├── article-zh-CN.md    # 简体中文译文
-    │   ├── research.md          # 完成调研时提供
-    │   └── assets/              # 成功归档的图片与生成配图
-    └── 02-another-article/
-        ├── article.md
-        └── article-zh-CN.md
+├── README.md                         # 最近收录、最近更新、采集批次
+├── articles/
+│   └── 20261020-article-slug/
+│       ├── README.md                 # 原文、中文、研报、来源与收录时间
+│       ├── article.md                # 原文整理
+│       ├── article-zh-CN.md          # 简体中文译文
+│       ├── research.md               # 完成调研时提供
+│       └── assets/                   # 成功归档的图片与生成配图
+├── batches/
+│   └── 20261020-01.md                # 链接到文章，不复制正文
+└── .openlore/manifest.json
+
 ```
+
+日期按流水线时区计算，表示首次收录时间，原文发布日期另外展示。重新调研、跨日更新和标题变更沿用已发布目录，仅更新页面中的更新时间。同一天同名的不同文章使用标识摘要消歧。目录支持中文和完整词边界，现有文章可使用人工精简的语义名称。
+
+首页分别按首次收录时间和内容更新时间倒序展示文章，累计保留已成功归档的文章与批次，失败交付不进入后续索引。不生成自动主题分类目录。追加研报时同步更新文章概览和首页。
 
 流水线不生成批次 `digest.md`。简报由独立的[汇报方案](06-reporting.md)生成并发送，不能混作每次文章归档的必选产物。
 
@@ -28,7 +32,7 @@
 
 - 无新调研产出时返回 `unchanged`，不生成文件或空提交。
 - 批次包含文章、本次完成研报和可用图片；成功下载的图片按哈希存储并重写为相对引用。下载失败不能声称“所有图片已永久保存”。
-- 每篇文章同时交付 `article.md` 与 `article-zh-CN.md`，批次目录提供中文入口。译文逐段翻译标题、导读和正文，保留原文结构、图片引用、链接目标与代码，两份文章共用同一份图片资源。
+- 每篇文章同时交付 `article.md` 与 `article-zh-CN.md`，文章概览、首页和批次索引提供中文入口。译文逐段翻译标题、导读和正文，保留原文结构、图片引用、链接目标与代码，两份文章共用同一份图片资源。
 - 译文使用自然、直白的中文，允许在同一文本节点内调整语序、将长句译成短句，保留原意、语气和适用限制；不增添术语定义、背景、例子或建议。已有中文与受保护内容保持不变，不套用调研文章的章节和配图模板。
 - 中文翻译使用流水线配置的 AI 执行器，执行记录标为“中文翻译”。翻译失败或结构校验不通过时停止本次归档；原文和完整翻译 Prompt 一致时，重试可复用已校验的译文，规则变化后重新翻译。历史已归档批次不会自动补译。
 - GitHub 客户端使用 Git Data API 构造 Blob、Tree、Commit 并更新 Ref；交付结果记录状态、变更路径、Commit 与错误信息。
@@ -40,8 +44,8 @@
 在“系统设置 → 外部集成与执行器 → GitHub 仓库连接”中配置 Wiki Base URL 与 Wiki 展示路由（仓库目录）。例如 Base URL 为 `https://wiki.mua5201314.com/raven/openlore-knowledge-vault`、目录为 `docs` 时：
 
 ```text
-docs/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research.md
-→ https://wiki.mua5201314.com/raven/openlore-knowledge-vault/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research
+docs/agent-learning/articles/20261015-deno-is-joining-cloudflare/research.md
+→ https://wiki.mua5201314.com/raven/openlore-knowledge-vault/agent-learning/articles/20261015-deno-is-joining-cloudflare/research
 ```
 
 移除完整目录前缀与 `.md`，按路径段编码后拼到 Base URL；目录留空表示仓库根目录，Base URL 留空关闭 Wiki 链接。目录外的文件不生成链接。

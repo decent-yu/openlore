@@ -21,6 +21,7 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
   async listResearchTasks(groupId?: string): Promise<ResearchTask[]> {
@@ -45,12 +46,7 @@ export class ResearchService {
         group_id: r.groupId,
         article_id: r.articleId,
         article_title: art?.title || "Untitled Article",
-        article_slug: (art?.title || "article")
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .slice(0, 40),
+        article_slug: articleSlug(art?.title || "article"),
         status: r.status as any,
         questions: JSON.parse(r.questionsJson || "[]"),
         evidence: JSON.parse(r.evidenceJson || "[]"),

@@ -507,16 +507,16 @@ describe('Task execution and independent multi-task reports', () => {
     expect(sync).toHaveBeenCalledTimes(1);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/01-article-1/research.md'),
+        /\/articles\/\d{8}-article-1\/research\.md$/.test(file.path),
       ),
     ).toBe(true);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/02-article-2/research.md'),
+        /\/articles\/\d{8}-article-2\/research\.md$/.test(file.path),
       ),
     ).toBe(false);
     const secondArticle = delivery.bundle.files.find((file) =>
-      file.path.endsWith('/02-article-2/article.md'),
+      /\/articles\/\d{8}-article-2\/article\.md$/.test(file.path),
     )!;
     expect(
       Buffer.from(secondArticle.content_bytes!, 'base64').toString(),
