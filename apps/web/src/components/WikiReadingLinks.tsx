@@ -3,20 +3,17 @@ import { ExternalLink } from "lucide-react";
 
 export function WikiReadingLinks({
   originalUrl,
-  articleUrl,
   researchUrl,
 }: {
   originalUrl?: string | null;
-  articleUrl?: string;
   researchUrl?: string;
 }) {
-  if (!originalUrl && !articleUrl && !researchUrl) return null;
+  if (!originalUrl && !researchUrl) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {[
         ["原文链接", originalUrl],
         ["Wiki 研报", researchUrl],
-        ["Wiki 正文", articleUrl],
       ].map(
         ([label, url]) =>
           url && (

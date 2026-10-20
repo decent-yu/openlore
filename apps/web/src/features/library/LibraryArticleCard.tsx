@@ -204,10 +204,9 @@ export function LibraryArticleCard({
           articleTitle={art.title}
         />
         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3">
-          {art.canonical_url || art.wiki_url || art.research?.wiki_url ? (
+          {art.canonical_url || art.research?.wiki_url ? (
             <WikiReadingLinks
               originalUrl={art.canonical_url}
-              articleUrl={art.wiki_url}
               researchUrl={art.research?.wiki_url}
             />
           ) : (

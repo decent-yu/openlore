@@ -225,7 +225,7 @@ export function useArticleActions() {
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <WikiReadingLinks
-                  articleUrl={viewingResearchArticle.wiki_url}
+                  originalUrl={viewingResearchArticle.canonical_url}
                   researchUrl={viewingResearchArticle.research.wiki_url}
                 />
                 <Button
