@@ -89,6 +89,9 @@ export class CollectionService {
     state: any,
     limit = 100,
   ): CollectionRequest {
+    const connectionId = source.capability_id === 'github_repository' ? source.options.github_connection_id : '';
+    const connection = connectionId ? getSqliteDatabase().prepare('SELECT credential_ref FROM repository_connections WHERE id=?').get(connectionId) as {credential_ref: string} | undefined : undefined;
+    if (connectionId && !connection) throw new Error('GitHub 读取连接不存在，请重新选择来源凭据');
     return {
       run_id: runId,
       source_id: source.id,
@@ -99,7 +102,8 @@ export class CollectionService {
       scope: { limit },
       state,
       options: source.options,
-      budget: { timeout_seconds: 20, max_requests: 10 },
+      credential_ref: connection?.credential_ref,
+      budget: { timeout_seconds: source.capability_id === 'github_repository' ? 60 : 20, max_requests: 10 },
     };
   }
 

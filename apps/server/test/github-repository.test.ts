@@ -15,6 +15,7 @@ import { skillsService } from "../src/modules/skills/service.js";
 import { AppScheduler } from "../src/modules/scheduler/scheduler.js";
 import { getPublishedWikiLinks } from "../src/modules/delivery/wiki-links.js";
 import { feedService } from "../src/modules/feed/service.js";
+import { settingsService } from "../src/modules/settings/service.js";
 
 beforeAll(() => initDatabase());
 const execute = vi.fn();
@@ -44,16 +45,14 @@ beforeEach(async () => {
     "sources",
   ])
     db.exec(`DELETE FROM ${table}`);
-  execute
-    .mockReset()
-    .mockImplementation(async () => ({
-      status: "success",
-      provider: "mock",
-      model: "mock",
-      durationMs: 1,
-      result:
-        "# 核心执行架构\n\n基于源码分析调用链与技术取舍。\n\n![](./assets/architecture.svg)",
-    }));
+  execute.mockReset().mockImplementation(async () => ({
+    status: "success",
+    provider: "mock",
+    model: "mock",
+    durationMs: 1,
+    result:
+      "# 核心执行架构\n\n基于源码分析调用链与技术取舍。\n\n![](./assets/architecture.svg)\n\n![](https://example.com/assets/remote.svg)",
+  }));
   vi.spyOn(ai, "getAIAdapterWithFallback").mockReturnValue({
     execute,
     testConnection: async () => ({ ok: true, message: "mock" }),
@@ -233,6 +232,9 @@ it("runs directly through research and archives numbered topics, source material
         file.path === "docs/xxx/stablyai@orca/articles/01-核心执行架构.md",
     ),
   ).toBe(true);
+  expect(Buffer.from(research.content, "base64").toString()).toContain(
+    "https://example.com/assets/remote.svg",
+  );
   expect(first.output.entries[0].document_url).toContain("01-");
   expect(first.output.entries[0].document_url).toMatch(/\.md$/);
   const links = getPublishedWikiLinks(
@@ -269,6 +271,77 @@ it("runs directly through research and archives numbered topics, source material
   ).toString();
   expect(index).toContain("01-核心执行架构.md");
   expect(index).toContain("02-工作区隔离机制.md");
+  const manifest = JSON.parse(
+    Buffer.from(
+      nextFiles.find(
+        (file) => file.path === "docs/xxx/.openlore/manifest.json",
+      )!.content,
+      "base64",
+    ).toString(),
+  );
+  expect(Object.keys(manifest.article_locations)).toHaveLength(2);
+  expect(manifest.managed_files).toHaveProperty([
+    "docs/xxx/stablyai@orca/01-核心执行架构.md",
+  ]);
+});
+
+it("uses connection credentials only for API reads and protects a connection referenced by a source", async () => {
+  await sourcesService.saveSource({
+    id: "orca",
+    name: "Orca",
+    url: "https://github.com/stablyai/orca",
+    options: { github_connection_id: "vault" },
+  });
+  expect((await run()).status).toBe("succeeded");
+  expect(SafeHttpClient.fetch).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer test" }),
+    }),
+  );
+  expect(JSON.stringify(execute.mock.calls)).not.toContain("Bearer test");
+  expect(
+    getSqliteDatabase()
+      .prepare("SELECT options_json FROM collection_runs")
+      .get(),
+  ).not.toHaveProperty("credential_ref");
+  await expect(
+    settingsService.deleteRepositoryConnection("vault"),
+  ).rejects.toThrow("正在使用该 GitHub 读取凭据");
+  await expect(
+    sourcesService.saveSource({
+      name: "Unknown",
+      url: "https://github.com/stablyai/orca",
+      capability_id: "github_repository",
+      options: { github_connection_id: "unknown" },
+    }),
+  ).rejects.toThrow("读取连接不存在");
+});
+
+it("keeps each repository on an independent archive sequence", async () => {
+  expect((await run()).status).toBe("succeeded");
+  await sourcesService.saveSource({
+    id: "another",
+    name: "Another",
+    url: "https://github.com/example/another",
+    capability_id: "github_repository",
+  });
+  await groupsService.saveGroup({
+    id: "study",
+    name: "仓库研读",
+    repository_connection_id: "vault",
+    base_path: "docs/xxx",
+    source_ids: ["orca", "another"],
+    deep_analysis_count: 1,
+  });
+  expect((await run()).status).toBe("succeeded");
+  expect(
+    vi
+      .mocked(GitHubClient.syncFiles)
+      .mock.calls[1][0].files.some(
+        (file) => file.path === "docs/xxx/example@another/01-核心执行架构.md",
+      ),
+  ).toBe(true);
 });
 
 it("reuses generated reports and numbering after a failed archive without exposing a failed Wiki publication", async () => {

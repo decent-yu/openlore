@@ -73,6 +73,8 @@ export class SourcesService {
       url = repository!.url;
     }
     const options = SourceOptionsSchema.parse(data.options ?? previous?.options ?? (capability === 'github_repository' ? { poll_interval_mins: 60 } : {}));
+    if (capability === 'github_repository' && options.github_connection_id)
+      z.string().refine(value => Boolean(getSqliteDatabase().prepare('SELECT id FROM repository_connections WHERE id=?').get(value)), 'GitHub 读取连接不存在').parse(options.github_connection_id);
     const record = {
       id,
       name,

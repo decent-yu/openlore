@@ -134,7 +134,7 @@ export class DeliveryService {
       const stem = articleRelDir.split('/').at(-1)!;
       const articlePath = study ? `${basePath}/${study.directory}/articles/${stem}.md` : `${articleFullPath}/article.md`;
       const researchPath = study ? `${articleFullPath}.md` : `${articleFullPath}/research.md`;
-      const reportContent = (value: string) => study ? value.replace(/(?:\.\/)?assets\//g, `./assets/${stem}/`) : value;
+      const reportContent = (value: string, prefix = './') => study ? value.replace(/(\]\()(?:\.\/)?assets\//g, `$1${prefix}assets/${stem}/`) : value;
 
       articleEntries.push({
         article_id: entry.article_id,
@@ -181,7 +181,7 @@ export class DeliveryService {
         `${entry.summary}\n\n` +
         `---\n\n` +
         `## 原文整理\n\n` +
-        `${study ? reportContent(entry.organized_markdown).replace(/\.\/assets\//g, '../assets/') : entry.organized_markdown}\n`;
+        `${study ? reportContent(entry.organized_markdown, '../') : entry.organized_markdown}\n`;
 
       const artMdSha = crypto
         .createHash("sha256")

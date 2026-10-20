@@ -5,6 +5,7 @@ import {
   type RepositoryStudy,
 } from "@openlore/contracts";
 import { SafeHttpClient } from "../../../../infrastructure/http/client.js";
+import { secretsStore } from "../../../../infrastructure/secrets/local_file/secrets_store.js";
 import type { CollectorAdapter } from "../../registry.js";
 
 type TreeFile = { path: string; type: string; sha: string; size?: number };
@@ -74,6 +75,21 @@ export class GithubRepositoryCollectorAdapter implements CollectorAdapter {
     ]);
     if (request.state?.day === day && request.state?.identity === identity)
       return { ...result, status: "not_modified" };
+    const token = request.credential_ref
+      ? secretsStore.getSecret(request.credential_ref)
+      : null;
+    if (request.credential_ref && !token)
+      return {
+        ...result,
+        status: "failed",
+        errors: [
+          {
+            code: "missing_credential",
+            message: "GitHub 读取凭据缺失，请检查仓库连接",
+            retryable: false,
+          },
+        ],
+      };
     const deadline = Date.now() + request.budget.timeout_seconds * 1000;
     const read = async (endpoint: string): Promise<any> => {
       if (
@@ -88,9 +104,11 @@ export class GithubRepositoryCollectorAdapter implements CollectorAdapter {
           headers: {
             Accept: "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           timeoutMs: Math.max(1, deadline - Date.now()),
-          maxBytes: 8 * 1024 * 1024,
+          maxBytes: endpoint.startsWith('git/trees/') ? 32 * 1024 * 1024 : 1024 * 1024,
+          maxRedirects: token ? 0 : 5,
         },
       );
       if (response.status !== 200)
