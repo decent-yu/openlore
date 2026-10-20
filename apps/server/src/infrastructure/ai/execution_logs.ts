@@ -137,6 +137,7 @@ export const executionLogs = {
     const log = this.get(id);
     if (!log) return;
     const origin = log.attempts.find(attempt => attempt.execution?.workspace === result.execution?.workspace);
+    if (origin && !origin.usage && result.usage) origin.usage = result.usage;
     const now = new Date().toISOString();
     const attempts: AIExecutionAttempt[] = [...log.attempts, {
       index: log.attempts.length + 1,

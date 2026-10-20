@@ -281,9 +281,10 @@ it('resolves the default branch on the executor, returns its actual Commit and p
 it('accepts a report even if the CLI exits with an error and no evidence file exists', async () => {
   vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
   const cli = path.join(root, 'saved-report-cli');
-  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('output/research.md','# Architecture\\nThe execution path is explained here.');process.exit(1);`, {mode:0o700});
-  const result = await executeInWorkspace({...request(), cli_path:cli});
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('output/research.md','# Architecture\\nThe execution path is explained here.');console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:3,cached_input_tokens:6}}));process.exit(1);`, {mode:0o700});
+  const result = await executeInWorkspace({...request(), provider:'codex_cli', cli_path:cli});
   expect(result.status).toBe('success');
+  expect(result.usage).toMatchObject({promptTokens:10,completionTokens:3,totalTokens:13,cachedTokens:6});
   expect(result.notice).toContain('已接纳保存的研报');
   expect(result.result).toContain('Architecture');
   expect(result.diagnostics?.exit_code).toBe(1);

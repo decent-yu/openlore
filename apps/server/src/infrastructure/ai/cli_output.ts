@@ -125,3 +125,22 @@ export function parseGeminiOutput(stdout: string): any {
   );
   return { response, stats: { models } };
 }
+
+
+/** Usage events are retained even when the process fails after writing its report. */
+export function parseCodexUsage(stdout: string): import('@openlore/contracts').ExecutionResult['usage'] {
+  let usage: import('@openlore/contracts').ExecutionResult['usage'];
+  for (const line of stdout.split('\n')) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type !== 'turn.completed' || !event.usage) continue;
+      usage ||= { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
+      usage.promptTokens! += event.usage.input_tokens || 0;
+      usage.completionTokens! += event.usage.output_tokens || 0;
+      usage.cachedTokens! += event.usage.cached_input_tokens || 0;
+      usage.totalTokens! += (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0);
+      if (typeof event.usage.reasoning_output_tokens === 'number') usage.reasoningTokens = (usage.reasoningTokens || 0) + event.usage.reasoning_output_tokens;
+    } catch { /* Incomplete and non-JSON lines remain in diagnostics. */ }
+  }
+  return usage;
+}

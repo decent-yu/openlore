@@ -13,7 +13,7 @@ import {
   type RepositoryCheckout,
 } from '@openlore/contracts';
 import { prepareRepositoryWorkspace, repositoryMaterial } from './repository_workspace.js';
-import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
+import { classifyProcessFailure, parseGeminiOutput, parseCodexUsage } from './cli_output.js';
 import {
   sessionBinding,
   resolveSessionWorkspace,
@@ -481,6 +481,7 @@ export async function executeInWorkspace(
           ),
       },
     );
+    if (request.provider === 'codex_cli') usage = parseCodexUsage(res.stdout);
     const diagnosticLimit = 512 * 1024;
     diagnostics = {
       stdout: res.stdout.slice(-diagnosticLimit),
@@ -521,6 +522,7 @@ export async function executeInWorkspace(
         repository,
         session,
         diagnostics,
+        usage,
       };
     if (res.timedOut && !savedReport)
       return {
@@ -532,6 +534,7 @@ export async function executeInWorkspace(
         repository,
         session,
         diagnostics,
+        usage,
         error: {
           code: 'timeout',
           message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}`,
@@ -547,6 +550,7 @@ export async function executeInWorkspace(
         repository,
         session,
         diagnostics,
+        usage,
         error: {
           code: 'cli_failed',
           message: `AI CLI 执行失败（退出码 ${res.code}），请查看本次尝试的标准输出与错误日志`,
@@ -563,27 +567,6 @@ export async function executeInWorkspace(
       if (!savedReport) {
         const text = fs.readFileSync(resultFile, 'utf8').trim();
         result = input.outputSchema ? JSON.parse(text) : text;
-      }
-      for (const line of res.stdout.split('\n')) {
-        try {
-          const event = JSON.parse(line);
-          if (event.type === 'turn.completed' && event.usage) {
-            usage ||= {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              cachedTokens: 0,
-            };
-            usage.promptTokens! += event.usage.input_tokens || 0;
-            usage.completionTokens! += event.usage.output_tokens || 0;
-            usage.cachedTokens! += event.usage.cached_input_tokens || 0;
-            usage.totalTokens! +=
-              (event.usage.input_tokens || 0) +
-              (event.usage.output_tokens || 0);
-          }
-        } catch {
-          /* Non-JSON CLI lines are retained in diagnostics. */
-        }
       }
     } else {
       let envelope: ReturnType<typeof parseGeminiOutput>;
@@ -665,6 +648,7 @@ export async function executeInWorkspace(
       repository,
       session,
       diagnostics,
+      usage,
       error: { code: 'execution_failed', message: error.message },
     };
   } finally {

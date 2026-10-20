@@ -22,6 +22,7 @@ import { sourcesService } from "../sources/service.js";
 import { groupsService } from "../groups/service.js";
 import { listPoolCandidates } from "../processing/candidates.js";
 import { collectResearchArtifacts, readRepositoryReport } from '../../infrastructure/ai/workspace_runner.js';
+import { parseCodexUsage } from "../../infrastructure/ai/cli_output.js";
 import { executionLogs } from '../../infrastructure/ai/execution_logs.js';
 import { articleSlug } from "../delivery/archive-layout.js";
 
@@ -135,9 +136,11 @@ export class ResearchService {
         if (!report) continue;
         let repository: ExecutionResult['repository'];
         try { repository = JSON.parse(fs.readFileSync(path.join(workspace, 'input/repository.json'), 'utf8')); } catch {}
+        let usage = attempt.usage;
+        if (!usage && attempt.provider === 'codex_cli' && fs.existsSync(path.join(workspace, 'events.log'))) usage = parseCodexUsage(fs.readFileSync(path.join(workspace, 'events.log'), 'utf8'));
         const result: ExecutionResult = {
           status: 'success', provider: attempt.provider, model: attempt.model, durationMs: 0,
-          result: report, repository, execution: attempt.execution,
+          result: report, repository, execution: attempt.execution, usage,
           artifacts: collectResearchArtifacts(path.join(workspace, 'output')),
           report_reused: true, notice: '复用已有研报，未重新调用 AI。',
         };
@@ -450,7 +453,10 @@ export class ResearchService {
     const finishedAt = new Date().toISOString();
     if (study) {
       const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim().slice(0, 160);
-      if (title) db.update(articlesTable).set({ title, updatedAt: finishedAt }).where(eq(articlesTable.id, articleId)).run();
+      if (title) {
+        db.update(articlesTable).set({ title, updatedAt: finishedAt }).where(eq(articlesTable.id, articleId)).run();
+        getSqliteDatabase().prepare('UPDATE ai_execution_logs SET article_title=? WHERE job_id=?').run(title, taskId);
+      }
     }
     db.update(researchTasksTable)
       .set({
