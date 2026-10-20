@@ -9,7 +9,9 @@ let db: ReturnType<typeof getSqliteDatabase>;
 beforeAll(async () => {
   initDatabase();
   db = getSqliteDatabase();
-  db.prepare("INSERT OR IGNORE INTO sources(id,name,url) VALUES ('source','Source','https://example.com/feed')").run();
+  db.prepare(
+    "INSERT OR IGNORE INTO sources(id,name,url) VALUES ('source','Source','https://example.com/feed')",
+  ).run();
   await groupsService.saveGroup({
     id: "task",
     name: "Task",
@@ -83,12 +85,18 @@ it("includes the short introduction, original publication time, and deduplicated
     "INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article','rev','succeeded',?,'2026-10-19T00:00:00Z')",
   ).run(
     JSON.stringify({
+      quality: 80,
+      tags: ["AI 编程"],
+      reason: "讨论职业体验变化。",
+      evidence_refs: ["编程作为逻辑解谜活动的职业乐趣及其可能丧失。"],
       positioning: "短篇评论，讨论 AI 编程工具对职业乐趣的影响。",
       summary: "这是详细摘要，不应显示在首页文章卡片中。",
     }),
   );
   const article = (await feedService.getDailyFeed()).deep_articles[0];
   expect(article.summary).toBe("短篇评论，讨论 AI 编程工具对职业乐趣的影响。");
+  expect(article.review?.result?.quality).toBe(80);
+  expect(article.research?.archived_at).toBe("2026-10-19T01:00:00Z");
   expect(article.published_at).toBe("2026-10-18T19:00:00Z");
   expect(article.sources).toEqual([
     { id: "source", name: "Cloudflare Blog" },

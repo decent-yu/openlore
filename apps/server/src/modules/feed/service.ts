@@ -19,6 +19,7 @@ import {
 import { settingsService } from "../settings/service.js";
 import { getPublishedWikiLinks, wikiLinkKey } from "../delivery/wiki-links.js";
 import { listPoolCandidates } from "../processing/candidates.js";
+import { getArticleReviews } from "../processing/article-reviews.js";
 
 export interface DailyFeedResponse {
   group: Group | null;
@@ -144,6 +145,9 @@ export class FeedService {
             entry.summary,
           );
     }
+    const reviews = getArticleReviews([
+      ...new Set(dated.map((task) => task.article_id)),
+    ]);
     for (const task of dated) {
       const group = groupsById.get(task.group_id)!;
       const article = getDb()
@@ -164,17 +168,11 @@ export class FeedService {
         )
         .get(group.id, `research_${task.id}`, article.id) as
         { commit_sha: string | null; commit_url: string | null } | undefined;
-      const assessment = db
-        .prepare(
-          "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
-        )
-        .get(article.id) as { result_json: string } | undefined;
-      let summary = summaries.get(wikiLinkKey(group.id, article.id)) || "";
-      if (assessment) {
-        try {
-          summary = JSON.parse(assessment.result_json).positioning || "";
-        } catch {}
-      }
+      const review = reviews.get(article.id) || null;
+      const summary =
+        review?.status === "succeeded"
+          ? review.result?.positioning || ""
+          : summaries.get(wikiLinkKey(group.id, article.id)) || "";
       const sources = db
         .prepare(
           `
@@ -186,6 +184,8 @@ export class FeedService {
         .all(article.id) as Array<{ id: string; name: string }>;
       response.deep_articles.push({
         id: article.id,
+        created_at: article.createdAt,
+        review,
         task_type: group.task_type,
         title: article.title || "Untitled",
         slug: task.article_slug,
@@ -208,6 +208,8 @@ export class FeedService {
           wiki_url: wiki?.research_url,
           questions: task.questions,
           evidence: task.evidence,
+          finished_at: task.finished_at,
+          archived_at: task.archived_at,
         },
         delivery: delivery?.commit_url
           ? { commit_sha: delivery.commit_sha, commit_url: delivery.commit_url }

@@ -79,6 +79,8 @@ export const SkillSchema = z.object({
 export type Skill = z.infer<typeof SkillSchema>;
 
 export const DailyFeedArticleSchema = z.object({
+  created_at: z.string().default(''),
+  review: ArticleReviewSchema.nullable().default(null),
   task_type: PipelineTaskTypeSchema.default('article_research'),
   wiki_url: z.string().optional(),
   id: z.string(),
@@ -104,6 +106,8 @@ export const DailyFeedArticleSchema = z.object({
       wiki_url: z.string().optional(),
       questions: z.array(z.string()).default([]),
       evidence: z.array(z.any()).default([]),
+      finished_at: z.string().nullable().optional(),
+      archived_at: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
