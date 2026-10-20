@@ -6,5 +6,6 @@
 
 - [2026-10-15 · 第 01 批文章与调研](20261015-01/README.md)
 - [独立汇报阅读样例](report-example.md)：实际汇报由汇报方案生成，不是流水线的批次归档文件。
+- [通俗表达对照](plain-language.md)：同一份虚拟材料的改写前后，以及阅读验收要点。
 
 安装配置请按[用户指引](../../../guides/README.md)，实际交付结构见[GitHub 归档](../05-git-delivery-and-archive.md)。旧版整工作区 JSON 与伪运行 manifest 已移除，避免误认为可导入或可恢复的真实数据。
