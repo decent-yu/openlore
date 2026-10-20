@@ -4,7 +4,7 @@ const payload={event:'daily_push.completed' as const,event_id:'test',status:'suc
 afterEach(()=>vi.unstubAllGlobals());
 describe('Group message delivery',()=>{
  it('uses a native card for the configured Lark compatible host',()=>{
-  expect(formatWebhookMessage('https://open.xfchat.iflytek.com/open-apis/bot/v2/hook/test',payload)).toMatchObject({msg_type:'interactive',card:{elements:[{text:{content:payload.summary}}]}});
+  expect(formatWebhookMessage('https://open.xfchat.iflytek.com/open-apis/bot/v2/hook/test',payload)).toMatchObject({msg_type:'interactive',card:{schema:'2.0',body:{elements:[{tag:'markdown',content:payload.summary}]}}});
  });
  it('keeps generic endpoints on their JSON protocol',()=>expect(formatWebhookMessage('https://example.com/webhook',payload)).toEqual(payload));
  it('does not mark an HTTP-200 platform rejection as sent',async()=>{

@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, afterEach, expect, it, vi } from "vitest";
+import * as prompts from "@openlore/contracts";
 import {
   initDatabase,
   getSqliteDatabase,
@@ -182,6 +183,39 @@ it("releases claims on failed publication, keeps the generated report and retrie
   expect((await feedService.getDailyFeed("task")).deep_articles).toHaveLength(
     1,
   );
+});
+
+it("reuses an unarchived report only while its complete prompt and skill revision still match", async () => {
+  const first = await researchService.runResearchOnArticle("task", ids[0]);
+  const retry = await researchService.runResearchOnArticle("task", ids[0]);
+  expect(first.status).toBe("succeeded");
+  expect(retry.id).toBe(first.id);
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "research_report"),
+  ).toHaveLength(1);
+
+  // Simulate updated shared writing rules with the same executor-local Skill.
+  const buildPrompt = prompts.buildResearchPrompt;
+  vi.spyOn(prompts, "buildResearchPrompt").mockImplementation(
+    (...args) => `${buildPrompt(...args)}\n补充要求：先解释读者必需的背景。`,
+  );
+  const updated = await researchService.runResearchOnArticle("task", ids[0]);
+  expect(updated.status).toBe("succeeded");
+  expect(updated.id).not.toBe(first.id);
+  const researchCalls = execute.mock.calls.filter(
+    ([input]) => input.taskType === "research_report",
+  );
+  expect(researchCalls).toHaveLength(2);
+  expect(researchCalls[1][0].skillRevision).toBe(
+    researchCalls[0][0].skillRevision,
+  );
+  expect(researchCalls[1][0].prompt).not.toBe(researchCalls[0][0].prompt);
+  expect(
+    (await researchService.runResearchOnArticle("task", ids[0])).id,
+  ).toBe(updated.id);
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "research_report"),
+  ).toHaveLength(2);
 });
 
 it("holds a global article claim across pipelines until publication has finished", async () => {

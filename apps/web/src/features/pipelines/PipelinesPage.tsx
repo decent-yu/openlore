@@ -5,6 +5,7 @@ import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
   buildSelectionPrompt,
   buildResearchPrompt,
+  DEFAULT_RESEARCH_INSTRUCTIONS,
   type Group,
   type Skill,
 } from "@openlore/contracts";
@@ -459,7 +460,7 @@ export function PipelinesPage() {
                         深度调研
                       </h4>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
-                        读取选中文章全文，按任务要求生成研报
+                        默认面向未研究过该领域的读者，先讲清问题，再解释原理和取舍
                       </p>
                     </div>
                   </div>
@@ -498,7 +499,7 @@ export function PipelinesPage() {
                   onInstructionsChange={(value) =>
                     update("research_instructions", value)
                   }
-                  instructionsPlaceholder="深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。"
+                  instructionsPlaceholder={DEFAULT_RESEARCH_INSTRUCTIONS}
                 />
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
