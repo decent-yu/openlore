@@ -68,6 +68,29 @@ describe('Library ingestion time filtering', () => {
     expect(response.json().filter_meta).not.toHaveProperty('quality_counts');
   });
 
+  it('filters repository studies separately and never classifies them as unreviewed articles', async () => {
+    const db = getSqliteDatabase();
+    db.prepare("INSERT INTO articles(id,title,created_at,published_at,date_evidence_json) VALUES ('repository','Orca study',?,?,?)").run('2026-10-16T03:00:00Z','2026-10-16T03:00:00Z',JSON.stringify({repository_study:{repository_url:'https://github.com/stablyai/orca'}}));
+    try {
+      const repositories = (await app.inject('/library?task_type=repository_research')).json();
+      expect(repositories.items.map((item:any)=>item.id)).toEqual(['repository']);
+      expect(repositories.items[0].published_at).toBeNull();
+      expect(repositories.filter_meta.total_count).toBe(1);
+      expect(repositories.filter_meta.unreviewed_count).toBe(0);
+      const rejected = await app.inject({method:'POST',url:'/library/review',payload:{article_ids:['repository']}});
+      expect(rejected.statusCode).toBe(400);
+      expect(rejected.json().message).toContain('无需初审');
+      const articles = (await app.inject('/library?task_type=article_research')).json();
+      expect(articles.pagination.total_count).toBe(5);
+      expect(articles.items.some((item:any)=>item.id==='repository')).toBe(false);
+      const unreviewed = (await app.inject('/library?status_filter=unreviewed')).json();
+      expect(unreviewed.items.some((item:any)=>item.id==='repository')).toBe(false);
+      const page = (await app.inject('/library?task_type=repository_research&page_size=1&page=2')).json();
+      expect(page.items).toHaveLength(0);
+      expect(page.pagination.total_count).toBe(1);
+    } finally { db.prepare("DELETE FROM articles WHERE id='repository'").run(); }
+  });
+
   it('uses the current workspace timezone for both count and results', async () => {
     getSqliteDatabase().prepare("UPDATE workspace_settings SET value = 'UTC' WHERE key = 'timezone'").run();
     const response = await app.inject('/library?quality_filter=all&time_range=today');

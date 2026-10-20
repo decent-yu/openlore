@@ -47,6 +47,8 @@ export function LibraryPage() {
     queryFn: api.listSources,
   });
 
+  const scopedSources = (sources || []).filter(source => filters.task_type === "all" || (filters.task_type === "repository_research" ? source.capability_id === "github_repository" : source.capability_id !== "github_repository"));
+
   const sourcesMap = React.useMemo(() => {
     const map = new Map<string, string>();
     sources?.forEach((s) => map.set(s.id, s.name));
@@ -93,6 +95,7 @@ export function LibraryPage() {
   const articles = libraryData?.items || [];
 
   const handleFiltersChange = (value: LibraryFiltersState) => {
+    if (value.task_type !== filters.task_type) setSelectedSourceId("");
     setFilters(value);
     setPage(1);
   };
@@ -131,18 +134,18 @@ export function LibraryPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">内容池</h2>
           <p className="text-neutral-500 text-sm">
-            新文章入池后自动初审；历史文章可手动审核，评分与简介由所有流水线共享。
+            文章共享初审结果，仓库按目标持续研读；在这里查看研究进度与研报。
           </p>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-          <Button
+          {filters.task_type !== 'repository_research' && <Button
             variant="outline"
             size="sm"
             disabled={
               reviewMutation.isPending ||
               !articles.some(
                 (article) =>
-                  !article.review || article.review.status === "failed",
+                  article.task_type !== 'repository_research' && (!article.review || article.review.status === "failed"),
               )
             }
             onClick={() =>
@@ -150,14 +153,14 @@ export function LibraryPage() {
                 ids: articles
                   .filter(
                     (article) =>
-                      !article.review || article.review.status === "failed",
+                      article.task_type !== 'repository_research' && (!article.review || article.review.status === "failed"),
                   )
                   .map((article) => article.id),
               })
             }
           >
             审核本页未审核文章
-          </Button>
+          </Button>}
           <div className="w-full sm:w-64">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400" />
@@ -201,7 +204,7 @@ export function LibraryPage() {
               >
                 全部
               </button>
-              {sources?.map((s) => {
+              {scopedSources.map((s) => {
                 const isActive = selectedSourceId === s.id;
                 return (
                   <button
@@ -249,7 +252,7 @@ export function LibraryPage() {
       {/* Article Cards Grid */}
       {filterError ? (
         <p className="rounded-lg border bg-neutral-50 p-6 text-sm text-neutral-500">
-          请完成日期范围后查看文章。
+          请完成日期范围后查看内容。
         </p>
       ) : isLoading ? (
         <div className="py-16 text-center text-neutral-400 text-sm">
@@ -260,7 +263,7 @@ export function LibraryPage() {
           <CardContent className="py-16 text-center">
             <Filter className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
             <p className="text-sm font-medium text-neutral-600">
-              未检索到匹配文章
+              未检索到匹配内容
             </p>
             <p className="text-xs text-neutral-400 mt-1">
               可以尝试切换时间范围、状态标签或清空搜索条件。

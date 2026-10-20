@@ -64,7 +64,7 @@ export interface RepositoryHistory {
   id: string;
   article_id: string;
   title: string;
-  status: "pending" | "running" | "failed" | "awaiting_archive" | "completed";
+  status: "pending" | "running" | "failed" | "awaiting_archive" | "completed" | "cancelled";
   error?: string;
   commit: string;
   reports: Array<{

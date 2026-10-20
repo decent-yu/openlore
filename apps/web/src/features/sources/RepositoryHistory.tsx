@@ -12,6 +12,7 @@ import {
 
 const labels = {
   pending: "待研读",
+  cancelled: "已取消",
   running: "研读中",
   failed: "研读失败",
   awaiting_archive: "等待归档",

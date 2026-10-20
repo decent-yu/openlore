@@ -60,11 +60,14 @@ export function useArticleActions() {
     },
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ["research"] });
+      queryClient.invalidateQueries({ queryKey: ["sources"] });
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      queryClient.invalidateQueries({ queryKey: ["execution-logs"] });
       queryClient.invalidateQueries({ queryKey: ["library"] });
       queryClient.invalidateQueries({ queryKey: ["daily-feed"] });
       setMessage(
         task.status === "succeeded"
-          ? "深度调研已完成，可在文章卡片查看完整研报。"
+          ? "研报已就绪，可在卡片查看完整内容。"
           : "调研已启动，完成后将自动更新。",
       );
       setSelectedArticleForResearch(null);
@@ -115,20 +118,20 @@ export function useArticleActions() {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="单篇深度调研"
+          aria-label={selectedArticleForResearch.task_type === "repository_research" ? "仓库研读" : "单篇深度调研"}
           className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50"
         >
           <Card className="max-w-md w-full shadow-xl">
             <CardHeader>
               <CardTitle className="text-base flex items-center">
                 <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
-                单篇深度调研
+                {selectedArticleForResearch.task_type === "repository_research" ? "仓库研读" : "单篇深度调研"}
               </CardTitle>
               <CardDescription>
                 将对 《{selectedArticleForResearch.title}》
-                展开机制分析、取舍分析与证据核验。
+                {selectedArticleForResearch.task_type === "repository_research" ? "结合已有研报分析架构、执行链路和设计取舍。" : "展开机制分析、取舍分析与证据核验。"}
               </CardDescription>
-              {selectedArticleForResearch.task_type === 'repository_research' && <p className="text-xs leading-relaxed text-neutral-500">重新调研会先更新源码，重新生成完整正文并覆盖原路径，编号不变，旧版本可查 Git 历史。</p>}
+              {selectedArticleForResearch.task_type === 'repository_research' && <p className="text-xs leading-relaxed text-neutral-500">已有可用研报时优先复用或重试归档；新研读会更新源码并结合历史继续深入。</p>}
             </CardHeader>
             <CardContent className="space-y-3">
               <div>

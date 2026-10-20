@@ -62,6 +62,8 @@ export class RepositoryStudyService {
         title: study.title,
         status: busy
           ? "running"
+          : tasks[0]?.status === "cancelled"
+            ? "cancelled"
           : tasks[0]?.status === "failed"
             ? "failed"
             : approved?.archived_at

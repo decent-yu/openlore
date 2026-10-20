@@ -1,6 +1,7 @@
 import React from "react";
+import { repositoryStudy, parseGitHubRepository } from "@openlore/contracts";
 import type { LibraryArticle } from "@openlore/contracts";
-import { Clock, Heart, Loader2, Rss } from "lucide-react";
+import { Clock, Heart, Loader2, Rss, Github } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -68,6 +69,10 @@ export function LibraryArticleCard({
   onResearch: () => void;
   onViewReport: () => void;
 }) {
+  const isRepository = art.task_type === 'repository_research';
+  const study = isRepository ? repositoryStudy(art.date_evidence) : undefined;
+  const repo = study && parseGitHubRepository(study.repository_url);
+  const title = isRepository && !art.research?.report_markdown ? `${repo?.repo || art.title} · 仓库研读` : art.title;
   return (
     <Card
       data-article-id={art.id}
@@ -87,19 +92,19 @@ export function LibraryArticleCard({
                         rel="noreferrer"
                         className="block truncate hover:text-blue-700 hover:underline"
                       >
-                        {art.title}
+                        {title}
                       </a>
                     ) : (
                       <span tabIndex={0} className="block truncate cursor-help">
-                        {art.title}
+                        {title}
                       </span>
                     )}
                   </TooltipTrigger>
-                  <TooltipContent>{art.title}</TooltipContent>
+                  <TooltipContent>{title}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </CardTitle>
-            <CardDescription className="flex min-w-0 items-center gap-2 text-xs text-neutral-500">
+            {isRepository ? <CardDescription className="flex items-center gap-1.5 text-xs text-neutral-500"><Github className="h-3.5 w-3.5" />{repo ? `${repo.owner}/${repo.repo}` : 'GitHub 仓库'}</CardDescription> :             <CardDescription className="flex min-w-0 items-center gap-2 text-xs text-neutral-500">
               <span
                 className="min-w-0 truncate"
                 title={art.author || "未知作者"}
@@ -115,7 +120,7 @@ export function LibraryArticleCard({
                     })
                   : "无发布日期"}
               </span>
-            </CardDescription>
+            </CardDescription>}
           </div>
 
           {/* Top Right Action & Favorite */}
@@ -141,13 +146,14 @@ export function LibraryArticleCard({
 
         {/* Badges Bar */}
         <div className="flex flex-wrap items-center gap-1.5 pt-2">
+          <Badge variant="outline" className="text-[10px] font-normal">{isRepository ? "仓库研读" : "文章调研"}</Badge>
           {/* 入池时间 */}
           <Badge
             variant="outline"
             className="text-[10px] text-neutral-500 bg-neutral-50 border-neutral-200 font-normal"
           >
             <Clock className="w-2.5 h-2.5 mr-1 text-neutral-400 inline" />
-            发现: {formatPoolTime(art.created_at, timezone)}
+            {isRepository ? '创建' : '发现'}: {formatPoolTime(art.created_at, timezone)}
           </Badge>
 
           {/* 采集来源标签 */}
@@ -158,7 +164,7 @@ export function LibraryArticleCard({
               className="text-[10px] text-emerald-700 bg-emerald-50/50 border-emerald-200 font-normal"
               title={`采集来源: ${sourcesMap.get(srcId) || srcId}`}
             >
-              <Rss className="w-2.5 h-2.5 mr-0.5 text-emerald-600 inline" />
+              {isRepository ? <Github className="w-2.5 h-2.5 mr-0.5 inline" /> : <Rss className="w-2.5 h-2.5 mr-0.5 text-emerald-600 inline" />}
               {sourcesMap.get(srcId) || srcId}
             </Badge>
           ))}
@@ -176,13 +182,13 @@ export function LibraryArticleCard({
           ))}
 
           <LibraryArticleStatus article={art} />
-          {art.research?.status === "succeeded" &&
+          {!isRepository && art.research?.status === "succeeded" &&
             !art.research.archived_at && (
               <Badge className="border-amber-200 bg-amber-50 text-[10px] font-normal text-amber-700">
                 研报待归档
               </Badge>
             )}
-          {(art.research?.status === "running" ||
+          {!isRepository && (art.research?.status === "running" ||
             art.research?.status === "queued") && (
             <Badge className="border-indigo-200 bg-indigo-50 text-[10px] font-normal text-indigo-700">
               <Loader2 className="mr-1 inline h-2.5 w-2.5 animate-spin" />
@@ -198,15 +204,16 @@ export function LibraryArticleCard({
             {summary}
           </p>
         )}
-        <LibraryAssessments
+        {!isRepository && <LibraryAssessments
           review={art.review}
           timezone={timezone}
-          articleTitle={art.title}
-        />
+          articleTitle={title}
+        />}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3">
           {art.canonical_url || art.research?.wiki_url ? (
             <WikiReadingLinks
-              originalUrl={art.canonical_url}
+              originalUrl={study?.repository_url || art.canonical_url}
+              originalLabel={isRepository ? "仓库地址" : "原文链接"}
               researchUrl={art.research?.wiki_url}
             />
           ) : (

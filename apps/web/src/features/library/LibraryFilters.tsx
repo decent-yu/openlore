@@ -9,6 +9,7 @@ import {
 } from "@openlore/contracts";
 
 export interface LibraryFiltersState {
+  task_type: "all" | "article_research" | "repository_research";
   time_range: LibraryTimeRange;
   discovered_from: string;
   discovered_to: string;
@@ -19,6 +20,7 @@ export interface LibraryFiltersState {
   interested_only: boolean;
 }
 export const DEFAULT_LIBRARY_FILTERS: LibraryFiltersState = {
+  task_type: "all",
   time_range: "all",
   discovered_from: "",
   discovered_to: "",
@@ -33,8 +35,9 @@ export function libraryFilterParams(
   value: LibraryFiltersState,
 ): LibraryFilterParams {
   return {
+    task_type: value.task_type,
     time_range: value.time_range,
-    published_range: value.published_range,
+    published_range: value.task_type === "repository_research" ? "all" : value.published_range,
     status_filter: value.status_filter,
     interested_only: value.interested_only,
     ...(value.time_range === "custom"
@@ -43,7 +46,7 @@ export function libraryFilterParams(
           discovered_to: value.discovered_to || undefined,
         }
       : {}),
-    ...(value.published_range === "custom"
+    ...(value.task_type !== "repository_research" && value.published_range === "custom"
       ? {
           published_from: value.published_from || undefined,
           published_to: value.published_to || undefined,
@@ -159,6 +162,11 @@ export function LibraryFilters({
   const error = libraryFiltersError(value);
   return (
     <div className="space-y-3.5">
+      <div role="group" aria-label="内容类型" className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="w-20 shrink-0 font-medium text-neutral-500">内容类型</span>
+        {([['all', '全部'], ['article_research', '文章调研'], ['repository_research', '仓库研读']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={value.task_type === key} onClick={() => onChange({ ...value, task_type: key, status_filter: 'all', published_range: 'all' })} className={`rounded-md border px-3 py-1 font-medium ${value.task_type === key ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'}`}>{label}</button>)}
+      </div>
+
       <TimeRow
         label="发现时间"
         noun="发现"
@@ -178,7 +186,7 @@ export function LibraryFilters({
           })
         }
       />
-      <TimeRow
+      {value.task_type !== "repository_research" && <TimeRow
         label="发布时间"
         noun="发布"
         icon={CalendarDays}
@@ -196,11 +204,11 @@ export function LibraryFilters({
             published_to: to,
           })
         }
-      />
+      />}
       <p className="pl-0 text-[11px] text-neutral-500 sm:pl-[88px]">
         日期按 {timezone}{" "}
         计算；起止日期均包含在内，选择相同日期可查看当天。近三天为最近 72
-        小时，两行条件同时生效。
+        小时。
       </p>
       {error && (
         <p role="alert" className="text-xs text-amber-700">
@@ -221,14 +229,14 @@ export function LibraryFilters({
               "all",
               "全部",
               meta
-                ? meta.unreviewed_count + meta.scored_count
+                ? meta.total_count
                 : undefined,
             ],
             ["unreviewed", "未审核", meta?.unreviewed_count],
             ["scored", "已评分", meta?.scored_count],
             ["deep", "深度分析", meta?.deep_count],
           ] as const
-        ).map(([key, label, count]) => (
+        ).filter(([key]) => value.task_type !== "repository_research" || !["unreviewed", "scored"].includes(key)).map(([key, label, count]) => (
           <button
             key={key}
             type="button"
@@ -236,7 +244,7 @@ export function LibraryFilters({
             onClick={() => onChange({ ...value, status_filter: key })}
             className={`rounded-md border px-3 py-1 font-medium ${value.status_filter === key ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"}`}
           >
-            {label}
+            {key === "deep" && value.task_type === "repository_research" ? "已归档" : label}
             {count == null ? "" : ` (${count})`}
           </button>
         ))}

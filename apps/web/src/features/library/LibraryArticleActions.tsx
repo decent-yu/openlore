@@ -33,6 +33,7 @@ export function LibraryArticleActions({
   onResearch: () => void;
   onViewReport: () => void;
 }) {
+  const isRepository = article.task_type === "repository_research";
   const reviewed = article.review?.status === "succeeded";
   const reviewBusy =
     article.review?.status === "queued" || article.review?.status === "running";
@@ -59,7 +60,7 @@ export function LibraryArticleActions({
     onSelect: onReview,
   };
   const research: Action = {
-    label: researchBusy ? "调研中…" : "发起深度调研",
+    label: researchBusy ? "调研中…" : isRepository ? "发起研读" : "发起深度调研",
     icon: researchBusy ? Loader2 : Sparkles,
     disabled: researchBusy,
     busy: researchBusy,
@@ -72,10 +73,10 @@ export function LibraryArticleActions({
         onSelect: onViewReport,
         href: article.research?.wiki_url,
       }
-    : reviewed
+    : reviewed || isRepository
       ? research
       : review;
-  const secondary: Action[] = [researched || reviewed ? review : research];
+  const secondary: Action[] = isRepository ? [] : [researched || reviewed ? review : research];
   if (researched) {
     secondary.push({
       label: article.research?.archived_at ? "重新发起深度调研" : "重试归档",
@@ -117,7 +118,7 @@ export function LibraryArticleActions({
           {primary.label}
         </Button>
       )}
-      <DropdownMenu.Root modal={false}>
+      {secondary.length > 0 && <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
           <Button
             variant="ghost"
@@ -157,7 +158,7 @@ export function LibraryArticleActions({
             )}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      </DropdownMenu.Root>}
     </div>
   );
 }

@@ -174,7 +174,7 @@ export const api = {
   }),
   listLibrary: (params?: LibraryFilterParams) => {
     const q = new URLSearchParams();
-    for (const key of ['time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
+    for (const key of ['task_type', 'time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
       const value = params?.[key];
       if (value && value !== 'all') q.set(key, value);
     }

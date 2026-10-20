@@ -189,7 +189,7 @@ export const executionLogs = {
       params.push(filters.log_id);
     }
     if (filters.status === "problem")
-      clauses.push("status NOT IN ('success','running')");
+      clauses.push("status NOT IN ('success','running','cancelled')");
     else if (filters.status) {
       clauses.push("status=?");
       params.push(filters.status);

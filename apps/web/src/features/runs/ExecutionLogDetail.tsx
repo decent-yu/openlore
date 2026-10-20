@@ -21,6 +21,7 @@ const statusNames: Record<string, string> = {
   timeout: "超时",
   failed: "失败",
   interrupted: "服务中断",
+  cancelled: "已取消",
   invalid_output: "输出无效",
   auth_required: "需要登录",
   quota_exceeded: "额度不足",
@@ -41,7 +42,7 @@ const color = (status: string) =>
     ? "text-emerald-700 bg-emerald-50"
     : status === "running"
       ? "text-blue-700 bg-blue-50"
-      : "text-red-700 bg-red-50";
+      : status === "cancelled" ? "text-neutral-600 bg-neutral-100" : "text-red-700 bg-red-50";
 
 export function ExecutionLogDetail({
   id,
