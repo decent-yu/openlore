@@ -22,6 +22,28 @@
 
 流水线不生成批次 `digest.md`。简报由独立的[汇报方案](06-reporting.md)生成并发送，不能混作每次文章归档的必选产物。
 
+## GitHub 仓库研读目录
+
+使用同一流水线的目标仓库、分支和自定义 `base_path`，按来源仓库分目录，研报编号跨天递增：
+
+```text
+docs/xxx/
+└── stablyai@orca/
+    ├── README.md
+    ├── 01-核心执行架构.md
+    ├── 02-工作区隔离机制.md
+    ├── 03-任务状态与恢复.md
+    ├── articles/
+    │   ├── 01-核心执行架构.md       # 本次源码与文档材料
+    │   └── 02-工作区隔离机制.md
+    └── assets/
+        └── 01-核心执行架构/         # 该主题的可用配图
+```
+
+编号在每条流水线的每个仓库内独立递增；目录使用小写 `owner@repo`。重试保持首次分配的路径，避免重复编号或覆盖历史研报。仓库索引保留已归档主题，manifest 累积托管文件。文章和研报的实际路径记录在归档包中，Wiki 与汇报使用已确认成功的真实路径。RSS 文章继续使用日期批次目录，混合来源也可同批归档。
+
+例如目标仓库选择 `Openlore Knowledge Vault`，目录填 `docs/agent-leaning`，则生成 `docs/agent-leaning/stablyai@orca/01-主题.md`；改填 `docs/xxx` 则生成 `docs/xxx/stablyai@orca/01-主题.md`。
+
 ## 规则
 
 - 无新调研产出时返回 `unchanged`，不生成文件或空提交。
