@@ -25,6 +25,7 @@ beforeEach(() => {
   db.exec(
     "DELETE FROM articles;DELETE FROM group_items;DELETE FROM research_tasks;DELETE FROM runs;DELETE FROM source_items;DELETE FROM deliveries;DELETE FROM artifact_bundles;DELETE FROM article_reviews",
   );
+  db.prepare("DELETE FROM groups WHERE id <> 'task'").run();
 });
 function report(id: string, article: string, archived: string | null) {
   db.prepare("INSERT OR IGNORE INTO articles(id,title) VALUES (?,?)").run(
@@ -83,4 +84,73 @@ it("shows one latest archived report per article while excluding newer unarchive
   const feed = await feedService.getDailyFeed("task");
   expect(feed.deep_articles).toHaveLength(1);
   expect(feed.deep_articles[0].research?.id).toBe("second");
+});
+
+it("defaults to all tasks, counts shared pool articles once, and retains task-specific reports and dates", async () => {
+  await groupsService.saveGroup({
+    id: "other",
+    name: "Other task",
+    repository_connection_id: "repo",
+    base_path: "docs/other",
+    source_ids: ["source"],
+    deep_analysis_count: 1,
+  });
+  report("first", "shared", "2026-10-19T01:00:00Z");
+  report("second", "shared", "2026-10-19T02:00:00Z");
+  report("older", "older", "2026-10-18T02:00:00Z");
+  report("pending", "pending", null);
+  db.prepare(
+    "UPDATE research_tasks SET group_id='other' WHERE id IN ('second','older','pending')",
+  ).run();
+  db.exec(`INSERT INTO runs(id,group_id,snapshot_json,status,stage,started_at)
+    VALUES ('active','other','{}','running','research','2026-10-19T00:00:00Z'),
+           ('finished','task','{}','succeeded','completed','2026-10-19T03:00:00Z')`);
+
+  const feed = await feedService.getDailyFeed();
+  expect(feed.group).toBeNull();
+  expect(feed.groups).toHaveLength(2);
+  expect(feed.current_run?.id).toBe("active");
+  expect(
+    feed.deep_articles.map((article) => [
+      article.group_id,
+      article.research?.id,
+    ]),
+  ).toEqual([
+    ["other", "second"],
+    ["task", "first"],
+  ]);
+  expect(feed.stats.pool_count).toBe(3);
+  expect(feed.stats.deep_analyzed_count).toBe(2);
+  expect(feed.available_dates).toEqual(["2026-10-19", "2026-10-18"]);
+  expect(
+    (await feedService.getDailyFeed(undefined, "2026-10-18")).deep_articles[0]
+      .group_id,
+  ).toBe("other");
+
+  const scoped = await feedService.getDailyFeed("other");
+  expect(scoped.group?.id).toBe("other");
+  expect(scoped.deep_articles.map((article) => article.research?.id)).toEqual([
+    "second",
+  ]);
+  expect(
+    (await feedService.getDailyFeed("task")).deep_articles.map(
+      (article) => article.research?.id,
+    ),
+  ).toEqual(["first"]);
+});
+
+it("includes an unfiltered task's entire content pool in the overview", async () => {
+  await groupsService.saveGroup({
+    id: "unfiltered",
+    name: "All sources",
+    repository_connection_id: "repo",
+    base_path: "docs/all",
+    source_ids: [],
+    deep_analysis_count: 1,
+  });
+  db.prepare(
+    "INSERT INTO articles(id,title) VALUES ('unassigned','Unassigned')",
+  ).run();
+  expect((await feedService.getDailyFeed()).stats.pool_count).toBe(1);
+  expect((await feedService.getDailyFeed("task")).stats.pool_count).toBe(0);
 });
