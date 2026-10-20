@@ -158,6 +158,15 @@ export class FeedService {
           summary = JSON.parse(assessment.result_json).summary || "";
         } catch {}
       }
+      const sources = db
+        .prepare(
+          `
+        SELECT DISTINCT s.id, s.name FROM source_items si
+        JOIN sources s ON s.id=si.source_id
+        WHERE si.article_id=? ORDER BY s.name, s.id
+      `,
+        )
+        .all(article.id) as Array<{ id: string; name: string }>;
       response.deep_articles.push({
         id: article.id,
         title: article.title || "Untitled",
@@ -165,6 +174,7 @@ export class FeedService {
         author: article.author,
         original_url: article.canonicalUrl,
         published_at: article.publishedAt,
+        sources,
         summary,
         tags: [group.name],
         group_id: group.id,

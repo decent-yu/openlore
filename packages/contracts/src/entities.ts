@@ -80,6 +80,7 @@ export const DailyFeedArticleSchema = z.object({
   author: z.string().nullable().optional(),
   original_url: z.string().nullable().optional(),
   published_at: z.string().nullable().optional(),
+  sources: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
   summary: z.string(),
   tags: z.array(z.string()).default([]),
   group_id: z.string(),

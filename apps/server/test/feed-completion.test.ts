@@ -67,6 +67,21 @@ it("does not cap published results by the per-run research quota", async () => {
   expect(feed.deep_articles).toHaveLength(2);
   expect(feed.stats.deep_analyzed_count).toBe(2);
 });
+it("includes the original publication time and deduplicated collection source names", async () => {
+  report("report", "article", "2026-10-19T01:00:00Z");
+  db.exec(`INSERT INTO sources(id,name,url) VALUES
+    ('source','Cloudflare Blog','https://blog.cloudflare.com'),
+    ('other-source','Other feed','https://example.com/feed');
+    UPDATE articles SET published_at='2026-10-18T19:00:00Z' WHERE id='article';
+    INSERT INTO source_items(id,source_id,article_id) VALUES
+    ('duplicate','source','article'),('other','other-source','article')`);
+  const article = (await feedService.getDailyFeed()).deep_articles[0];
+  expect(article.published_at).toBe("2026-10-18T19:00:00Z");
+  expect(article.sources).toEqual([
+    { id: "source", name: "Cloudflare Blog" },
+    { id: "other-source", name: "Other feed" },
+  ]);
+});
 it("keeps the archive date even if source metadata or scoring is updated later", async () => {
   report("report", "article", "2026-10-18T17:00:00Z");
   db.prepare("UPDATE articles SET updated_at='2026-10-21T00:00:00Z'").run();

@@ -10,6 +10,7 @@ import {
   CalendarDays,
   CheckCircle2,
   MoreHorizontal,
+  Rss,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { api } from "../../lib/api.js";
@@ -25,6 +26,11 @@ import {
 
 export function DailyFeedPage() {
   const client = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  const timezone = settings?.timezone || "Asia/Shanghai";
   const [date, setDate] = useState("");
   const [report, setReport] = useState<{
     title: string;
@@ -166,19 +172,37 @@ export function DailyFeedPage() {
                     className="h-px flex-1 bg-neutral-200"
                   />
                 </header>
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-4">
                   {group.articles.map((article) => (
                     <article
                       key={`${article.group_id}:${article.id}`}
                       className="flex min-w-0 flex-col rounded-xl border bg-white p-4 transition-shadow hover:shadow-sm sm:p-5"
                     >
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <span
-                          title={article.group_name}
-                          className="truncate rounded-md border border-blue-100 bg-blue-50/60 px-2 py-0.5 text-[11px] font-medium text-blue-700"
-                        >
-                          {article.group_name}
-                        </span>
+                      <div className="flex items-start justify-between gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <h4
+                              tabIndex={
+                                article.research?.wiki_url ? undefined : 0
+                              }
+                              className="min-w-0 flex-1 truncate text-base font-semibold leading-8"
+                            >
+                              {article.research?.wiki_url ? (
+                                <a
+                                  href={article.research.wiki_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block truncate hover:text-blue-700 hover:underline"
+                                >
+                                  {article.title}
+                                </a>
+                              ) : (
+                                article.title
+                              )}
+                            </h4>
+                          </TooltipTrigger>
+                          <TooltipContent>{article.title}</TooltipContent>
+                        </Tooltip>
                         <button
                           type="button"
                           aria-label={
@@ -200,38 +224,48 @@ export function DailyFeedPage() {
                           />
                         </button>
                       </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <h4
-                            tabIndex={
-                              article.research?.wiki_url ? undefined : 0
-                            }
-                            className="line-clamp-2 break-words text-base font-semibold leading-snug"
-                          >
-                            {article.research?.wiki_url ? (
-                              <a
-                                href={article.research.wiki_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="hover:text-blue-700 hover:underline"
-                              >
-                                {article.title}
-                              </a>
-                            ) : (
-                              article.title
-                            )}
-                          </h4>
-                        </TooltipTrigger>
-                        <TooltipContent>{article.title}</TooltipContent>
-                      </Tooltip>
-                      {article.author && (
-                        <p
-                          className="mt-2 truncate text-xs text-neutral-400"
-                          title={article.author}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span
+                          className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-neutral-500"
+                          title="发布时间"
                         >
-                          {article.author}
-                        </p>
-                      )}
+                          <CalendarDays
+                            className="h-2.5 w-2.5 shrink-0"
+                            aria-hidden="true"
+                          />
+                          {article.published_at ? (
+                            <time
+                              dateTime={article.published_at}
+                              aria-label="发布时间"
+                            >
+                              发布：
+                              {new Date(
+                                article.published_at,
+                              ).toLocaleDateString("zh-CN", {
+                                timeZone: timezone,
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                              })}
+                            </time>
+                          ) : (
+                            "无发布日期"
+                          )}
+                        </span>
+                        {article.sources.map((source) => (
+                          <span
+                            key={source.id}
+                            title={`采集来源：${source.name}`}
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/50 px-2 py-0.5 text-emerald-700"
+                          >
+                            <Rss
+                              className="h-2.5 w-2.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">{source.name}</span>
+                          </span>
+                        ))}
+                      </div>
                       {article.summary && (
                         <Tooltip>
                           <TooltipTrigger asChild>
