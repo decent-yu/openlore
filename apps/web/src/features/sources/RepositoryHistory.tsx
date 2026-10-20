@@ -1,6 +1,12 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import type { Source } from "@openlore/contracts";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 
 const labels = {
   pending: "待研读",
@@ -19,13 +25,20 @@ export function RepositoryHistory({
   showGoal?: boolean;
 }) {
   const history = source.repository_history || [];
+  const goal = source.options.research_focus || "理解核心架构、设计方案与实现思想";
   return (
-    <div className="space-y-2 text-xs text-neutral-600">
+    <div className="min-w-0 space-y-2 text-xs text-neutral-600">
       {showGoal && (
-        <p>
-          研读目标：
-          {source.options.research_focus || "理解核心架构、设计方案与实现思想"}
-        </p>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p tabIndex={0} className="line-clamp-2 whitespace-pre-line break-words">
+                研读目标：{goal}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent>{goal}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
       <p>
         历史研读：{history.filter((item) => item.status === "completed").length}{" "}
