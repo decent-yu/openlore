@@ -308,6 +308,14 @@ export async function executeInWorkspace(
       if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
       await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(600000, config.timeout_seconds * 1000), signal, Boolean(input.session));
     }
+    if (input.repository_context) {
+      if (!input.repository) throw new Error('仓库研究上下文缺少源码快照');
+      const file = path.join(workspace, 'input', 'research-context.json');
+      const text = JSON.stringify(input.repository_context, null, 2);
+      if (input.session) {
+        if (fs.lstatSync(file).isSymbolicLink() || fs.readFileSync(file, 'utf8') !== text) throw new Error('会话仓库目标或历史已变化');
+      } else fs.writeFileSync(file, text, { mode: 0o600 });
+    }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
     const prompt = input.prompt;
     if (!input.session)

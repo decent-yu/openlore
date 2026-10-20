@@ -68,6 +68,7 @@ export interface RepositoryHistory {
     group_id: string;
     archived_at?: string;
     report_markdown: string;
+    questions?: string[];
     wiki_url?: string;
   }>;
 }
@@ -77,4 +78,56 @@ export function repositoryStudy(
 ): RepositoryStudy | undefined {
   const parsed = RepositoryStudySchema.safeParse(evidence.repository_study);
   return parsed.success ? parsed.data : undefined;
+}
+
+export const RepositoryResearchContextSchema = z.object({
+  source_id: z.string(),
+  name: z.string(),
+  repository_url: z.string().url(),
+  goal: z.string(),
+  history: z.array(
+    z.object({
+      id: z.string(),
+      article_id: z.string(),
+      title: z.string(),
+      commit: z.string(),
+      questions: z.array(z.string()),
+      report_markdown: z.string(),
+      archived_at: z.string().optional(),
+    }),
+  ),
+});
+export type RepositoryResearchContext = z.infer<
+  typeof RepositoryResearchContextSchema
+>;
+
+export function repositoryResearchContext(
+  source: {
+    id: string;
+    name: string;
+    url: string;
+    options: { research_focus: string };
+    repository_history?: RepositoryHistory[];
+  },
+  excludeArticleId?: string,
+): RepositoryResearchContext {
+  return {
+    source_id: source.id,
+    name: source.name,
+    repository_url: source.url,
+    goal: source.options.research_focus,
+    history: (source.repository_history || [])
+      .filter((item) => item.article_id !== excludeArticleId)
+      .flatMap((item) =>
+        item.reports.map((report) => ({
+          id: report.id,
+          article_id: item.article_id,
+          title: item.title,
+          commit: item.commit,
+          questions: report.questions || [],
+          report_markdown: report.report_markdown,
+          archived_at: report.archived_at,
+        })),
+      ),
+  };
 }

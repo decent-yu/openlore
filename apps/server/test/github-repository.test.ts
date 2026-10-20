@@ -66,7 +66,7 @@ beforeEach(async () => {
   ])
     db.exec(`DELETE FROM ${table}`);
   vi.spyOn(repository, 'refreshRepository').mockResolvedValue({ commit: 'a'.repeat(40), branch: 'development', files: ['README.md', 'src/core.ts', 'tests/core.test.ts'], readme: '# Local README' });
-  execute.mockReset().mockImplementation(async input => reportResult(input));
+  execute.mockReset().mockImplementation(async input => reportResult(input, input.repository_context?.history.length ? `后续机制${input.repository_context.history.length}` : '核心执行架构'));
   vi.spyOn(ai, "getAIAdapterWithFallback").mockReturnValue({
     execute,
     testConnection: async () => ({ ok: true, message: "mock" }),
@@ -668,21 +668,25 @@ it("exposes task types consistently through the API and rejects incompatible sou
   }
 });
 
-it('rotates multiple repositories across days and enforces one task-wide daily budget', async () => {
+it('rotates repositories while giving each source its own daily quota', async () => {
   await sourcesService.saveSource({ id: 'other', name: 'Other', url: 'https://github.com/example/other', capability_id: 'github_repository', options: { research_focus: '数据结构' } });
   getSqliteDatabase().prepare("INSERT INTO group_sources(group_id,source_id) VALUES ('study','other')").run();
+  getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=2 WHERE id='study'").run();
   const first = await run();
-  expect(first.output.entries).toHaveLength(1);
-  const firstRepo = execute.mock.calls[0][0].repository.url;
+  expect(first.status).toBe('succeeded');
+  expect(first.output.entries).toHaveLength(4);
+  const urls = execute.mock.calls.map(([input]) => input.repository.url);
+  expect(urls.filter(url => url.includes('stablyai/orca'))).toHaveLength(2);
+  expect(urls.filter(url => url.includes('example/other'))).toHaveLength(2);
+  expect(urls[0]).not.toBe(urls[1]);
+  expect(urls[2]).not.toBe(urls[3]);
   expect((await run()).output.entries).toHaveLength(0);
   vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
-  expect((await run()).output.entries).toHaveLength(1);
-  expect(execute.mock.calls[1][0].repository.url).not.toBe(firstRepo);
-  expect(execute.mock.calls.map(([input]) => input.taskType)).toEqual(['research_report', 'research_report']);
+  expect((await run()).output.entries).toHaveLength(4);
   expect(execute.mock.calls.map(([input]) => input.prompt).join('\n')).toContain('数据结构');
 });
 
-it('fills a total budget larger than the repository count without re-fetching within a run', async () => {
+it('fills the per-repository daily quota without re-fetching within a run', async () => {
   getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=3 WHERE id='study'").run();
   let ordinal = 0;
   execute.mockImplementation(async input => reportResult(input, `核心机制${++ordinal}`));
@@ -744,6 +748,7 @@ it('keeps insufficient evidence retryable and rejects repeating a completed topi
   expect((await run()).status).toBe('succeeded');
   expect((await sourcesService.getSource('orca'))!.repository_history![0].article_id).toBe(failed.article_id);
   vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+  execute.mockImplementationOnce(async input => reportResult(input));
   expect((await run()).status).toBe('failed');
   expect((await sourcesService.getSource('orca'))!.repository_history![0].error).toContain('重复');
   expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
@@ -765,6 +770,9 @@ it('serializes the same repository with concurrent executors and includes accept
   expect(peak).toBe(1);
   expect(execute.mock.calls[1][0].prompt).toContain('批内机制1');
   expect(execute.mock.calls[1][0].prompt).toContain('批内机制1如何实现');
+  expect(execute.mock.calls[0][0].repository_context.history).toEqual([]);
+  expect(execute.mock.calls[1][0].repository_context.history[0]).toMatchObject({ title: '批内机制1', questions: ['批内机制1如何实现？'] });
+  expect(execute.mock.calls[1][0].repository_context.history[0].report_markdown).toContain('基于源码分析');
 });
 
 it('links publication failures before an upload acknowledgement back to source history', async () => {
@@ -774,4 +782,18 @@ it('links publication failures before an upload acknowledgement back to source h
   expect(history.status).toBe('awaiting_archive');
   expect(history.error).toContain('未配置仓库凭据');
   expect(history.reports).toHaveLength(1);
+});
+
+it('uses the same source context builder for prompt preview and runtime, with first-study architecture guidance', async () => {
+  const source = (await sourcesService.getSource('orca'))!;
+  const context = prompts.repositoryResearchContext(source);
+  getSqliteDatabase().prepare("UPDATE groups SET research_instructions='面向工程师，重点用图解释关系' WHERE id='study'").run();
+  const result = await run();
+  expect(result.status).toBe('succeeded');
+  const input = execute.mock.calls[0][0];
+  expect(input.repository_context).toEqual(context);
+  expect(input.prompt).toBe(prompts.buildCodeResearchPrompt(prompts.buildRepositoryResearchInstructions(context, '面向工程师，重点用图解释关系', { commit: input.repository.commit, study_id: input.articleId })));
+  expect(input.prompt).toContain('首次系统研读');
+  expect(input.prompt).toContain('历史研读：0 篇已归档');
+  expect(input.prompt).toContain(source.options.research_focus);
 });

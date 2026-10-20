@@ -1,6 +1,6 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, buildRepositoryResearchInstructions, repositoryResearchContext, type RepositoryResearchContext, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -18,6 +18,7 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { sourcesService } from "../sources/service.js";
 import { groupsService } from "../groups/service.js";
 import { listPoolCandidates } from "../processing/candidates.js";
 import { articleSlug } from "../delivery/archive-layout.js";
@@ -150,24 +151,19 @@ export class ResearchService {
       DEFAULT_RESEARCH_INSTRUCTIONS;
     const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
     if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
+    let repositoryContext: RepositoryResearchContext | undefined;
     if (study) {
       // Upload retries reuse the approved report before resolving skills, prompts or fresh code.
       const ready = db.select().from(researchTasksTable).where(and(
         eq(researchTasksTable.groupId, groupId), eq(researchTasksTable.articleId, articleId), eq(researchTasksTable.status, 'succeeded'),
       )).all().find(task => !task.archivedAt && task.reportMarkdown.trim());
       if (ready) return (await this.listResearchTasks(groupId)).find(task => task.id === ready.id)!;
-      const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id
-        WHERE t.status='succeeded' AND t.article_id<>?
-          AND EXISTS(SELECT 1 FROM source_items si WHERE si.article_id=t.article_id AND si.source_id=?)
-        ORDER BY t.created_at DESC`).all(articleId, study.source_id || '') as Array<{ title: string; report_markdown: string; questions_json: string }>;
-      instructions = `${DEFAULT_RESEARCH_INSTRUCTIONS}
-仓库：${study.repository_url}
-本次 Commit：${study.commit}
-来源研读目标：${study.focus || '理解核心架构、设计方案与实现思想'}
-研究记录 ID：${study.study_id || articleId}（重试保持不变）
-已完成研究（跨流水线共享，含本批待归档结果）：
-${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n${item.report_markdown.slice(0, 1200)}`).join('\n\n') || '暂无，从核心架构与执行链路开始。'}
-围绕目标选择历史尚未深入解释的机制，明确本次研究问题，避免改标题重复研究；Commit 只标识版本，普通 Bug 修复不能自动成为选题。`;
+      const sourceId = study.source_id || (getSqliteDatabase().prepare('SELECT source_id FROM source_items WHERE article_id=? LIMIT 1').get(articleId) as { source_id: string } | undefined)?.source_id;
+      const source = sourceId ? await sourcesService.getSource(sourceId) : null;
+      if (!source) throw new Error('仓库来源配置不存在，无法准备目标和研究历史');
+      repositoryContext = repositoryResearchContext({ ...source, options: { ...source.options, research_focus: study.focus } }, articleId);
+      instructions = buildRepositoryResearchInstructions(repositoryContext, customInstructions || group?.researchInstructions, { commit: study.commit, study_id: study.study_id || articleId });
+
     }
 
     // Generate research report (using AI adapter with primary and fallback support)
@@ -188,6 +184,7 @@ ${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n$
         JSON.stringify([
           art.latestRevision,
           instructions,
+          repositoryContext,
           prompt,
           researchSkill?.revision,
           skillId,
@@ -261,6 +258,7 @@ ${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n$
           skillId: researchSkill.id,
           skillRevision: researchSkill.revision,
           repository: study ? {url: study.repository_url, commit: study.commit} : undefined,
+          repository_context: repositoryContext,
           prompt,
           material: `Title: ${art.title}\nSource URL: ${art.canonicalUrl || "未提供"}\n\n${content}`,
         });

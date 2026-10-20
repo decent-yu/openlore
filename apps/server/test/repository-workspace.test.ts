@@ -182,7 +182,7 @@ it("discovers and packages the standalone Skill for synced and local execution",
   expect(found.bundle.files.some((file) => file.path === "SKILL.md")).toBe(
     true,
   );
-  expect(found.bundle.files).toHaveLength(1);
+  expect(found.bundle.files.map(file => file.path)).toEqual(expect.arrayContaining(['SKILL.md', 'references/research-method.md', 'references/visual_and_assets_guide.md', 'scripts/audit-svg.sh']));
 });
 
 function request() {
@@ -342,4 +342,26 @@ it('validates evidence in a large tracked tree without overflowing a full-direct
   fs.writeFileSync(path.join(checkout, 'core.ts'), quote);
   fs.writeFileSync(path.join(folder, 'output/evidence.json'), JSON.stringify({ complete: true, commit: sha, questions: ['How does the core work?'], citations: [{ claim: 'Core', file: 'core.ts', start_line: 1, end_line: 1, quote }] }));
   expect(() => validateRepositoryEvidence({ url: repositoryUrl, commit: sha }, folder, `[Core](${repositoryUrl}/blob/${sha}/core.ts#L1)`)).not.toThrow();
+});
+
+it('delivers the user goal and full accepted history into the AI workspace and binds them to the session', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const base = request();
+  const context = { source_id: 'source', name: 'Example', repository_url: repositoryUrl, goal: '理解架构与执行机制', history: [{ id: 'earlier', article_id: 'article', title: '整体架构', commit, questions: ['入口怎样连接核心实现？'], report_markdown: '# 完整历史研报\n不能只依赖这篇结论', archived_at: '2026-10-20T00:00:00Z' }] };
+  const input = { ...base, input: { ...base.input, repository_context: context } };
+  const result = await executeInWorkspace(input);
+  expect(result.status).toBe('success');
+  expect(JSON.parse(fs.readFileSync(path.join(result.execution!.workspace, 'input/research-context.json'), 'utf8'))).toEqual(context);
+  expect(sessionBinding(input, input.input.skillBundle)).not.toBe(sessionBinding({ ...input, input: { ...input.input, repository_context: { ...context, goal: '新的目标' } } }, input.input.skillBundle));
+});
+
+it('audits valid SVG variants without enforcing dimensions, layout or path syntax, and catches malformed XML', async () => {
+  const folder = fs.mkdtempSync(path.join(root, 'svg-'));
+  fs.writeFileSync(path.join(folder, 'free.svg'), `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="400"><defs><filter id="blur"><feGaussianBlur stdDeviation="2"/></filter><marker id="arrow" markerWidth="4" markerHeight="4"><path d="M0 0 L4 2 L0 4"/></marker></defs><g transform="scale(1,2)"><path d="M1 2L3 4 M5 6L7 8" marker-end="url(#arrow)"/><text letter-spacing="1">CUSTOM VIEW</text></g></svg>`);
+  for (const skill of ['github-code-research', 'deep-research-expert']) {
+    const script = path.resolve(`../../skills/${skill}/scripts/audit-svg.sh`);
+    expect((await runProcess('bash', [script, folder], root, '', 10000)).code).toBe(0);
+  }
+  fs.writeFileSync(path.join(folder, 'broken.svg'), '<svg><g></svg>');
+  expect((await runProcess('bash', [path.resolve('../../skills/github-code-research/scripts/audit-svg.sh'), folder], root, '', 10000)).code).toBe(1);
 });

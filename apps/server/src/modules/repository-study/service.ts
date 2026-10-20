@@ -58,7 +58,7 @@ export class RepositoryStudyService {
     return studies.map((study) => {
       const tasks = db
         .prepare(
-          `SELECT id,group_id,status,error_message,archived_at,report_markdown FROM research_tasks
+          `SELECT id,group_id,status,error_message,archived_at,report_markdown,questions_json FROM research_tasks
         WHERE article_id=? ORDER BY created_at DESC,rowid DESC`,
         )
         .all(study.article_id) as Array<{
@@ -68,6 +68,7 @@ export class RepositoryStudyService {
         error_message?: string;
         archived_at?: string;
         report_markdown: string;
+        questions_json: string;
       }>;
       const busy = db
         .prepare("SELECT 1 FROM research_claims WHERE article_id=?")
@@ -110,6 +111,7 @@ export class RepositoryStudyService {
             group_id: t.group_id,
             archived_at: t.archived_at || undefined,
             report_markdown: t.report_markdown,
+            questions: JSON.parse(t.questions_json || '[]'),
             wiki_url: links.get(`${t.group_id}:${study.article_id}`)
               ?.research_url,
           })),

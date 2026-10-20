@@ -44,14 +44,37 @@ export class RepositoryProcessingService {
         day: "2-digit",
       }).format(date);
     const today = day(new Date());
-    const delivered = (
-      db
-        .prepare(
-          "SELECT archived_at FROM research_tasks WHERE group_id=? AND archived_at IS NOT NULL",
-        )
-        .all(group.id) as Array<{ archived_at: string }>
-    ).filter((row) => day(new Date(row.archived_at)) === today).length;
-    const budget = Math.max(0, group.deep_analysis_count - delivered);
+    // Each selected source has its own daily quota. A busy or completed repository
+    // cannot consume another repository's allocation.
+    const delivered = new Map(
+      sources.map((source) => [
+        source.id,
+        repositoryStudyService
+          .history(source.id)
+          .filter((item) =>
+            item.reports.some(
+              (report) =>
+                report.group_id === group.id &&
+                report.archived_at &&
+                day(new Date(report.archived_at)) === today,
+            ),
+          ).length,
+      ]),
+    );
+    const remaining = new Map(
+      sources.map((source) => [
+        source.id,
+        Math.max(
+          0,
+          group.deep_analysis_count - (delivered.get(source.id) || 0),
+        ),
+      ]),
+    );
+    const budget = [...remaining.values()].reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    const planned = new Map<string, number>();
     const snapshots = new Map<string, RepositorySnapshot>();
     const last = (id: string) =>
       (
@@ -70,7 +93,8 @@ export class RepositoryProcessingService {
     while (result.entries.length < budget && sources.length) {
       let progress = false;
       for (const source of sources) {
-        if (result.entries.length >= budget) break;
+        if ((planned.get(source.id) || 0) >= (remaining.get(source.id) || 0))
+          continue;
         const history = repositoryStudyService.history(source.id);
         const unfinished = history.filter(
           (item) =>
@@ -151,13 +175,17 @@ export class RepositoryProcessingService {
           `${new Date().toISOString()}:${String(result.entries.length).padStart(3, "0")}`,
         );
         selected.add(articleId);
+        planned.set(source.id, (planned.get(source.id) || 0) + 1);
         progress = true;
       }
       if (!progress) break;
     }
     result.counts.candidate = result.entries.length;
     result.counts.planned = result.entries.length;
-    result.counts.already_processed = delivered;
+    result.counts.already_processed = [...delivered.values()].reduce(
+      (sum, value) => sum + value,
+      0,
+    );
     saveProcessedBatch(runId, result);
     return result;
   }

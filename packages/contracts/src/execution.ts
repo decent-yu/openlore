@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ReasoningEffortSchema } from './model-spec.js';
-import { RepositoryCheckoutSchema } from './github-source.js';
+import { RepositoryResearchContextSchema, RepositoryCheckoutSchema } from './github-source.js';
 
 export const ExecutorConfigSchema = z.object({
   reasoning_effort: ReasoningEffortSchema.optional(),
@@ -63,6 +63,7 @@ export const ExecutionInputSchema = z.object({
   prompt: z.string(),
   material: z.string(),
   repository: RepositoryCheckoutSchema.optional(),
+  repository_context: RepositoryResearchContextSchema.optional(),
   outputSchema: z.record(z.unknown()).optional(),
   model: z.string().optional(),
   reasoning_effort: ReasoningEffortSchema.optional(),
