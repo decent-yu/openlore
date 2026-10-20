@@ -122,12 +122,12 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       published_today_count: number;
       published_three_days_count: number;
     };
-    // The three article states form a partition; interest remains independent.
+    // Scoring and archived research are independent; a deep article may also be scored.
     const stateCounts = sqlite
       .prepare(
         `${scopedPool} SELECT
-      COUNT(CASE WHEN NOT a.deep_flag AND NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
-      COUNT(CASE WHEN NOT a.deep_flag AND a.assessed_flag THEN 1 END) AS scored_count,
+      COUNT(CASE WHEN NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
+      COUNT(CASE WHEN a.assessed_flag THEN 1 END) AS scored_count,
       COUNT(CASE WHEN a.deep_flag THEN 1 END) AS deep_count,
       COUNT(CASE WHEN a.user_interested=1 THEN 1 END) AS interested_count
       FROM scoped a ${timeWhere}`,
@@ -141,9 +141,9 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const filterMeta = { ...timeCounts, ...stateCounts };
     const clauses = [...timeClauses];
     if (query.status_filter === "unreviewed")
-      clauses.push("NOT a.deep_flag AND NOT a.assessed_flag");
+      clauses.push("NOT a.assessed_flag");
     if (query.status_filter === "scored")
-      clauses.push("NOT a.deep_flag AND a.assessed_flag");
+      clauses.push("a.assessed_flag");
     if (query.status_filter === "deep") clauses.push("a.deep_flag");
     if (query.interested_only) clauses.push("a.user_interested=1");
     const whereSql = clauses.length ? "WHERE " + clauses.join(" AND ") : "";

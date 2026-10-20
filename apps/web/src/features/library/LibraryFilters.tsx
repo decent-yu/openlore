@@ -221,7 +221,7 @@ export function LibraryFilters({
               "all",
               "全部",
               meta
-                ? meta.unreviewed_count + meta.scored_count + meta.deep_count
+                ? meta.unreviewed_count + meta.scored_count
                 : undefined,
             ],
             ["unreviewed", "未审核", meta?.unreviewed_count],

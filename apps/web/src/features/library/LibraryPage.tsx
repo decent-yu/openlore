@@ -518,35 +518,6 @@ export function LibraryPage() {
                   timezone={timezone}
                   articleTitle={art.title}
                 />
-                {/* Research Highlights */}
-                {art.research?.status === "succeeded" &&
-                  art.research.questions &&
-                  art.research.questions.length > 0 && (
-                    <div className="bg-purple-50/60 border border-purple-100 rounded-md p-2.5 text-xs space-y-1.5">
-                      <div className="flex items-center justify-between text-purple-900 font-medium text-[11px]">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-purple-600" />
-                          调研重点：
-                        </span>
-                        {art.research.finished_at && (
-                          <span className="text-[10px] text-purple-400 font-normal">
-                            完成于{" "}
-                            {new Date(
-                              art.research.finished_at,
-                            ).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                      <ul className="list-disc list-inside text-neutral-600 space-y-0.5 text-[11px]">
-                        {art.research.questions.slice(0, 2).map((q, idx) => (
-                          <li key={idx} className="line-clamp-1">
-                            {q}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
                 <WikiReadingLinks
                   articleUrl={art.wiki_url}
                   researchUrl={art.research?.wiki_url}

@@ -169,8 +169,8 @@ it("shows independent unreviewed, scored and archived states with counts", () =>
         three_days_count: 6,
         published_today_count: 3,
         published_three_days_count: 4,
-        unreviewed_count: 4,
-        scored_count: 2,
+        unreviewed_count: 3,
+        scored_count: 5,
         deep_count: 2,
         interested_count: 2,
       }}
@@ -178,6 +178,8 @@ it("shows independent unreviewed, scored and archived states with counts", () =>
   );
   expect(html).toContain("未审核");
   expect(html).toContain("已评分");
+  expect(html.match(/全部 \(8\)/g)).toHaveLength(3);
+  expect(html).not.toContain("全部 (10)");
   expect(html).not.toContain("暂未入选");
   expect(html).not.toContain("精选入围");
 });

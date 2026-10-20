@@ -71,6 +71,7 @@ beforeEach(() => {
   );
   mark.run("selected", "selected", "qualified", 0);
   score("selected", 85);
+  score("deep", 93);
   mark.run("deep", "deep", "selected", 1);
   mark.run("excluded", "excluded", "excluded", 0);
   mark.run("deferred", "deferred", "deferred", 0);
@@ -95,11 +96,11 @@ async function list(query = "") {
 const ids = (data: Awaited<ReturnType<typeof list>>) =>
   data.items.map((item) => item.id).sort();
 
-it("partitions all articles into unselected, selected without research, and completed deep analysis", async () => {
+it("includes archived articles in scored results without inventing scores for direct research", async () => {
   const all = await list();
   expect(all.filter_meta).toMatchObject({
     total_count: 8,
-    scored_count: 1,
+    scored_count: 2,
     deep_count: 2,
     interested_count: 2,
   });
@@ -107,10 +108,11 @@ it("partitions all articles into unselected, selected without research, and comp
     "deferred",
     "excluded",
     "old",
+    "research-only",
     "tomorrow",
     "unselected",
   ]);
-  expect(ids(await list("status_filter=scored"))).toEqual(["selected"]);
+  expect(ids(await list("status_filter=scored"))).toEqual(["deep", "selected"]);
   expect(ids(await list("status_filter=deep"))).toEqual([
     "deep",
     "research-only",
@@ -132,7 +134,7 @@ it("intersects the independent interest flag with every article state", async ()
     ids(await list("interested_only=true&status_filter=unreviewed")),
   ).toEqual(["unselected"]);
   expect(ids(await list("interested_only=true&status_filter=scored"))).toEqual(
-    [],
+    ["deep"],
   );
 });
 
@@ -201,7 +203,7 @@ it("includes both selected date endpoints and supports a single local calendar d
 it("computes state counters within the active date scope and preserves pagination totals", async () => {
   const data = await list("time_range=today&status_filter=deep&page_size=1");
   expect(data.filter_meta).toMatchObject({
-    scored_count: 1,
+    scored_count: 2,
     deep_count: 1,
   });
   expect(data.pagination).toMatchObject({ total_count: 1, total_pages: 1 });
@@ -213,7 +215,7 @@ it("intersects source, group and search scopes for both counts and results", asy
   expect(ids(data)).toEqual(["deep", "selected"]);
   expect(data.filter_meta).toMatchObject({
     total_count: 2,
-    scored_count: 1,
+    scored_count: 2,
     deep_count: 1,
   });
   expect(ids(await list("source_id=source&search=Deep"))).toEqual(["deep"]);
@@ -271,8 +273,8 @@ function score(articleId: string, quality: number) {
 it("shares one content assessment independently of task selection and preserves zero scores", async () => {
   score('excluded', 0); score('deferred', 90); score('deep', 93); score('unselected', 89);
   const all = await list();
-  expect(all.filter_meta).toMatchObject({unreviewed_count: 2, scored_count: 4, deep_count: 2});
-  expect(ids(await list('status_filter=scored'))).toEqual(['deferred', 'excluded', 'selected', 'unselected']);
+  expect(all.filter_meta).toMatchObject({unreviewed_count: 3, scored_count: 5, deep_count: 2});
+  expect(ids(await list('status_filter=scored'))).toEqual(['deep', 'deferred', 'excluded', 'selected', 'unselected']);
   const zero = all.items.find(item => item.id === 'excluded')!;
   expect(zero.review?.result?.quality).toBe(0);
   expect(zero).not.toHaveProperty('assessments');
@@ -288,14 +290,15 @@ it("only uses the current body revision and does not count queued, failed or run
     db.prepare("UPDATE articles SET latest_revision='rev' WHERE id=?").run(id);
     db.prepare("INSERT INTO article_reviews(article_id,revision_hash,status,created_at) VALUES (?,'rev',?,'2026-10-19T03:00:00Z')").run(id, status);
   }
-  expect(ids(await list('status_filter=scored'))).toEqual(['selected']);
+  expect(ids(await list('status_filter=scored'))).toEqual(['deep', 'selected']);
   expect((await list()).items.find(item => item.id === 'old')?.review).toBeNull();
 });
 
 it("combines shared reviews with dates, source, interest and pagination", async () => {
   score('unselected', 80);
   const data = await list('time_range=today&source_id=source&status_filter=scored&interested_only=true&page_size=1');
-  expect(ids(data)).toEqual(['unselected']);
-  expect(data.pagination.total_count).toBe(1);
-  expect(data.filter_meta).toMatchObject({unreviewed_count: 0, scored_count: 2, deep_count: 1});
+  expect(ids(data)).toEqual(['deep']);
+  expect(data.pagination.total_count).toBe(2);
+  expect(data.filter_meta).toMatchObject({unreviewed_count: 0, scored_count: 3, deep_count: 1});
+  expect(ids(await list('time_range=today&source_id=source&status_filter=scored&interested_only=true&page_size=1&page=2'))).toEqual(['unselected']);
 });
