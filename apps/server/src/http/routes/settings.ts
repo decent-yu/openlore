@@ -10,6 +10,8 @@ export const settingsRoutes: FastifyPluginAsync = async (fastify) => {
     return settingsService.updateSettings(request.body as any);
   });
 
+  fastify.post<{ Params: { id: string } }>('/settings/connections/repository/:id/default-token', request => settingsService.setDefaultGitHubToken(request.params.id));
+
   fastify.get('/settings/connections/repository', async () => {
     return settingsService.listRepositoryConnections();
   });

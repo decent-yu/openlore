@@ -16,7 +16,7 @@
 
 调研记录在生成前持久分配稳定 ID；失败保留原因，下次重试同一记录并更新代码。生成成功但归档失败时，保留原报告、证据、代码版本与已分配路径；即使目标、Prompt、Skill 或默认分支已经变化，也只重试交付。新研报缓存标识包含实际代码调研 Prompt、Skill 版本、来源目标与历史要求、代码快照及执行器。已完成记录跨流水线共享，避免重复研究。
 
-控制服务和本地 / Worker / SSH 执行机都需要 Git、仓库网络和相应读取权限；私有源码使用所在机器的 Git 凭据，不传递知识库写入 Token。源码准备时间计入执行器超时。专用 Skill 或源码不可用时失败，不回退到 `deep-research-expert`。同步模式自动传送 Skill；本地 Skills 模式需在执行机配置目录安装并刷新 `skills/github-code-research`。
+控制服务和本地 / Worker / SSH 执行机都需要 Git、仓库网络和相应读取权限。系统设置的 GitHub 仓库连接旁点击“设为默认 Token”，本机后续源码拉取自动复用该连接的 Token；未配置时使用本机 Git 凭据。Token 通过临时进程环境用于 HTTPS 认证，不写入 Git URL、命令参数或仓库配置，也不下发给远程执行器。Worker / SSH 使用各自机器的读取凭据。源码准备时间计入执行器超时。专用 Skill 或源码不可用时失败，不回退到 `deep-research-expert`。同步模式自动传送 Skill；本地 Skills 模式需在执行机配置目录安装并刷新 `skills/github-code-research`。
 
 研报第一行标题用于连续编号命名。源码证据材料、研报与必要配图同批归档成功后，才进入共用首页、每日研报、汇报预览和 Webhook 链路。目录结构见 [GitHub 交付归档](05-git-delivery-and-archive.md)。
 

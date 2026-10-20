@@ -40,7 +40,7 @@ export async function runProcess(
   timeout: number,
   signal?: AbortSignal,
   options: {
-    env?: Record<string, string>;
+    env?: Record<string, string | undefined>;
     onOutput?: (stdout: string, stderr: string) => void;
     shouldStop?: (stdout: string, stderr: string) => boolean;
     onStdoutChunk?: (chunk: string) => void;

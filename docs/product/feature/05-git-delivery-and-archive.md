@@ -50,6 +50,8 @@ docs/xxx/
 
 例如目标仓库选择 `Openlore Knowledge Vault`，目录填 `docs/agent-leaning`，则生成 `docs/agent-leaning/stablyai@orca/01-主题.md`；改填 `docs/xxx` 则生成 `docs/xxx/stablyai@orca/01-主题.md`。
 
+在系统设置的 GitHub 仓库连接旁点击“设为默认 Token”，即可复用该连接已有的 Token；所选连接显示“默认 Token”标记。后续源码拉取和没有专用 Token 的归档连接自动使用默认值，连接自己的 Token 优先。更新默认连接的 Token 会同步生效；删除该连接会清除默认配置。Token 保存在本机凭据存储，不在界面回显。
+
 ## 规则
 
 - 无新调研产出时返回 `unchanged`，不生成文件或空提交。

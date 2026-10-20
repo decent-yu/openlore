@@ -3,6 +3,7 @@ import type {
   CollectionResult,
   ContentItem,
 } from '@openlore/contracts';
+import { getGitHubToken } from '../../../../infrastructure/repositories/github/credentials.js';
 import { SafeHttpClient } from '../../../../infrastructure/http/client.js';
 import type { CollectorAdapter } from '../../registry.js';
 
@@ -49,11 +50,14 @@ export class GithubApiCollectorAdapter implements CollectorAdapter {
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases?per_page=10`;
 
     try {
+      const token = getGitHubToken(request.credential_ref);
       const res = await SafeHttpClient.fetch(apiUrl, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
           'User-Agent': 'OpenLore-Collector/1.0',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        maxRedirects: token ? 0 : 5,
         timeoutMs: (request.budget?.timeout_seconds || 30) * 1000,
       });
 

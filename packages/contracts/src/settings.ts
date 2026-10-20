@@ -27,6 +27,8 @@ export const AIProfileSchema = z.object({
 export type AIProfile = z.infer<typeof AIProfileSchema>;
 
 export const WorkspaceSettingsSchema = z.object({
+  github_token_configured: z.boolean().default(false),
+  default_github_token_connection_id: z.string().nullable().optional(),
   default_repository_connection_id: z.string().nullable().optional(),
   default_ai_profile_id: z.string().nullable().optional(),
   default_notification_connection_id: z.string().nullable().optional(),

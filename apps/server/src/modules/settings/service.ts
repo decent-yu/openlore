@@ -27,6 +27,7 @@ import {
 } from '../../infrastructure/persistence/sqlite/schema.js';
 import { PythonWorkerRunner } from '../../infrastructure/python/runner.js';
 import { GitHubClient } from '../../infrastructure/repositories/github/client.js';
+import { getGitHubToken, DEFAULT_GITHUB_TOKEN_REF } from '../../infrastructure/repositories/github/credentials.js';
 import { secretsStore } from '../../infrastructure/secrets/local_file/secrets_store.js';
 
 export function parseGitRepoUrl(input: string): { owner: string; repo: string } | null {
@@ -47,6 +48,8 @@ export class SettingsService {
     const map = new Map(rows.map((r) => [r.key, r.value]));
 
     return {
+      github_token_configured: Boolean(getGitHubToken()),
+      default_github_token_connection_id: map.get('default_github_token_connection_id') || null,
       default_repository_connection_id:
         map.get('default_repository_connection_id') || null,
       default_ai_profile_id: map.get('default_ai_profile_id') || null,
@@ -61,7 +64,7 @@ export class SettingsService {
 
   async updateSettings(settings: Partial<WorkspaceSettings>): Promise<WorkspaceSettings> {
     const db = getDb();
-    for (const [key, value] of Object.entries(WorkspaceSettingsSchema.partial().parse(settings))) {
+    for (const [key, value] of Object.entries(WorkspaceSettingsSchema.omit({ github_token_configured: true, default_github_token_connection_id: true }).partial().parse(settings))) {
       if (value !== undefined) {
         const valStr = Array.isArray(value) ? JSON.stringify(value) : String(value);
         db.insert(workspaceSettingsTable)
@@ -73,6 +76,16 @@ export class SettingsService {
           .run();
       }
     }
+    return this.getSettings();
+  }
+
+  async setDefaultGitHubToken(id: string): Promise<WorkspaceSettings> {
+    const connection = getSqliteDatabase().prepare('SELECT credential_ref FROM repository_connections WHERE id=?').get(id) as { credential_ref: string } | undefined;
+    const token = connection && secretsStore.getSecret(connection.credential_ref);
+    if (!token) throw Object.assign(new Error('该仓库连接没有专用 Token，请先编辑连接并填写 Token'), { statusCode: 400 });
+    secretsStore.setSecret(DEFAULT_GITHUB_TOKEN_REF, token);
+    getDb().insert(workspaceSettingsTable).values({ key: 'default_github_token_connection_id', value: id })
+      .onConflictDoUpdate({ target: workspaceSettingsTable.key, set: { value: id } }).run();
     return this.getSettings();
   }
 
@@ -133,12 +146,13 @@ export class SettingsService {
 
     if (data.token) {
       secretsStore.setSecret(credentialRef, data.token);
+      if ((await this.getSettings()).default_github_token_connection_id === id) secretsStore.setSecret(DEFAULT_GITHUB_TOKEN_REF, data.token);
     }
 
     let defaultBranch = data.defaultBranch || 'main';
     let state = 'ready';
 
-    const token = data.token || secretsStore.getSecret(credentialRef);
+    const token = data.token || getGitHubToken(credentialRef);
     if (token) {
       const test = await GitHubClient.testConnection(owner, repo, token);
       if (test.ok) {
@@ -197,7 +211,7 @@ export class SettingsService {
     if (!repo) {
       return { ok: false, message: 'Repository connection not found' };
     }
-    const token = secretsStore.getSecret(repo.credentialRef);
+    const token = getGitHubToken(repo.credentialRef);
     if (!token) {
       return { ok: false, message: 'Token secret not configured' };
     }
@@ -227,6 +241,10 @@ export class SettingsService {
     db.delete(repositoryConnectionsTable).where(eq(repositoryConnectionsTable.id, id)).run();
 
     const settings = await this.getSettings();
+    if (settings.default_github_token_connection_id === id) {
+      secretsStore.deleteSecret(DEFAULT_GITHUB_TOKEN_REF);
+      db.delete(workspaceSettingsTable).where(eq(workspaceSettingsTable.key, 'default_github_token_connection_id')).run();
+    }
     if (settings.default_repository_connection_id === id) {
       await this.updateSettings({ default_repository_connection_id: '' });
     }

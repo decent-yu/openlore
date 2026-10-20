@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { parseGitHubRepository } from "@openlore/contracts";
+import { gitHubAuthentication } from "../repositories/github/credentials.js";
 import type { runProcess } from "./workspace_runner.js";
 
 /** Git's immutable objects are shared locally; each research workspace has its own checkout. */
@@ -52,6 +53,7 @@ export async function repositoryCache(
       await delay(50, undefined, { signal });
     }
   }
+  const authentication = gitHubAuthentication(url);
   const git = async (args: string[], cwd = cache) => {
     if (signal?.aborted || Date.now() >= deadline)
       throw new Error("源码准备已取消或超时");
@@ -62,7 +64,7 @@ export async function repositoryCache(
       "",
       Math.max(1, deadline - Date.now()),
       signal,
-      { env: { GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } },
+      { env: { ...authentication, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } },
     );
     if (result.code !== 0 || result.timedOut) {
       const reason = result.timedOut

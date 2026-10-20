@@ -50,6 +50,8 @@ export const api = {
     }),
 
 
+  setDefaultGitHubToken: (id: string) => request<WorkspaceSettings>(`/settings/connections/repository/${id}/default-token`, { method: 'POST' }),
+
   listRepos: () => request<RepositoryConnection[]>('/settings/connections/repository'),
   saveRepo: (data: any) =>
     request<RepositoryConnection>('/settings/connections/repository', {
