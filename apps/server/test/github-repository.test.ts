@@ -636,6 +636,18 @@ it("feeds both task types into the same daily feed, report preview and webhook p
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "translate"),
   ).toHaveLength(1);
+  const overview = await feedService.getDailyFeed();
+  expect(overview.group).toBeNull();
+  expect(overview.stats.pool_count).toBe(2);
+  expect(overview.deep_articles).toHaveLength(2);
+  expect(new Set(overview.deep_articles.map((item) => item.task_type))).toEqual(
+    new Set(["article_research", "repository_research"]),
+  );
+  expect(
+    overview.deep_articles.every(
+      (item) => item.sources.length === 1 && item.research?.wiki_url,
+    ),
+  ).toBe(true);
   const uploads = vi
     .mocked(GitHubClient.syncFiles)
     .mock.calls.map(([input]) => input.files.map((file) => file.path));

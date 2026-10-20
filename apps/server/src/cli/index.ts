@@ -11,6 +11,12 @@ async function serve() {
   console.log('Initializing OpenLore...');
   initDatabase();
   await sourcesService.seedDefaultSources();
+  const host = process.env.HOST || '127.0.0.1';
+  if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !process.env.OPENLORE_ADMIN_TOKEN) throw new Error('服务器对外监听前请配置 OPENLORE_ADMIN_TOKEN');
+  const server = await createServer();
+  const port = parseInt(process.env.PORT || '8767', 10);
+  // A duplicate process must fail to bind before it can interrupt the active server's work.
+  const address = await server.listen({ host, port });
   const db = getSqliteDatabase();
   // A server restart invalidates in-flight leases. Retrying starts a new run from its saved inputs.
   db.transaction(() => {
@@ -25,15 +31,8 @@ async function serve() {
     db.prepare("UPDATE runs SET status='failed',error_message='服务重启导致任务中断，请重新运行',finished_at=? WHERE status='running'").run(new Date().toISOString());
     db.prepare("UPDATE ai_jobs SET status='cancelled',lease_token=NULL WHERE status IN ('queued','running')").run();
   })();
-  const host = process.env.HOST || '127.0.0.1';
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host) && !process.env.OPENLORE_ADMIN_TOKEN) throw new Error('服务器对外监听前请配置 OPENLORE_ADMIN_TOKEN');
-  const server = await createServer();
-  const port = parseInt(process.env.PORT || '8767', 10);
-
   jobsQueue.startHeartbeat(15000);
   appScheduler.start(30000);
-
-  const address = await server.listen({ host, port });
   console.log(`OpenLore server listening at ${address}`);
 
   const shutdown = async (signal: string) => {

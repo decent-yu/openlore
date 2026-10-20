@@ -377,6 +377,7 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
     db.update(researchTasksTable)
       .set({
         status: "succeeded",
+        errorMessage: null,
         reportMarkdown: report,
         finishedAt,
       })

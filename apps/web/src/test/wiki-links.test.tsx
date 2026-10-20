@@ -49,7 +49,7 @@ it("keeps the report and article reading destinations separate and omits absent 
   expect(renderToStaticMarkup(<WikiReadingLinks />)).toBe("");
 });
 
-it("links featured and remaining research titles directly to Wiki without nested anchors", () => {
+it("links research titles directly to Wiki and moves secondary links into the card menu", () => {
   const client = new QueryClient();
   const article = DailyFeedArticleSchema.parse({
     id: "article",
@@ -75,7 +75,7 @@ it("links featured and remaining research titles directly to Wiki without nested
     available_dates: ["2026-10-19"],
     stats: {
       pool_count: 2,
-        deep_analyzed_count: 2,
+      deep_analyzed_count: 2,
       pending_count: 0,
     },
     deep_articles: [article],
@@ -90,6 +90,8 @@ it("links featured and remaining research titles directly to Wiki without nested
   expect(html.match(new RegExp(`href="${base}/research"`, "g"))).toHaveLength(
     2,
   );
+  expect(html).toContain("更多链接：Wiki research title");
+  expect(html).not.toContain(`href="${base}/article"`);
   expect(html).not.toMatch(/<a\b[^>]*>\s*<a\b/);
   client.clear();
 });

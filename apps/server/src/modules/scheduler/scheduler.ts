@@ -415,6 +415,7 @@ export class AppScheduler {
       db.update(runsTable)
         .set({
           status: "succeeded",
+          errorMessage: null,
           stage: "completed",
           finishedAt: new Date().toISOString(),
           aiLogsJson: JSON.stringify(logs),

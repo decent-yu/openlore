@@ -56,8 +56,9 @@ export class FeedService {
     const today = dateKey(new Date());
     const date =
       dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : today;
-    const group =
-      groups.find((item) => item.id === groupId) || groups[0] || null;
+    const group = groups.find((item) => item.id === groupId) || null;
+    const scopedGroups = groupId ? (group ? [group] : []) : groups;
+    const groupsById = new Map(scopedGroups.map((item) => [item.id, item]));
     const response: DailyFeedResponse = {
       group,
       groups: groups.map(({ id, name }) => ({ id, name })),
@@ -67,19 +68,18 @@ export class FeedService {
       stats: { pool_count: 0, deep_analyzed_count: 0, pending_count: 0 },
       deep_articles: [],
     };
-    if (!group) return response;
+    if (!scopedGroups.length) return response;
     const db = getSqliteDatabase();
     const runs = getDb()
       .select()
       .from(runsTable)
-      .where(eq(runsTable.groupId, group.id))
+      .where(group ? eq(runsTable.groupId, group.id) : undefined)
       .orderBy(desc(runsTable.startedAt))
-      .all();
-    const current = runs.find(
-      (run) =>
-        run.status === "running" ||
-        dateKey(run.finishedAt || run.startedAt) === date,
-    );
+      .all()
+      .filter((run) => groupsById.has(run.groupId));
+    const current =
+      runs.find((run) => run.status === "running") ||
+      runs.find((run) => dateKey(run.finishedAt || run.startedAt) === date);
     response.current_run = current
       ? {
           id: current.id,
@@ -88,13 +88,26 @@ export class FeedService {
           error_message: current.errorMessage,
         }
       : undefined;
-    const pool = listPoolCandidates(group.source_ids, group.task_type);
+    const pool = [
+      ...new Map(
+        scopedGroups
+          .flatMap((item) =>
+            listPoolCandidates(item.source_ids, item.task_type),
+          )
+          .map((item) => [item.id, item]),
+      ).values(),
+    ];
     response.stats.pool_count = pool.length;
     response.stats.pending_count = pool.filter(
       (item) => !item.processed && !item.busy,
     ).length;
-    const tasks = (await researchService.listResearchTasks(group.id))
-      .filter((task) => task.status === "succeeded" && task.archived_at)
+    const tasks = (await researchService.listResearchTasks(group?.id))
+      .filter(
+        (task) =>
+          groupsById.has(task.group_id) &&
+          task.status === "succeeded" &&
+          task.archived_at,
+      )
       .sort((a, b) => b.archived_at!.localeCompare(a.archived_at!));
     response.available_dates = [
       ...new Set([today, ...tasks.map((task) => dateKey(task.archived_at!))]),
@@ -112,12 +125,12 @@ export class FeedService {
     const dated = tasks.filter(
       (task) =>
         dateKey(task.archived_at!) === date &&
-        !seen.has(task.article_id) &&
-        Boolean(seen.add(task.article_id)),
+        !seen.has(wikiLinkKey(task.group_id, task.article_id)) &&
+        Boolean(seen.add(wikiLinkKey(task.group_id, task.article_id))),
     );
     const links = getPublishedWikiLinks(
       dated.map((task) => task.article_id),
-      group.id,
+      group?.id,
     );
     const summaries = new Map<string, string>();
     for (const run of runs.filter((run) => run.status === "succeeded")) {
@@ -125,10 +138,14 @@ export class FeedService {
         entries?: Array<{ article_id: string; summary: string }>;
       };
       for (const entry of output.entries || [])
-        if (!summaries.has(entry.article_id))
-          summaries.set(entry.article_id, entry.summary);
+        if (!summaries.has(wikiLinkKey(run.groupId, entry.article_id)))
+          summaries.set(
+            wikiLinkKey(run.groupId, entry.article_id),
+            entry.summary,
+          );
     }
     for (const task of dated) {
+      const group = groupsById.get(task.group_id)!;
       const article = getDb()
         .select()
         .from(articlesTable)
@@ -152,12 +169,21 @@ export class FeedService {
           "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
         )
         .get(article.id) as { result_json: string } | undefined;
-      let summary = summaries.get(article.id) || "";
+      let summary = summaries.get(wikiLinkKey(group.id, article.id)) || "";
       if (assessment) {
         try {
-          summary = JSON.parse(assessment.result_json).summary || "";
+          summary = JSON.parse(assessment.result_json).positioning || "";
         } catch {}
       }
+      const sources = db
+        .prepare(
+          `
+        SELECT DISTINCT s.id, s.name FROM source_items si
+        JOIN sources s ON s.id=si.source_id
+        WHERE si.article_id=? ORDER BY s.name, s.id
+      `,
+        )
+        .all(article.id) as Array<{ id: string; name: string }>;
       response.deep_articles.push({
         id: article.id,
         task_type: group.task_type,
@@ -166,6 +192,7 @@ export class FeedService {
         author: article.author,
         original_url: article.canonicalUrl,
         published_at: article.publishedAt,
+        sources,
         summary,
         tags: [group.name],
         group_id: group.id,
