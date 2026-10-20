@@ -51,7 +51,7 @@ export async function buildRepositoryArchive(
         task.report_markdown.trim(),
     );
     const study = task?.repository_study || repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
-    if (!study || !task)
+    if (!study?.commit || !task)
       throw new Error("仓库归档需要固定版本材料与已完成的代码研报");
     const existing = manifest.article_locations[entry.article_id];
     const location = db

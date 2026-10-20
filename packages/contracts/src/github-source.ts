@@ -36,10 +36,10 @@ export function parseGitHubRepository(
 export const RepositoryStudySchema = z.object({
   repository_url: z.string().url(),
   directory: z.string().regex(/^[\w-]+@[\w.-]+$/),
-  commit: z.string().min(1),
+  commit: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   day: z.string(),
   focus: z.string(),
-  files: z.array(z.string()),
+  run_id: z.string().optional(),
   source_id: z.string().optional(),
   study_id: z.string().optional(),
   questions: z.array(z.string()).default([]),

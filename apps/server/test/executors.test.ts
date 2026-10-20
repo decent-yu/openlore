@@ -50,7 +50,7 @@ describe('Workspace execution and remote Worker', () => {
     );
     fs.writeFileSync(
       fakeCli,
-      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);const config=fs.existsSync('.gemini/settings.json')?JSON.parse(fs.readFileSync('.gemini/settings.json','utf8')):null;const finish=()=>console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8'),config})}));if(process.cwd().includes('worker-work')){process.stderr.write('Reading Skill and article');setTimeout(finish,11500);}else finish();`,
+      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];if(fs.existsSync('input/repository.json')){const repo=JSON.parse(fs.readFileSync('input/repository.json','utf8'));const quote=fs.readFileSync('input/repository/core.ts','utf8');const report='# Worker source research\\n'+repo.url+'/blob/'+repo.commit+'/core.ts#L1';fs.writeFileSync('output/research.md',report);fs.writeFileSync('output/evidence.json',JSON.stringify({complete:true,commit:repo.commit,questions:['How does the worker prepare source?'],citations:[{claim:'Worker implementation',file:'core.ts',start_line:1,end_line:1,quote}]}));console.log(JSON.stringify({response:report}));process.exit(0);}const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);const config=fs.existsSync('.gemini/settings.json')?JSON.parse(fs.readFileSync('.gemini/settings.json','utf8')):null;const finish=()=>console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8'),config})}));if(process.cwd().includes('worker-work')){process.stderr.write('Reading Skill and article');setTimeout(finish,11500);}else finish();`,
       { mode: 0o700 },
     );
     request = {
@@ -324,10 +324,25 @@ describe('Workspace execution and remote Worker', () => {
       }),
       { mode: 0o600 },
     );
+    // Only the Worker has the source fixture and Git mapping; the controller has no source cache.
+    const source = path.join(root, 'worker-only-source');
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, 'core.ts'), 'export const workerOwnsSource = true;');
+    fs.writeFileSync(path.join(source, 'README.md'), '# Source prepared by the Worker');
+    for (const args of [['init', '--quiet'], ['add', '.'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--quiet', '-m', 'Worker fixture']]) {
+      expect((await runProcess('git', args, source, '', 10000)).code).toBe(0);
+    }
+    const commit = (await runProcess('git', ['rev-parse', 'HEAD'], source, '', 10000)).stdout.trim();
+    const gitBinary = (await runProcess('which', ['git'], source, '', 10000)).stdout.trim();
+    const bin = path.join(root, 'worker-bin');
+    fs.mkdirSync(bin);
+    const repositoryUrl = 'https://github.com/example/worker-source';
+    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nconst {spawnSync}=require('child_process');const args=process.argv.slice(2).map(value=>value===${JSON.stringify(repositoryUrl)}?${JSON.stringify(source)}:value);const result=spawnSync(${JSON.stringify(gitBinary)},args,{stdio:'inherit'});process.exit(result.status??1);`, { mode: 0o700 });
+    fs.cpSync(path.resolve('../../skills/github-code-research'), path.join(root, 'skills/github-code-research'), { recursive: true });
     const child = spawn(
       process.execPath,
       [path.resolve('dist/cli/index.js'), 'worker', file],
-      { env: { ...process.env, OPENLORE_ADMIN_TOKEN: '' }, stdio: 'pipe' },
+      { env: { ...process.env, OPENLORE_ADMIN_TOKEN: '', OPENLORE_DATA_DIR: path.join(root, 'worker-data'), PATH: bin + path.delimiter + process.env.PATH }, stdio: 'pipe' },
     );
     let errors = '';
     child.stderr?.on('data', (data) => (errors += data));
@@ -364,6 +379,18 @@ describe('Workspace execution and remote Worker', () => {
       const result = await running;
       expect(result.status, errors).toBe('success');
       expect(result.result).toMatchObject({ marker: 'TEST_SKILL_REVISION' });
+      const researched = await new ExecutorAdapter('remote', 'gemini_cli', fakeCli, config).execute({
+        jobId: 'worker-source-research', profileId: 'remote', taskType: 'research_report',
+        skillId: 'github-code-research', repository: { url: repositoryUrl },
+        prompt: 'Read the actual implementation and deliver source evidence.', material: 'Goal: understand worker-owned source preparation.',
+      });
+      expect(researched.status, JSON.stringify(researched)).toBe('success');
+      expect(researched.repository).toMatchObject({ url: repositoryUrl, commit });
+      expect(researched.result).toContain(commit);
+      expect(fs.existsSync(path.join(root, 'worker-data/repository-cache'))).toBe(true);
+      expect(fs.existsSync(path.join(root, 'data/repository-cache'))).toBe(false);
+      expect(fs.readFileSync(path.join(researched.execution!.workspace, 'input/article.md'), 'utf8')).toContain('Source prepared by the Worker');
+
       const denied = await app.inject({
         method: 'POST',
         url: '/api/v1/worker/remote/claim',

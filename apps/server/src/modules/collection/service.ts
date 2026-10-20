@@ -14,7 +14,6 @@ import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js
 import { sourcesService } from "../sources/service.js";
 import { settingsService } from "../settings/service.js";
 import { GithubApiCollectorAdapter } from "./collectors/github_api/adapter.js";
-import { GithubRepositoryCollectorAdapter } from "./collectors/github_repository/adapter.js";
 import { PlatformCollectorAdapter } from "./collectors/platform/adapter.js";
 import { WebFeedCollectorAdapter } from "./collectors/web_feed/adapter.js";
 import { WebPageCollectorAdapter } from "./collectors/web_page/adapter.js";
@@ -31,7 +30,6 @@ export { matchesSourceKeywords } from "./quality.js";
 collectorRegistry.register(new WebFeedCollectorAdapter());
 collectorRegistry.register(new WebPageCollectorAdapter());
 collectorRegistry.register(new GithubApiCollectorAdapter());
-collectorRegistry.register(new GithubRepositoryCollectorAdapter());
 collectorRegistry.register(new PlatformCollectorAdapter());
 
 type Candidate = {
@@ -56,6 +54,8 @@ export class CollectionService {
   async previewSource(sourceId: string): Promise<CollectionResult> {
     const source = await sourcesService.getSource(sourceId);
     if (!source) throw new Error(`Source not found: ${sourceId}`);
+    if (source.capability_id === 'github_repository')
+      throw Object.assign(new Error('仓库源码由 AI 执行器在研读时准备，请运行关联流水线'), { statusCode: 400 });
     const adapter = collectorRegistry.get(source.capability_id);
     if (!adapter)
       throw new Error(`Unsupported capability: ${source.capability_id}`);
@@ -99,7 +99,7 @@ export class CollectionService {
       scope: { limit },
       state,
       options: source.options,
-      budget: { timeout_seconds: source.capability_id === 'github_repository' ? 60 : 20, max_requests: 10 },
+      budget: { timeout_seconds: 20, max_requests: 10 },
     };
   }
 
@@ -109,6 +109,8 @@ export class CollectionService {
   ): Promise<CollectionResult> {
     const source = await sourcesService.getSource(sourceId);
     if (!source) throw new Error(`Source not found: ${sourceId}`);
+    if (source.capability_id === 'github_repository')
+      throw Object.assign(new Error('仓库源码由 AI 执行器在研读时准备，请运行关联流水线'), { statusCode: 400 });
     const adapter = collectorRegistry.get(source.capability_id);
     if (!adapter)
       throw new Error(`Unsupported capability: ${source.capability_id}`);

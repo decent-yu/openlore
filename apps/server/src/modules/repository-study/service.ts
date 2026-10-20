@@ -1,44 +1,6 @@
-import path from "node:path";
-import type { RepositoryHistory, Source } from "@openlore/contracts";
+import type { RepositoryHistory } from "@openlore/contracts";
 import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
-import { getAppPaths } from "../../infrastructure/config/paths.js";
-import { repositoryCache } from "../../infrastructure/ai/repository_cache.js";
-import { runProcess } from "../../infrastructure/ai/workspace_runner.js";
 import { getPublishedWikiLinks } from "../delivery/wiki-links.js";
-
-export interface RepositorySnapshot {
-  commit: string;
-  branch: string;
-  files: string[];
-  readme: string;
-}
-export async function refreshRepository(
-  source: Pick<Source, "url">,
-): Promise<RepositorySnapshot> {
-  const snapshot = await repositoryCache(
-    source.url,
-    path.join(getAppPaths().dataDir, "repository-cache"),
-    runProcess,
-    600000,
-  );
-  const read = async (args: string[]) => {
-    const result = await runProcess("git", args, snapshot.cache, "", 30000);
-    if (result.code !== 0) throw new Error("读取本地仓库快照失败");
-    return result.stdout;
-  };
-  const files = (await read(["ls-tree", "-rz", "--name-only", snapshot.commit]))
-    .split("\0")
-    .filter(Boolean);
-  const readme = files.find((file) =>
-    /^readme(?:\.md|\.rst|\.txt)?$/i.test(file),
-  );
-  return {
-    commit: snapshot.commit,
-    branch: snapshot.branch!,
-    files,
-    readme: readme ? await read(["show", `${snapshot.commit}:${readme}`]) : "",
-  };
-}
 
 export class RepositoryStudyService {
   history(sourceId: string): RepositoryHistory[] {

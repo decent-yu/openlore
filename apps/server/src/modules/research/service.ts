@@ -1,6 +1,6 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, buildCodeResearchPrompt, buildRepositoryResearchInstructions, repositoryResearchContext, type RepositoryResearchContext, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, buildRepositoryResearchInstructions, repositoryResearchContext, type RepositoryResearchContext, GITHUB_CODE_RESEARCH_SKILL, RepositoryCheckoutSchema, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -155,8 +155,18 @@ export class ResearchService {
       group?.researchInstructions ||
       DEFAULT_RESEARCH_INSTRUCTIONS;
     const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
-    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
+    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少来源与目标');
     let repositoryContext: RepositoryResearchContext | undefined;
+    // Reports from the same pipeline run share the first executor-resolved Commit.
+    let pinnedCommit: string | undefined;
+    if (study && runId) {
+      const pinned = getSqliteDatabase().prepare(`SELECT json_extract(date_evidence_json,'$.repository_study.commit') AS commit_sha FROM articles
+        WHERE json_extract(date_evidence_json,'$.repository_study.run_id')=?
+        AND json_extract(date_evidence_json,'$.repository_study.source_id')=?
+        AND length(json_extract(date_evidence_json,'$.repository_study.commit'))=40 ORDER BY rowid LIMIT 1`).get(runId, study.source_id) as { commit_sha: string } | undefined;
+      pinnedCommit = pinned?.commit_sha;
+    }
+
     if (study) {
       // Upload retries reuse the approved report before resolving skills, prompts or fresh code.
       const latest = getSqliteDatabase().prepare("SELECT id,archived_at,report_markdown FROM research_tasks WHERE group_id=? AND article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string; archived_at: string | null; report_markdown: string } | undefined;
@@ -167,7 +177,7 @@ export class ResearchService {
       if (!source) throw new Error('仓库来源配置不存在，无法准备目标和研究历史');
       const prior = getSqliteDatabase().prepare("SELECT questions_json FROM research_tasks WHERE article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(articleId) as { questions_json: string } | undefined;
       repositoryContext = repositoryResearchContext({ ...source, options: { ...source.options, research_focus: study.focus } }, prior ? undefined : articleId);
-      instructions = buildRepositoryResearchInstructions(repositoryContext, customInstructions || group?.researchInstructions, { commit: study.commit, study_id: study.study_id || articleId });
+      instructions = buildRepositoryResearchInstructions(repositoryContext, customInstructions || group?.researchInstructions, { commit: pinnedCommit, study_id: study.study_id || articleId });
       if (prior) instructions += `\n用户明确重新调研已有主题：${art.title}。原研究问题：${prior.questions_json}。围绕原问题追踪本次最新源码、复核和深化，可修正旧认识，不另换无关主题。新研报覆盖原归档路径，旧内容由 Git 历史保留，允许有依据地再次回答相同问题。`;
 
     }
@@ -225,7 +235,7 @@ export class ResearchService {
         groupId,
         articleId,
         revisionHash: art.latestRevision,
-        repositoryStudyJson: JSON.stringify(study ? { ...study, files: [] } : {}),
+        repositoryStudyJson: JSON.stringify(study || {}),
         status: "running",
         requestHash,
         questionsJson: JSON.stringify([
@@ -264,7 +274,7 @@ export class ResearchService {
           taskType: "research_report",
           skillId: researchSkill.id,
           skillRevision: researchSkill.revision,
-          repository: study ? {url: study.repository_url, commit: study.commit} : undefined,
+          repository: study ? {url: study.repository_url, commit: pinnedCommit} : undefined,
           repository_context: repositoryContext,
           prompt,
           material: `Title: ${art.title}\nSource URL: ${art.canonicalUrl || "未提供"}\n\n${content}`,
@@ -277,6 +287,17 @@ export class ResearchService {
           })
           .where(eq(researchTasksTable.id, taskId))
           .run();
+        if (study && aiRes.repository) {
+          const prepared = RepositoryCheckoutSchema.parse(aiRes.repository);
+          if (prepared.url !== study.repository_url || (pinnedCommit && prepared.commit !== pinnedCommit))
+            throw new Error('执行器返回的源码版本与任务不匹配');
+          study.commit = prepared.commit;
+          db.update(researchTasksTable).set({ repositoryStudyJson: JSON.stringify(study), requestHash: crypto.createHash("sha256").update(JSON.stringify([requestHash, prepared])).digest("hex") }).where(eq(researchTasksTable.id, taskId)).run();
+          db.update(articlesTable).set({ dateEvidenceJson: JSON.stringify({ ...JSON.parse(art.dateEvidenceJson), repository_study: study }) }).where(eq(articlesTable.id, articleId)).run();
+        }
+        if (study && aiRes.status === 'success' && !aiRes.repository)
+          throw new Error('执行器未返回实际源码版本，请更新 AI Runner 后重试');
+
         if (aiRes.status !== "success")
           failure = aiRes.error?.message || "AI 调研调用失败";
         if (aiRes.status === "success" && aiRes.result) {
@@ -294,7 +315,7 @@ export class ResearchService {
             const artifact = aiRes.artifacts?.find(file => file.path === 'evidence.json');
             if (!artifact) throw new Error('代码研读缺少可核验的源码证据');
             const evidence = JSON.parse(Buffer.from(artifact.content, 'base64').toString('utf8'));
-            if (evidence.complete !== true || evidence.commit !== study.commit || !Array.isArray(evidence.questions) || !evidence.questions.length || !Array.isArray(evidence.citations) || !evidence.citations.length)
+            if (evidence.complete !== true || !study.commit || evidence.commit !== study.commit || !Array.isArray(evidence.questions) || !evidence.questions.length || !Array.isArray(evidence.citations) || !evidence.citations.length)
               throw new Error('关键源码证据不足，保留未完成状态');
             const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim();
             const previous = getSqliteDatabase().prepare(`SELECT a.title,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id

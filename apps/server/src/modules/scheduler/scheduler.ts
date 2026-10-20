@@ -100,7 +100,7 @@ export class AppScheduler {
 
   private async pollSources(force: boolean): Promise<string[]> {
     const sources = (await sourcesService.listSources()).filter(
-      (source) => source.enabled,
+      (source) => source.enabled && source.capability_id !== "github_repository",
     );
     const ids: string[] = [];
     for (const source of sources) {

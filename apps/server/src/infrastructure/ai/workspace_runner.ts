@@ -306,7 +306,7 @@ export async function executeInWorkspace(
     }
     const binding = sessionBinding(request, bundle);
     if (input.repository || input.skillId === GITHUB_CODE_RESEARCH_SKILL) {
-      if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
+      if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定 GitHub 仓库');
       repository = await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(600000, config.timeout_seconds * 1000), signal, Boolean(input.session));
       material = repositoryMaterial(workspace, repository, input.material);
     }

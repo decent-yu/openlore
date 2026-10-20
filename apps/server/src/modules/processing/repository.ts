@@ -11,11 +11,7 @@ import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js
 import { sourcesService } from "../sources/service.js";
 import { collectionService } from "../collection/service.js";
 import { claimResearchArticle } from "../research/state.js";
-import {
-  refreshRepository,
-  repositoryStudyService,
-  type RepositorySnapshot,
-} from "../repository-study/service.js";
+import { repositoryStudyService } from "../repository-study/service.js";
 import { articleSlug } from "../delivery/archive-layout.js";
 import {
   createProcessedBatch,
@@ -39,7 +35,6 @@ export class RepositoryProcessingService {
     // Each run gives every selected repository its own allocation.
     const budget = sources.length * group.deep_analysis_count;
     const planned = new Map<string, number>();
-    const snapshots = new Map<string, RepositorySnapshot>();
     const last = (id: string) =>
       (
         db
@@ -76,26 +71,15 @@ export class RepositoryProcessingService {
         let articleId = retry?.article_id;
         let created = false;
         if (!articleId) {
-          let snapshot = snapshots.get(source.id);
-          if (!snapshot) {
-            snapshot = await this.snapshot(source);
-            snapshots.set(source.id, snapshot);
-          }
-          articleId = this.allocate(source, snapshot, selected);
+          articleId = this.allocate(source, selected, runId);
           if (!articleId) continue;
           created = true;
         }
         if (!claimResearchArticle(articleId, group.id, runId, Boolean(retry)))
           continue;
-        // Failed generation uses fresh default-branch code; successful reports awaiting upload stay unchanged.
-        if (!created && !retry?.reports.some((report) => !report.archived_at)) {
-          let snapshot = snapshots.get(source.id);
-          if (!snapshot) {
-            snapshot = await this.snapshot(source);
-            snapshots.set(source.id, snapshot);
-          }
-          this.materialize(source, snapshot, articleId);
-        }
+        // Publication retries keep their approved report; new research sends only intent.
+        if (!created && !retry?.reports.some((report) => !report.archived_at))
+          this.materialize(source, articleId, runId);
         const article = db
           .prepare("SELECT * FROM articles WHERE id=?")
           .get(articleId) as {
@@ -106,7 +90,7 @@ export class RepositoryProcessingService {
           date_evidence_json: string;
         };
         const study = repositoryStudy(JSON.parse(article.date_evidence_json));
-        if (!study) throw new Error("仓库材料缺少源码快照");
+        if (!study) throw new Error("仓库研读缺少来源与目标");
         const revision = db
           .prepare(
             "SELECT content_ref FROM article_revisions WHERE article_id=? AND revision_hash=?",
@@ -151,7 +135,7 @@ export class RepositoryProcessingService {
     return result;
   }
 
-  /** Explicit manual research always refreshes the source before regenerating. */
+  /** Explicit manual research sends a fresh source intent to the execution machine. */
   async prepareManualResearch(
     group: Group,
     articleId: string,
@@ -174,26 +158,14 @@ export class RepositoryProcessingService {
     const source = sourceId ? await sourcesService.getSource(sourceId) : null;
     if (!source || source.capability_id !== "github_repository")
       throw new Error("仓库来源不存在");
-    const snapshot = await this.snapshot(source);
-    this.materialize(source, snapshot, articleId);
+    this.materialize(source, articleId);
     return articleId;
-  }
-
-  private async snapshot(source: Source): Promise<RepositorySnapshot> {
-    try {
-      const snapshot = await refreshRepository(source);
-      await sourcesService.updateLastPolled(source.id, true);
-      return snapshot;
-    } catch (error: any) {
-      await sourcesService.updateLastPolled(source.id, false, error.message);
-      throw error;
-    }
   }
 
   private allocate(
     source: Source,
-    snapshot: RepositorySnapshot,
     selected: Set<string>,
+    runId: string,
   ): string | undefined {
     const id = `art_${crypto.randomUUID()}`;
     // Allocation and material are durable before claims/research. Source-wide IDs survive other pipelines.
@@ -207,15 +179,15 @@ export class RepositoryProcessingService {
           )
       )
         return undefined;
-      this.materialize(source, snapshot, id);
+      this.materialize(source, id, runId);
       return id;
     })();
   }
 
   private materialize(
     source: Source,
-    snapshot: RepositorySnapshot,
     articleId: string,
+    runId?: string,
   ): void {
     const repository = parseGitHubRepository(source.url)!;
     const now = new Date().toISOString();
@@ -230,10 +202,9 @@ export class RepositoryProcessingService {
       directory: repository.directory,
       source_id: source.id,
       study_id: articleId,
-      commit: snapshot.commit,
+      run_id: runId,
       day: now.slice(0, 10),
       focus: source.options.research_focus,
-      files: snapshot.files,
       questions: previous?.questions || [],
     };
     const existing = getSqliteDatabase()
@@ -254,7 +225,7 @@ export class RepositoryProcessingService {
         published_at: now,
         date_evidence: { repository_study: study },
         body: {
-          value: `# ${repository.owner}/${repository.repo}\n\n研读目标：${study.focus || "核心架构、设计方案与实现思想"}\n默认分支：${snapshot.branch}\nCommit：${snapshot.commit}\n\n## 本地完整目录\n${snapshot.files.join("\n")}\n\n## README\n${snapshot.readme}`,
+          value: `# ${repository.owner}/${repository.repo}\n\n研读目标：${study.focus || "核心架构、设计方案与实现思想"}\n仓库：${source.url}\n源码由 AI 执行器在研读时准备。`,
           format: "markdown",
           completeness: "full",
         },

@@ -1,6 +1,6 @@
 # 05 GitHub 交付归档
 
-归档由云端控制服务执行。Runner 回传 AI 结果和文件，云端校验后构建归档包，再使用云端保管的 GitHub 凭据更新目标仓库。执行机不需要仓库 Token。
+归档由云端控制服务执行。Runner 回传 AI 结果和文件，云端校验后构建归档包，再使用云端保管的 GitHub 凭据更新目标仓库。执行机不需要归档仓库的写入 Token；研读私有源码时使用执行机自身的读取凭据。
 
 ## 文件结构
 
@@ -50,7 +50,7 @@ docs/xxx/
 
 例如目标仓库选择 `Openlore Knowledge Vault`，目录填 `docs/agent-leaning`，则生成 `docs/agent-leaning/stablyai@orca/01-主题.md`；改填 `docs/xxx` 则生成 `docs/xxx/stablyai@orca/01-主题.md`。
 
-在系统设置的 GitHub 仓库连接旁点击“设为默认 Token”，即可复用该连接已有的 Token；所选连接显示“默认 Token”标记。后续源码拉取和没有专用 Token 的归档连接自动使用默认值，连接自己的 Token 优先。更新默认连接的 Token 会同步生效；删除该连接会清除默认配置。Token 保存在本机凭据存储，不在界面回显。
+在系统设置的 GitHub 仓库连接旁点击“设为默认 Token”，即可复用该连接已有的 Token；所选连接显示“默认 Token”标记。同机执行器的源码拉取和没有专用 Token 的归档连接自动使用默认值；远程 Runner 使用其自身读取凭据，连接自己的 Token 优先。更新默认连接的 Token 会同步生效；删除该连接会清除默认配置。Token 保存在本机凭据存储，不在界面回显。
 
 ## 规则
 
