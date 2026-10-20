@@ -766,3 +766,12 @@ it('serializes the same repository with concurrent executors and includes accept
   expect(execute.mock.calls[1][0].prompt).toContain('批内机制1');
   expect(execute.mock.calls[1][0].prompt).toContain('批内机制1如何实现');
 });
+
+it('links publication failures before an upload acknowledgement back to source history', async () => {
+  vi.mocked(secretsStore.getSecret).mockReturnValue(null);
+  expect((await run()).status).toBe('failed');
+  const history = (await sourcesService.getSource('orca'))!.repository_history![0];
+  expect(history.status).toBe('awaiting_archive');
+  expect(history.error).toContain('未配置仓库凭据');
+  expect(history.reports).toHaveLength(1);
+});

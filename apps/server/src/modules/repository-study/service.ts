@@ -79,6 +79,9 @@ export class RepositoryStudyService {
         ORDER BY d.rowid DESC LIMIT 1`,
         )
         .get(study.article_id) as { error_message?: string } | undefined;
+      const runFailure = db.prepare(`SELECT error_message FROM runs WHERE status='failed'
+        AND EXISTS(SELECT 1 FROM json_each(output_json,'$.entries') e WHERE json_extract(e.value,'$.article_id')=?)
+        ORDER BY rowid DESC LIMIT 1`).get(study.article_id) as { error_message?: string } | undefined;
       return {
         id: study.id,
         article_id: study.article_id,
@@ -96,7 +99,7 @@ export class RepositoryStudyService {
           tasks[0]?.status === "failed"
             ? tasks[0].error_message
             : !tasks.some((t) => t.archived_at)
-              ? archiveFailure?.error_message || undefined
+              ? archiveFailure?.error_message || runFailure?.error_message || undefined
               : undefined,
         commit:
           JSON.parse(study.date_evidence_json).repository_study?.commit || "",
