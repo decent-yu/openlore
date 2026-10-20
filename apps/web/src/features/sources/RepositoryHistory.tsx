@@ -34,11 +34,6 @@ export function RepositoryHistory({
           ? " · 有未完成记录"
           : ""}
       </p>
-      {!history.length && (
-        <p className="text-neutral-400">
-          首次运行将结合目标研读源码，后续自动关联研报，避免重复概述。
-        </p>
-      )}
       {(compact ? history.slice(0, 3) : history).map((item) => (
         <div key={item.article_id} className="rounded border bg-white p-2">
           <p>

@@ -248,7 +248,7 @@ export function SourcesPage() {
           </button>
         ))}
       </div>
-      {activeType === 'github_repository' && <p className="rounded-lg border bg-neutral-50 p-3 text-xs text-neutral-600">根据各仓库的研读目标和历史研报持续深入研究，每次新调研先更新默认分支源码。在<Link to="/pipelines" className="underline">流水线</Link>中关联来源、设置每天运行及归档目录；研报按“目录/owner@repo/01-主题.md”连续归档。</p>}
+      {activeType === 'github_repository' && <p className="rounded-lg border bg-neutral-50 p-3 text-xs text-neutral-600">按目标研读源码，结合历史研报持续深入。在<Link to="/pipelines" className="underline">流水线</Link>中设置运行时间与归档目录。</p>}
 
       {/* Responsive Multi-column Cards Grid */}
       {isLoading ? <p role="status" className="p-12 text-center text-sm text-neutral-500">正在加载信息源…</p> : visibleSources.length === 0 ? (
