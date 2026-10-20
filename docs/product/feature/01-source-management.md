@@ -44,3 +44,5 @@
 `collection_candidates` 独立保存逐条状态、原因、重试及规则版本；`collection_runs` 保存采集配置快照与实现版本。`GET /sources/:id/quality-runs` 可查看最近运行，`POST /sources/:id/revalidate` 重评未入池候选。
 
 Node 负责调度、规则和持久化，Python 负责 Feed 解析及正文提取。来源分类保留；URL 去掉 fragment 和追踪参数，保留语义查询参数。
+
+内容池的“重新发起深度调研”是明确的重新生成操作：即使已有待归档正文，也更新源码并重新生成完整研报，只保留归档路径和编号。自动归档重试才复用已有正文与源码快照。

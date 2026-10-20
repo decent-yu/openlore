@@ -838,7 +838,7 @@ it('refreshes Git for manual repository research and replaces the report at the 
   expect(delivered.research?.report_markdown).toContain('b'.repeat(40));
 });
 
-it('reuses a manual revisit awaiting archive even when retried from the original card and Git is now offline', async () => {
+it('automatically retries archive delivery without Git refresh or report regeneration', async () => {
   const first = await run();
   const original = first.output.entries[0].article_id;
   vi.mocked(repository.refreshRepository).mockResolvedValue({ commit: 'b'.repeat(40), branch: 'development', files: ['src/core.ts'], readme: '# New source' });
@@ -847,9 +847,9 @@ it('reuses a manual revisit awaiting archive even when retried from the original
   const pending = (await sourcesService.getSource('orca'))!.repository_history!.find(item => item.status === 'awaiting_archive')!;
   expect(pending).toBeTruthy();
   vi.mocked(repository.refreshRepository).mockRejectedValue(new Error('Git now offline'));
-  const retry = await feedService.researchArticle('study', original);
-  expect(retry.article_id).toBe(pending.article_id);
-  expect(retry.status).toBe('succeeded');
+  const retry = await run();
+  expect(retry.output.entries[0].article_id).toBe(pending.article_id);
+  expect(retry.status, JSON.stringify(retry)).toBe('succeeded');
   expect(execute).toHaveBeenCalledTimes(2);
   expect(repository.refreshRepository).toHaveBeenCalledTimes(2);
   const attempts = vi.mocked(GitHubClient.syncFiles).mock.calls.slice(1).map(([input]) => input.files.filter(file => file.path.includes('/01-')).map(file => file.path));
@@ -866,4 +866,21 @@ it('does not substitute an old snapshot or create a replacement report if manual
   expect(execute).toHaveBeenCalledTimes(1);
   expect((await sourcesService.getSource('orca'))!.repository_history).toEqual(before);
   expect(getSqliteDatabase().prepare('SELECT count(*) n FROM research_claims').get()).toEqual({ n: 0 });
+});
+
+
+it('explicit manual research regenerates the full report even when an earlier report awaits archive', async () => {
+  const first = await run();
+  const original = first.output.entries[0].article_id;
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({ status: 'failed', changedPaths: [], errorMessage: 'archive offline' });
+  await expect(feedService.researchArticle('study', original)).rejects.toThrow('归档失败');
+  const pending = (await researchService.listResearchTasks('study')).at(-1)!;
+  vi.mocked(repository.refreshRepository).mockResolvedValue({ commit: 'c'.repeat(40), branch: 'development', files: ['src/core.ts'], readme: '# Fresh source' });
+  const regenerated = await feedService.researchArticle('study', original);
+  expect(regenerated.id).not.toBe(pending.id);
+  expect(regenerated.article_id).toBe(original);
+  expect(regenerated.report_markdown).toContain('c'.repeat(40));
+  expect(execute).toHaveBeenCalledTimes(3);
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(GitHubClient.syncFiles).mock.calls[2][0].files.some(file => file.path === 'docs/xxx/stablyai@orca/01-核心执行架构.md')).toBe(true);
 });

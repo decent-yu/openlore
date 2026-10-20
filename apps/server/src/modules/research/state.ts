@@ -13,6 +13,10 @@ export function claimResearchArticle(
 ): boolean {
   const db = getSqliteDatabase();
   return db.transaction(() => {
+    const claim = db
+      .prepare("SELECT owner_id FROM research_claims WHERE article_id=?")
+      .get(articleId) as { owner_id: string } | undefined;
+    if (claim) return claim.owner_id === ownerId;
     if (
       !allowPublished &&
       db
@@ -22,10 +26,6 @@ export function claimResearchArticle(
         .get(articleId)
     )
       return false;
-    const claim = db
-      .prepare("SELECT owner_id FROM research_claims WHERE article_id=?")
-      .get(articleId) as { owner_id: string } | undefined;
-    if (claim) return claim.owner_id === ownerId;
     return (
       db
         .prepare("INSERT OR IGNORE INTO research_claims VALUES (?,?,?,?)")

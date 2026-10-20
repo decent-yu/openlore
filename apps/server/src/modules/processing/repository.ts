@@ -151,7 +151,7 @@ export class RepositoryProcessingService {
     return result;
   }
 
-  /** New manual research refreshes source; an approved report only retries publication. */
+  /** Explicit manual research always refreshes the source before regenerating. */
   async prepareManualResearch(
     group: Group,
     articleId: string,
@@ -162,12 +162,6 @@ export class RepositoryProcessingService {
       .get(articleId) as { date_evidence_json: string } | undefined;
     const study = repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
     if (!study) throw new Error("仓库研读缺少源码版本信息");
-    const ready = db
-      .prepare(
-        "SELECT 1 FROM research_tasks WHERE group_id=? AND article_id=? AND status='succeeded' AND archived_at IS NULL AND trim(report_markdown)<>''",
-      )
-      .get(group.id, articleId);
-    if (ready) return articleId;
     const sourceId =
       study.source_id ||
       (

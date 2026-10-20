@@ -243,6 +243,7 @@ export class FeedService {
         group.research_instructions,
         undefined,
         owner,
+        true,
       );
       if (task.status !== "succeeded") return task;
       const archive = await deliveryService.deliverResearchReport(group, task);

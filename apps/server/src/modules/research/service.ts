@@ -77,6 +77,7 @@ export class ResearchService {
     customInstructions?: string,
     runId?: string,
     claimOwner?: string,
+    regenerate = false,
   ): Promise<ResearchTask> {
     const pipeline = await groupsService.getGroup(groupId);
     if (!pipeline || !listPoolCandidates(pipeline.source_ids, pipeline.task_type).some(item=>item.id===articleId))
@@ -90,14 +91,14 @@ export class ResearchService {
     try {
       const article = getSqliteDatabase().prepare('SELECT date_evidence_json FROM articles WHERE id=?').get(articleId) as { date_evidence_json: string };
       const study = pipeline.task_type === 'repository_research' ? repositoryStudy(JSON.parse(article.date_evidence_json)) : undefined;
-      if (!study) return await this.generateResearch(groupId, articleId, customInstructions, runId);
+      if (!study) return await this.generateResearch(groupId, articleId, customInstructions, runId, regenerate);
       // Same-repository research is sequential so each report sees earlier accepted reports,
       // including work awaiting archive in this very batch. Different repositories still run in parallel.
       const key = study.source_id || study.directory;
       const previous = this.activeRepositories.get(key);
       const task = (async () => {
         await previous?.catch(() => {});
-        return this.generateResearch(groupId, articleId, customInstructions, runId);
+        return this.generateResearch(groupId, articleId, customInstructions, runId, regenerate);
       })();
       this.activeRepositories.set(key, task);
       try { return await task; }
@@ -113,6 +114,7 @@ export class ResearchService {
     articleId: string,
     customInstructions?: string,
     runId?: string,
+    regenerate = false,
   ): Promise<ResearchTask> {
     const db = getDb();
     const now = new Date().toISOString();
@@ -157,10 +159,9 @@ export class ResearchService {
     let repositoryContext: RepositoryResearchContext | undefined;
     if (study) {
       // Upload retries reuse the approved report before resolving skills, prompts or fresh code.
-      const ready = db.select().from(researchTasksTable).where(and(
-        eq(researchTasksTable.groupId, groupId), eq(researchTasksTable.articleId, articleId), eq(researchTasksTable.status, 'succeeded'),
-      )).all().find(task => !task.archivedAt && task.reportMarkdown.trim());
-      if (ready) return (await this.listResearchTasks(groupId)).find(task => task.id === ready.id)!;
+      const latest = getSqliteDatabase().prepare("SELECT id,archived_at,report_markdown FROM research_tasks WHERE group_id=? AND article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string; archived_at: string | null; report_markdown: string } | undefined;
+      if (!regenerate && latest && !latest.archived_at && latest.report_markdown.trim())
+        return (await this.listResearchTasks(groupId)).find(task => task.id === latest.id)!;
       const sourceId = study.source_id || (getSqliteDatabase().prepare('SELECT source_id FROM source_items WHERE article_id=? LIMIT 1').get(articleId) as { source_id: string } | undefined)?.source_id;
       const source = sourceId ? await sourcesService.getSource(sourceId) : null;
       if (!source) throw new Error('仓库来源配置不存在，无法准备目标和研究历史');
@@ -212,7 +213,7 @@ export class ResearchService {
       .all()
       .filter((task) => !task.archivedAt && task.reportMarkdown.trim())
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (reusable)
+    if (!regenerate && !study && reusable)
       return (await this.listResearchTasks(groupId)).find(
         (task) => task.id === reusable.id,
       )!;
