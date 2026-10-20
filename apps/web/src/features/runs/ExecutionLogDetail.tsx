@@ -13,6 +13,7 @@ const taskNames: Record<string, string> = {
   assess: "内容初审",
   select: "流水线选文",
   research_report: "深度调研",
+  translate: "中文翻译",
 };
 const statusNames: Record<string, string> = {
   running: "执行中",

@@ -38,6 +38,10 @@ const execute = vi.fn(async (input: any) =>
           evidence_refs: [body],
         },
       }
+    : input.taskType === 'translate' ? {
+        status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
+        result: {markdown: input.material.replaceAll(body, '具备详细执行轨迹和基准证据、可复现的智能体架构。')},
+      }
     : input.taskType === 'select' ? {
         status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
         result: {selected: JSON.parse(input.material).slice(0, 1).map((item: any) => ({article_id: item.article_id, reason: 'Matches the task'}))},
@@ -251,5 +255,10 @@ it("supports direct research from an unarchived pool article and publishes befor
     vi
       .mocked(GitHubClient.syncFiles)
       .mock.calls[0][0].files.some((f) => f.path.endsWith("/research.md")),
+  ).toBe(true);
+  expect(
+    vi.mocked(GitHubClient.syncFiles).mock.calls[0][0].files.some((f) =>
+      f.path.endsWith("/article-zh-CN.md"),
+    ),
   ).toBe(true);
 });

@@ -9,6 +9,7 @@ const taskNames: Record<string, string> = {
   assess: "内容初审",
   select: "流水线选文",
   research_report: "深度调研",
+  translate: "中文翻译",
   digest: "汇报简报",
   organize: "文章整理",
   repair: "修复",
@@ -139,6 +140,7 @@ export function ExecutionLogs({
           <option value="assess">内容初审</option>
           <option value="select">流水线选文</option>
           <option value="research_report">深度调研</option>
+          <option value="translate">中文翻译</option>
           <option value="digest">汇报简报</option>
         </select>
       </div>
