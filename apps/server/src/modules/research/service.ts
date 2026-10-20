@@ -1,6 +1,9 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt } from "@openlore/contracts";
+import {
+  buildResearchPrompt,
+  DEFAULT_RESEARCH_INSTRUCTIONS,
+} from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -135,7 +138,7 @@ export class ResearchService {
     const instructions =
       customInstructions ||
       group?.researchInstructions ||
-      "深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。";
+      DEFAULT_RESEARCH_INSTRUCTIONS;
 
     // Generate research report (using AI adapter with primary and fallback support)
     const aiAdapter = getAIAdapterWithFallback(group?.aiProfileId);
@@ -144,12 +147,16 @@ export class ResearchService {
       group?.researchSkillId || "deep-research-expert",
       group?.aiProfileId || "default",
     );
+    const prompt = researchSkill
+      ? buildResearchPrompt(researchSkill.id, instructions)
+      : "";
     const requestHash = crypto
       .createHash("sha256")
       .update(
         JSON.stringify([
           art.latestRevision,
           instructions,
+          prompt,
           researchSkill?.revision,
           group?.researchSkillId,
           group?.aiProfileId,
@@ -211,8 +218,6 @@ export class ResearchService {
 
     if (aiAdapter && researchSkill?.type === "research") {
       try {
-        const prompt = buildResearchPrompt(researchSkill.id, instructions);
-
         const aiRes = await aiAdapter.execute({
           jobId: taskId,
           runId,
