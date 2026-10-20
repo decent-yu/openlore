@@ -82,7 +82,12 @@ export class FallbackAIAdapter implements AIAdapter {
       let result: AIResult;
       try {
         result = await adapter.execute(
-          { ...task, profileId: target.id, model: task.model || target.model },
+          {
+            ...task,
+            profileId: target.id,
+            model: task.model || target.model,
+            reasoning_effort: task.reasoning_effort || target.execution?.reasoning_effort,
+          },
           (progress) => {
             Object.assign(attempt, {
               progress_at: progress.updated_at,

@@ -21,6 +21,7 @@ export function sessionBinding(
         provider: request.provider,
         cli: request.cli_path,
         model: request.input.model,
+        reasoning_effort: request.input.reasoning_effort,
         config_profile: request.config.config_profile,
         inherit_user_config: request.config.inherit_user_config,
         material: request.input.material,

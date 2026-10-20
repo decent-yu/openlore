@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { ReasoningEffortSchema } from './model-spec.js';
 
 export const ExecutorConfigSchema = z.object({
+  reasoning_effort: ReasoningEffortSchema.optional(),
   transport: z.enum(['local', 'worker', 'ssh']).default('local'),
   workspace_root: z.string().default(''),
   skills_directory: z.string().default(''),
@@ -60,6 +62,7 @@ export const ExecutionInputSchema = z.object({
   material: z.string(),
   outputSchema: z.record(z.unknown()).optional(),
   model: z.string().optional(),
+  reasoning_effort: ReasoningEffortSchema.optional(),
   session: ExecutionSessionSchema.optional(),
 });
 export type ExecutionInput = z.infer<typeof ExecutionInputSchema>;

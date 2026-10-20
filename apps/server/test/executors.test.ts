@@ -50,7 +50,7 @@ describe('Workspace execution and remote Worker', () => {
     );
     fs.writeFileSync(
       fakeCli,
-      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);const finish=()=>console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8')})}));if(process.cwd().includes('worker-work')){process.stderr.write('Reading Skill and article');setTimeout(finish,11500);}else finish();`,
+      `#!${process.execPath}\nconst fs=require('fs');if(process.argv.includes('--version')){console.log('Fake Gemini');process.exit(0);}const prompt=process.argv[process.argv.indexOf('-p')+1];const marker=fs.readFileSync('.agents/skills/probe/references/marker.txt','utf8');fs.writeFileSync('output/note.md',marker);const config=fs.existsSync('.gemini/settings.json')?JSON.parse(fs.readFileSync('.gemini/settings.json','utf8')):null;const finish=()=>console.log(JSON.stringify({response:JSON.stringify({marker,prompt,material:fs.readFileSync('input/article.md','utf8'),config})}));if(process.cwd().includes('worker-work')){process.stderr.write('Reading Skill and article');setTimeout(finish,11500);}else finish();`,
       { mode: 0o700 },
     );
     request = {
@@ -99,6 +99,33 @@ describe('Workspace execution and remote Worker', () => {
         'utf8',
       ),
     ).toBe(request.input.prompt);
+  });
+  it('passes Gemini model reasoning through a workspace-local config override', async () => {
+    const result = await executeInWorkspace({
+      ...request,
+      input: {
+        ...request.input,
+        model: 'gemini-3.8-flash',
+        reasoning_effort: 'medium',
+      },
+    });
+    expect(result.status).toBe('success');
+    expect(result.result).toMatchObject({
+      config: {
+        modelConfigs: {
+          customOverrides: [
+            {
+              match: { model: 'gemini-3.8-flash' },
+              modelConfig: {
+                generateContentConfig: {
+                  thinkingConfig: { thinkingLevel: 'MEDIUM' },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
   });
   it('rejects traversal and mismatched revisions before invoking a CLI', async () => {
     const bundle = {

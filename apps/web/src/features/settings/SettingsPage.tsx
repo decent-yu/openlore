@@ -19,7 +19,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { WikiDisplayConfigSchema, ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
+import { WikiDisplayConfigSchema, ExecutorConfigSchema, formatModelSpec, type ExecutorConfig } from '@openlore/contracts';
 import { RepositoryWikiFields } from './RepositoryWikiFields.js';
 import { ExecutorFields } from './ExecutorFields.js';
 import type { AIProfile, NotificationConnection, RepositoryConnection } from '@openlore/contracts';
@@ -280,7 +280,7 @@ export function SettingsPage() {
       name: ai.name,
       provider: ai.provider,
       cliPath: ai.cli_path,
-      model: ai.model || '',
+      model: formatModelSpec(ai.model, ai.execution.reasoning_effort),
       isPrimary: Boolean(ai.is_primary),
       execution: ai.execution,
     });
@@ -524,7 +524,7 @@ export function SettingsPage() {
                         </div>
                         <p className="mt-1 text-xs text-blue-800">单次时限 {ai.execution.timeout_seconds / 60} 分钟 · 并发 {ai.execution.concurrency}</p>
                         <p className="break-all text-xs text-neutral-500 font-mono mt-0.5">
-                          {ai.provider} · {ai.cli_path} {ai.model ? `(${ai.model})` : ''} · {ai.execution.transport === 'worker' ? (ai.worker_online ? 'Worker 在线' : 'Worker 离线') : ai.execution.transport === 'ssh' ? 'SSH' : '服务端本机'}
+                          {ai.provider} · {ai.cli_path} {formatModelSpec(ai.model, ai.execution.reasoning_effort) ? `(${formatModelSpec(ai.model, ai.execution.reasoning_effort)})` : ''} · {ai.execution.transport === 'worker' ? (ai.worker_online ? 'Worker 在线' : 'Worker 离线') : ai.execution.transport === 'ssh' ? 'SSH' : '服务端本机'}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -901,9 +901,9 @@ export function SettingsPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-neutral-700">指定模型 (选填)</label>
+                <label className="text-xs font-medium text-neutral-700">模型与思考级别 (选填)</label>
                 <Input
-                  placeholder="留空则使用 CLI 默认模型"
+                  placeholder="如 GPT-6.1-Sol · high；留空使用 CLI 默认"
                   value={aiModal.model}
                   onChange={(e) => setAiModal((prev) => ({ ...prev, model: e.target.value }))}
                 />

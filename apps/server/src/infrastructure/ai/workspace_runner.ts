@@ -338,6 +338,7 @@ export async function executeInWorkspace(
     let args: string[];
     if (request.provider === 'codex_cli') {
       args = ['--no-daemon', '-a', 'never'];
+      if (input.reasoning_effort) args.push('-c', `model_reasoning_effort="${input.reasoning_effort}"`);
       if (config.config_profile) args.push('-p', config.config_profile);
       args.push('exec');
       if (input.session) args.push('resume', input.session.id);
@@ -352,6 +353,18 @@ export async function executeInWorkspace(
       }
       args.push('--output-last-message', resultFile, '-');
     } else {
+      if (input.reasoning_effort) {
+        const geminiSettings = path.join(workspace, '.gemini', 'settings.json');
+        fs.mkdirSync(path.dirname(geminiSettings), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(geminiSettings, JSON.stringify({
+          modelConfigs: {
+            customOverrides: [{
+              match: { model: input.model || 'auto' },
+              modelConfig: { generateContentConfig: { thinkingConfig: { thinkingLevel: input.reasoning_effort.toUpperCase() } } },
+            }],
+          },
+        }, null, 2));
+      }
       args = [
         '-p',
         prompt,

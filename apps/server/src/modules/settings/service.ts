@@ -1,7 +1,7 @@
 import { WikiDisplayConfigSchema } from '@openlore/contracts';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { ExecutorConfigSchema, WorkspaceSettingsSchema, type ExecutorConfig } from '@openlore/contracts';
+import { ExecutorConfigSchema, WorkspaceSettingsSchema, parseModelSpec, type ExecutorConfig } from '@openlore/contracts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -360,7 +360,15 @@ export class SettingsService {
     const revision = `rev_${Date.now()}`;
 
     const previous = data.id ? db.select().from(aiProfilesTable).where(eq(aiProfilesTable.id, data.id)).get() : null;
-    const execution = ExecutorConfigSchema.parse(data.execution ?? JSON.parse(previous?.executionJson || '{}'));
+    const parsedSpec = parseModelSpec(data.model);
+    const execution = ExecutorConfigSchema.parse({
+      ...JSON.parse(previous?.executionJson || '{}'),
+      ...(data.execution || {}),
+      ...(parsedSpec.reasoning_effort ? { reasoning_effort: parsedSpec.reasoning_effort } : {}),
+    });
+    if (data.provider === 'gemini_cli' && execution.reasoning_effort && !['low', 'medium', 'high'].includes(execution.reasoning_effort)) {
+      throw new Error('Gemini 思考级别仅支持 low、medium、high');
+    }
     if (data.provider === 'gemini_cli' && (execution.config_profile || !execution.inherit_user_config)) throw new Error('Gemini 使用本机 Gemini 配置；配置 Profile 和忽略用户配置仅适用于 Codex');
     if (execution.transport !== 'worker' && execution.workspace_root && !path.isAbsolute(execution.workspace_root) && !execution.workspace_root.startsWith('~/')) throw new Error('工作区需要使用执行机的绝对路径');
     if (execution.skills_mode === 'local' && !execution.skills_directory) throw new Error('请选择执行机上的 Skills 目录');
@@ -376,7 +384,7 @@ export class SettingsService {
       revision,
       provider: data.provider,
       cliPath: data.cliPath,
-      model: data.model || null,
+      model: parsedSpec.model || null,
       executionJson: JSON.stringify(execution),
       state,
       updatedAt: new Date().toISOString(),
