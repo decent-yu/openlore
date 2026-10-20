@@ -138,6 +138,24 @@ it("selects from shared reviews across all old and new content and only excludes
   );
   expect(first.status).toBe("succeeded");
   expect(first.output.entries.map((e) => e.article_id)).toEqual([ids[0]]);
+  const firstUpload = vi.mocked(GitHubClient.syncFiles).mock.calls[0][0];
+  const researchPath = firstUpload.files.find((file) =>
+    /^docs\/agent\/articles\/\d{8}-old-best\/research\.md$/.test(file.path),
+  )!.path;
+  const directory = researchPath.replace(/\/research\.md$/, "");
+  expect(firstUpload.files.map((file) => file.path)).toEqual(
+    expect.arrayContaining([
+      `${directory}/README.md`,
+      `${directory}/article.md`,
+      `${directory}/article-zh-CN.md`,
+    ]),
+  );
+  expect(firstUpload.files.some((file) =>
+    /^docs\/agent\/batches\/\d{8}-01\.md$/.test(file.path),
+  )).toBe(true);
+  expect(first.output.entries[0].document_url).toBe(
+    `https://github.com/example/repo/blob/main/${researchPath}`,
+  );
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "assess"),
   ).toHaveLength(2);
@@ -152,6 +170,16 @@ it("selects from shared reviews across all old and new content and only excludes
     (await scheduler.triggerGroupRun("task")).id,
   );
   expect(second.output.entries.map((e) => e.article_id)).toEqual([ids[1]]);
+  const secondUpload = vi.mocked(GitHubClient.syncFiles).mock.calls[1][0];
+  const index = Buffer.from(
+    secondUpload.files.find((file) => file.path === "docs/agent/README.md")!.content,
+    "base64",
+  ).toString("utf8");
+  expect(index).toContain("最近收录（2 篇）");
+  expect(index).toContain("最近更新");
+  expect(index).toContain(`${directory.slice("docs/agent/".length)}/article-zh-CN.md`);
+  expect(index).toContain("Old best");
+  expect(index).toContain("New article");
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "assess"),
   ).toHaveLength(2);
