@@ -22,7 +22,7 @@ import { secretsStore } from "../src/infrastructure/secrets/local_file/secrets_s
 const body =
   "A reproducible agent architecture with detailed execution traces and benchmark evidence.";
 let ids: string[] = [];
-const execute = vi.fn(async (input: any) =>
+const defaultExecute = async (input: any) =>
   input.taskType === "assess"
     ? {
         status: "success" as const,
@@ -52,8 +52,8 @@ const execute = vi.fn(async (input: any) =>
         model: "mock",
         durationMs: 1,
         result: "# Complete research\n\nDetailed mechanisms and tradeoffs.",
-      },
-);
+      };
+const execute = vi.fn(defaultExecute);
 beforeAll(() => initDatabase());
 beforeEach(async () => {
   const db = getSqliteDatabase();
@@ -128,6 +128,34 @@ it("uses the same Unicode slug for research and article processing", async () =>
   const task = await researchService.runResearchOnArticle("task", ids[0]);
   expect(task.status).toBe("succeeded");
   expect(task.article_slug).toBe("智能体评测-方法与实践");
+});
+
+it("clears interruption errors when in-flight research and publication ultimately succeed", async () => {
+  let interrupted = false;
+  execute.mockImplementation(async (input) => {
+    if (input.taskType === "research_report") {
+      interrupted = true;
+      const db = getSqliteDatabase();
+      db.prepare("UPDATE runs SET status='failed',error_message='服务重启导致任务中断，请重新运行' WHERE status='running'").run();
+      db.prepare("UPDATE research_tasks SET status='failed',error_message='服务重启，调研已中断' WHERE status='running'").run();
+    }
+    return defaultExecute(input);
+  });
+  try {
+    const scheduler = new AppScheduler();
+    const run = await scheduler.triggerGroupRun("task");
+    await vi.waitFor(async () => expect(await scheduler.getRun(run.id)).toMatchObject({status: "succeeded", error_message: null}));
+    const finished = (await scheduler.getRun(run.id))!;
+    expect(finished.output.entries[0].is_deep_analyzed).toBe(true);
+    const [research] = await researchService.listResearchTasks("task");
+    expect(research.status).toBe("succeeded");
+    expect(research.archived_at).toBeTruthy();
+    expect(research.error_message).toBeUndefined();
+    expect(getSqliteDatabase().prepare("SELECT error_message FROM research_tasks WHERE id=?").get(research.id)).toEqual({error_message: null});
+    expect(interrupted).toBe(true);
+  } finally {
+    execute.mockImplementation(defaultExecute);
+  }
 });
 
 it("selects from shared reviews across all old and new content and only excludes archived research", async () => {

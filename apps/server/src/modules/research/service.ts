@@ -352,6 +352,7 @@ export class ResearchService {
     db.update(researchTasksTable)
       .set({
         status: "succeeded",
+        errorMessage: null,
         reportMarkdown: report,
         finishedAt,
       })
