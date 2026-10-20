@@ -240,7 +240,7 @@ export function PipelinesPage() {
                 <Bot className="h-4 w-4" />1 · {pipelineTaskLabels[group.task_type]}
               </h4>
               <p className="text-sm">
-                {(group.task_type === "article_research") ? 'AI 批量选文 → 每次最多深度调研' : '每日仓库研读 → 每个仓库每日最多'} {group.deep_analysis_count}{" "}
+                {(group.task_type === "article_research") ? 'AI 批量选文 → 每次最多深度调研' : '仓库研读 → 每次执行每个仓库最多'} {group.deep_analysis_count}{" "}
                 篇
               </p>
               <p className="text-xs text-neutral-500">
@@ -456,7 +456,7 @@ export function PipelinesPage() {
                   </div>
                 </fieldset>
                 {form.task_type === 'repository_research' && <div className="space-y-3">
-                  <p className="text-xs text-neutral-500">每个仓库独立计算每日配额，按仓库轮换研读。目标和历史记录由来源统一维护。</p>
+                  <p className="text-xs text-neutral-500">每次流水线执行，每个仓库独立计算篇数，按仓库轮换研读。目标和历史记录由来源统一维护。</p>
                   {sources.filter(source => source.capability_id === 'github_repository' && (!form.source_ids.length || form.source_ids.includes(source.id))).map(source => <div key={source.id} className="rounded-md border bg-white p-3">
                     <div className="mb-2 flex justify-between text-xs"><strong>{source.name}</strong><Link className="text-blue-700 underline" to={`/sources?edit=${encodeURIComponent(source.id)}`}>编辑来源配置</Link></div>
                     <RepositoryHistory source={source} compact />
@@ -492,7 +492,7 @@ export function PipelinesPage() {
                   </div>
                 </div>
                 <label className="block text-xs font-medium text-neutral-600">
-                  {form.task_type === "repository_research" ? "每个仓库每日调研篇数（M）" : "每次最多调研篇数（M）"}
+                  {form.task_type === "repository_research" ? "每次执行每个仓库调研篇数（M）" : "每次最多调研篇数（M）"}
                   <Input
                     className="mt-1.5 h-8 w-32 bg-white text-xs"
                     type="number"
@@ -506,7 +506,7 @@ export function PipelinesPage() {
                   />
                 </label>
                 <p className="text-xs text-neutral-500">
-                  {form.task_type === 'repository_research' ? `每个启用仓库每天最多 ${form.deep_analysis_count} 篇，分别计算配额；同日重跑只补齐剩余篇数。M 为 0 时不调研。` : `AI 根据已初审文章的评分和简介选文；每轮最多 ${form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。`}
+                  {form.task_type === 'repository_research' ? `每次流水线执行，每个启用仓库最多 ${form.deep_analysis_count} 篇，分别计算篇数；同一天再次执行也按 M 分配。M 为 0 时不调研。` : `AI 根据已初审文章的评分和简介选文；每轮最多 ${form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。`}
                 </p>
                 {(form.task_type === "article_research") && <SkillPicker
                   label="文章调研 Skill"

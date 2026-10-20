@@ -218,10 +218,7 @@ it("runs directly through research and archives numbered topics, source material
   expect(decodeURIComponent(links.article_url!)).toBe(
     "https://wiki.example/vault/xxx/stablyai@orca/articles/01-核心执行架构",
   );
-  const sameDay = await run();
-  expect(sameDay.output.entries).toHaveLength(0);
   expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
-  vi.setSystemTime(new Date("2026-10-21T02:00:00Z"));
   execute.mockImplementationOnce(async input => reportResult(input, "工作区隔离机制"));
   expect((await run()).status).toBe("succeeded");
   expect(execute.mock.calls[1][0].prompt).toContain("核心执行架构");
@@ -668,7 +665,7 @@ it("exposes task types consistently through the API and rejects incompatible sou
   }
 });
 
-it('rotates repositories while giving each source its own daily quota', async () => {
+it('rotates repositories while giving each source its own quota on every run', async () => {
   await sourcesService.saveSource({ id: 'other', name: 'Other', url: 'https://github.com/example/other', capability_id: 'github_repository', options: { research_focus: '数据结构' } });
   getSqliteDatabase().prepare("INSERT INTO group_sources(group_id,source_id) VALUES ('study','other')").run();
   getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=2 WHERE id='study'").run();
@@ -680,20 +677,32 @@ it('rotates repositories while giving each source its own daily quota', async ()
   expect(urls.filter(url => url.includes('example/other'))).toHaveLength(2);
   expect(urls[0]).not.toBe(urls[1]);
   expect(urls[2]).not.toBe(urls[3]);
-  expect((await run()).output.entries).toHaveLength(0);
+  const sameDay = await run();
+  expect(sameDay.status).toBe('succeeded');
+  expect(sameDay.output.entries).toHaveLength(4);
+  expect(sameDay.counts.already_processed).toBe(0);
+  for (const url of ['stablyai/orca', 'example/other']) {
+    expect(execute.mock.calls.slice(4).filter(([input]) => input.repository.url.includes(url))).toHaveLength(2);
+  }
   vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
   expect((await run()).output.entries).toHaveLength(4);
   expect(execute.mock.calls.map(([input]) => input.prompt).join('\n')).toContain('数据结构');
 });
 
-it('fills the per-repository daily quota without re-fetching within a run', async () => {
+it('gives each run M new investigations and refreshes each repository only once per run', async () => {
   getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=3 WHERE id='study'").run();
   let ordinal = 0;
   execute.mockImplementation(async input => reportResult(input, `核心机制${++ordinal}`));
   expect((await run()).output.entries).toHaveLength(3);
   expect(repository.refreshRepository).toHaveBeenCalledTimes(1);
   expect((await sourcesService.getSource('orca'))!.repository_history).toHaveLength(3);
-  expect((await run()).output.entries).toHaveLength(0);
+  const second = await run();
+  expect(second.status).toBe('succeeded');
+  expect(second.output.entries).toHaveLength(3);
+  expect(second.counts.already_processed).toBe(0);
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(2);
+  expect((await sourcesService.getSource('orca'))!.repository_history).toHaveLength(6);
+  expect(execute.mock.calls[3][0].repository_context.history).toHaveLength(3);
 });
 
 it('refreshes new investigations after code, goal, prompt and Skill updates; keeps archived reports', async () => {

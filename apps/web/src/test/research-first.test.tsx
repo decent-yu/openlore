@@ -83,7 +83,7 @@ it('shows the dedicated code Skill for repository pipelines and keeps article pi
   client.setQueryData(['groups'], [{...task,task_type:'repository_research',source_ids:['code']}]);
   client.setQueryData(['runs'], []);
   const html = render(<PipelinesPage />, client);
-  expect(html).toContain('每日仓库研读');
+  expect(html).toContain('仓库研读 → 每次执行每个仓库最多');
   expect(html).toContain('github-code-research');
   expect(html).not.toContain('deep-research-expert');
   const mixedClient = new QueryClient();

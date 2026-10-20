@@ -36,44 +36,8 @@ export class RepositoryProcessingService {
         (!group.source_ids.length || group.source_ids.includes(source.id)),
     );
     const result = createProcessedBatch(sources.length);
-    const day = (date: Date) =>
-      new Intl.DateTimeFormat("en-CA", {
-        timeZone: group.timezone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(date);
-    const today = day(new Date());
-    // Each selected source has its own daily quota. A busy or completed repository
-    // cannot consume another repository's allocation.
-    const delivered = new Map(
-      sources.map((source) => [
-        source.id,
-        repositoryStudyService
-          .history(source.id)
-          .filter((item) =>
-            item.reports.some(
-              (report) =>
-                report.group_id === group.id &&
-                report.archived_at &&
-                day(new Date(report.archived_at)) === today,
-            ),
-          ).length,
-      ]),
-    );
-    const remaining = new Map(
-      sources.map((source) => [
-        source.id,
-        Math.max(
-          0,
-          group.deep_analysis_count - (delivered.get(source.id) || 0),
-        ),
-      ]),
-    );
-    const budget = [...remaining.values()].reduce(
-      (sum, value) => sum + value,
-      0,
-    );
+    // Each run gives every selected repository its own allocation.
+    const budget = sources.length * group.deep_analysis_count;
     const planned = new Map<string, number>();
     const snapshots = new Map<string, RepositorySnapshot>();
     const last = (id: string) =>
@@ -84,7 +48,7 @@ export class RepositoryProcessingService {
           )
           .get(id) as { last_selected_at: string } | undefined
       )?.last_selected_at || "";
-    // Round robin across repositories, including across days and pipelines. One turn per repository per round.
+    // Round robin across repositories, including across runs and pipelines. One turn per repository per round.
     sources.sort(
       (a, b) =>
         last(a.id).localeCompare(last(b.id)) || a.id.localeCompare(b.id),
@@ -93,7 +57,7 @@ export class RepositoryProcessingService {
     while (result.entries.length < budget && sources.length) {
       let progress = false;
       for (const source of sources) {
-        if ((planned.get(source.id) || 0) >= (remaining.get(source.id) || 0))
+        if ((planned.get(source.id) || 0) >= group.deep_analysis_count)
           continue;
         const history = repositoryStudyService.history(source.id);
         const unfinished = history.filter(
@@ -182,10 +146,6 @@ export class RepositoryProcessingService {
     }
     result.counts.candidate = result.entries.length;
     result.counts.planned = result.entries.length;
-    result.counts.already_processed = [...delivered.values()].reduce(
-      (sum, value) => sum + value,
-      0,
-    );
     saveProcessedBatch(runId, result);
     return result;
   }
