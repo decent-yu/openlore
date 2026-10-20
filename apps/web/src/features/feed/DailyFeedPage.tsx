@@ -1,27 +1,15 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  BookOpen,
-  Heart,
-  ExternalLink,
-  CalendarDays,
-  CheckCircle2,
-  MoreHorizontal,
-  Rss,
-} from "lucide-react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { BookOpen, CalendarDays } from "lucide-react";
+import { LibraryArticleSchema } from "@openlore/contracts";
 import { api } from "../../lib/api.js";
-import { Button } from "../../components/ui/button.js";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../../components/ui/tooltip.js";
+import { LibraryArticleCard } from "../library/LibraryArticleCard.js";
+import { useArticleActions } from "../library/useArticleActions.js";
 
 export function DailyFeedPage() {
   const client = useQueryClient();
+  const actions = useArticleActions();
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: api.getSettings,
@@ -37,6 +25,15 @@ export function DailyFeedPage() {
     queryFn: () => api.getDailyFeed(undefined, date || undefined),
     refetchInterval: 10000,
   });
+  const sourcesMap = React.useMemo(
+    () =>
+      new Map(
+        (feed?.deep_articles || []).flatMap((article) =>
+          article.sources.map((source) => [source.id, source.name] as const),
+        ),
+      ),
+    [feed],
+  );
   const interest = useMutation({
     mutationFn: ({ id, value }: { id: string; value: boolean }) =>
       api.toggleArticleInterest(id, { interested: value }),
@@ -56,6 +53,11 @@ export function DailyFeedPage() {
     .filter((group) => group.articles.length > 0);
   return (
     <div className="space-y-6">
+      {actions.message && (
+        <p role="status" className="rounded-lg border bg-blue-50 p-3 text-sm">
+          {actions.message}
+        </p>
+      )}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">每日研报</h2>
@@ -88,12 +90,14 @@ export function DailyFeedPage() {
           </Link>
         </div>
       </header>
-      {(error || interest.error) && (
+      {(error || interest.error || actions.reviewMutation.error) && (
         <p
           role="alert"
           className="rounded border bg-red-50 p-3 text-sm text-red-700"
         >
-          {error?.message || interest.error?.message}
+          {error?.message ||
+            interest.error?.message ||
+            actions.reviewMutation.error?.message}
         </p>
       )}
       {running && (
@@ -138,231 +142,64 @@ export function DailyFeedPage() {
           </Link>
         </div>
       ) : (
-        <TooltipProvider delayDuration={300}>
-          <div className="space-y-8">
-            {sections.map((group) => (
-              <section
-                key={group.id}
-                aria-labelledby={`feed-group-${group.id}`}
-                className="@container space-y-4"
-              >
-                <header className="flex items-center gap-3">
-                  <h3
-                    id={`feed-group-${group.id}`}
-                    className="min-w-0 break-words text-base font-semibold"
-                  >
-                    {group.name}
-                  </h3>
-                  <span className="shrink-0 text-xs text-neutral-400">
-                    {group.articles.length} 篇研报
-                  </span>
-                  <div
-                    aria-hidden="true"
-                    className="h-px flex-1 bg-neutral-200"
-                  />
-                </header>
-                <div className="grid grid-cols-1 gap-4 @min-[35rem]:grid-cols-2 @min-[53rem]:grid-cols-3">
-                  {group.articles.map((article) => (
-                    <article
+        <div className="space-y-8">
+          {sections.map((group) => (
+            <section
+              key={group.id}
+              aria-labelledby={`feed-group-${group.id}`}
+              className="@container space-y-4"
+            >
+              <header className="flex items-center gap-3">
+                <h3
+                  id={`feed-group-${group.id}`}
+                  className="min-w-0 break-words text-base font-semibold"
+                >
+                  {group.name}
+                </h3>
+                <span className="shrink-0 text-xs text-neutral-400">
+                  {group.articles.length} 篇研报
+                </span>
+                <div
+                  aria-hidden="true"
+                  className="h-px flex-1 bg-neutral-200"
+                />
+              </header>
+              <div className="grid grid-cols-1 gap-4 @min-[35rem]:grid-cols-2 @min-[53rem]:grid-cols-3">
+                {group.articles.map((article) => {
+                  const cardArticle = LibraryArticleSchema.parse({
+                    ...article,
+                    canonical_url: article.original_url,
+                    sources: article.sources.map((source) => source.id),
+                    groups: [
+                      { id: article.group_id, name: article.group_name },
+                    ],
+                  });
+                  return (
+                    <LibraryArticleCard
                       key={`${article.group_id}:${article.id}`}
-                      className="flex min-w-0 flex-col rounded-xl border bg-white p-4 transition-shadow hover:shadow-sm sm:p-5"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <h4
-                              tabIndex={
-                                article.research?.wiki_url ? undefined : 0
-                              }
-                              className="min-w-0 flex-1 truncate text-base font-semibold leading-8"
-                            >
-                              {article.research?.wiki_url ? (
-                                <a
-                                  href={article.research.wiki_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block truncate hover:text-blue-700 hover:underline"
-                                >
-                                  {article.title}
-                                </a>
-                              ) : (
-                                article.title
-                              )}
-                            </h4>
-                          </TooltipTrigger>
-                          <TooltipContent>{article.title}</TooltipContent>
-                        </Tooltip>
-                        <button
-                          type="button"
-                          aria-label={
-                            article.user_interested
-                              ? "取消感兴趣"
-                              : "标为感兴趣"
-                          }
-                          aria-pressed={article.user_interested}
-                          className="-mr-1 shrink-0 rounded-md p-2 transition-colors hover:bg-neutral-100"
-                          onClick={() =>
-                            interest.mutate({
-                              id: article.id,
-                              value: !article.user_interested,
-                            })
-                          }
-                        >
-                          <Heart
-                            className={`h-4 w-4 ${article.user_interested ? "fill-rose-500 text-rose-500" : "text-neutral-400"}`}
-                          />
-                        </button>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
-                        <span
-                          className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-neutral-500"
-                          title="发布时间"
-                        >
-                          <CalendarDays
-                            className="h-2.5 w-2.5 shrink-0"
-                            aria-hidden="true"
-                          />
-                          {article.published_at ? (
-                            <time
-                              dateTime={article.published_at}
-                              aria-label="发布时间"
-                            >
-                              发布：
-                              {new Date(
-                                article.published_at,
-                              ).toLocaleDateString("zh-CN", {
-                                timeZone: timezone,
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit",
-                              })}
-                            </time>
-                          ) : (
-                            "无发布日期"
-                          )}
-                        </span>
-                        {article.sources.map((source) => (
-                          <span
-                            key={source.id}
-                            title={`采集来源：${source.name}`}
-                            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/50 px-2 py-0.5 text-emerald-700"
-                          >
-                            <Rss
-                              className="h-2.5 w-2.5 shrink-0"
-                              aria-hidden="true"
-                            />
-                            <span className="truncate">{source.name}</span>
-                          </span>
-                        ))}
-                      </div>
-                      {article.summary && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <p
-                              tabIndex={0}
-                              className="mt-3 line-clamp-2 cursor-help break-words text-sm leading-relaxed text-neutral-500"
-                            >
-                              {article.summary}
-                            </p>
-                          </TooltipTrigger>
-                          <TooltipContent>{article.summary}</TooltipContent>
-                        </Tooltip>
-                      )}
-                      <div className="mt-auto pt-4">
-                        <div className="flex items-center justify-between gap-2 border-t border-neutral-100 pt-3">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400">
-                            <CheckCircle2
-                              className="h-3 w-3 text-emerald-600"
-                              aria-hidden="true"
-                            />
-                            已归档
-                          </span>
-                          <div className="flex items-center gap-1">
-                            {article.research?.wiki_url ? (
-                              <a
-                                href={article.research.wiki_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium shadow-sm transition-colors hover:bg-neutral-100"
-                              >
-                                <BookOpen className="mr-1 h-3 w-3" />
-                                阅读研报
-                              </a>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled
-                                title="暂无 Wiki 阅读链接"
-                              >
-                                <BookOpen className="mr-1 h-3 w-3" />
-                                阅读研报
-                              </Button>
-                            )}
-                            {(article.original_url ||
-                              article.wiki_url ||
-                              article.research?.wiki_url ||
-                              article.delivery?.commit_url) && (
-                              <DropdownMenu.Root>
-                                <DropdownMenu.Trigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-neutral-500"
-                                    aria-label={`更多链接：${article.title}`}
-                                  >
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenu.Trigger>
-                                <DropdownMenu.Portal>
-                                  <DropdownMenu.Content
-                                    align="end"
-                                    sideOffset={6}
-                                    collisionPadding={12}
-                                    className="z-50 min-w-36 rounded-lg border bg-white p-1 shadow-lg"
-                                  >
-                                    {[
-                                      ["Wiki 研报", article.research?.wiki_url],
-                                      ["Wiki 正文", article.wiki_url],
-                                      ["原文", article.original_url],
-                                      [
-                                        "GitHub 归档",
-                                        article.delivery?.commit_url,
-                                      ],
-                                    ].map(
-                                      ([label, url]) =>
-                                        url && (
-                                          <DropdownMenu.Item
-                                            key={label}
-                                            asChild
-                                          >
-                                            <a
-                                              href={url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="flex items-center justify-between gap-4 rounded-md px-3 py-2 text-xs text-neutral-600 outline-none data-[highlighted]:bg-neutral-100"
-                                            >
-                                              {label}
-                                              <ExternalLink className="h-3 w-3" />
-                                            </a>
-                                          </DropdownMenu.Item>
-                                        ),
-                                    )}
-                                  </DropdownMenu.Content>
-                                </DropdownMenu.Portal>
-                              </DropdownMenu.Root>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </TooltipProvider>
+                      article={cardArticle}
+                      timezone={timezone}
+                      sourcesMap={sourcesMap}
+                      summary={article.summary}
+                      reviewPending={actions.reviewMutation.isPending}
+                      onToggleInterest={() =>
+                        interest.mutate({
+                          id: article.id,
+                          value: !article.user_interested,
+                        })
+                      }
+                      onReview={() => actions.reviewArticle(cardArticle)}
+                      onResearch={() => actions.openResearch(cardArticle)}
+                      onViewReport={() => actions.openReport(cardArticle)}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
       )}
+      {actions.dialogs}
     </div>
   );
 }
