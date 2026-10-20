@@ -12,7 +12,6 @@ import {
   GITHUB_CODE_RESEARCH_SKILL,
   type RepositoryCheckout,
 } from '@openlore/contracts';
-import { validateRepositoryEvidence } from './repository_evidence.js';
 import { prepareRepositoryWorkspace, repositoryMaterial } from './repository_workspace.js';
 import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
@@ -320,7 +319,7 @@ export async function executeInWorkspace(
       } else fs.writeFileSync(file, text, { mode: 0o600 });
     }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
-    const prompt = repository ? input.prompt.replace("本次 Commit：执行时更新默认分支并绑定实际 Commit", `本次 Commit：${repository.commit}`) + `\n执行器已准备源码：input/repository/；实际 Commit：${repository.commit}。以 input/repository.json 为准。` : input.prompt;
+    const prompt = input.prompt;
     if (!input.session)
       fs.writeFileSync(
         path.join(workspace, 'input', 'article.md'),
@@ -507,11 +506,12 @@ export async function executeInWorkspace(
       }
     }
     fs.writeFileSync(path.join(workspace, 'events.log'), res.stdout);
+    const savedReport = input.repository ? readRepositoryReport(workspace) : undefined;
     const knownFailure =
       res.code !== 0 || res.timedOut
         ? classifyProcessFailure(res.stdout, res.stderr)
         : undefined;
-    if (knownFailure)
+    if (knownFailure && !savedReport)
       return {
         ...knownFailure,
         provider: request.provider,
@@ -522,7 +522,7 @@ export async function executeInWorkspace(
         session,
         diagnostics,
       };
-    if (res.timedOut)
+    if (res.timedOut && !savedReport)
       return {
         status: 'timeout',
         provider: request.provider,
@@ -537,7 +537,7 @@ export async function executeInWorkspace(
           message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}`,
         },
       };
-    if (res.code !== 0)
+    if (res.code !== 0 && !savedReport)
       return {
         status: 'failed',
         provider: request.provider,
@@ -552,15 +552,18 @@ export async function executeInWorkspace(
           message: `AI CLI 执行失败（退出码 ${res.code}），请查看本次尝试的标准输出与错误日志`,
         },
       };
-    let result: any;
+    let result: any = savedReport;
+    let reportNotice: string | undefined;
     if (request.provider === 'codex_cli') {
-      if (
+      if (!savedReport && (
         !fs.existsSync(resultFile) ||
         fs.lstatSync(resultFile).isSymbolicLink()
-      )
+      ))
         throw new Error('CLI 未生成有效结果文件');
-      const text = fs.readFileSync(resultFile, 'utf8').trim();
-      result = input.outputSchema ? JSON.parse(text) : text;
+      if (!savedReport) {
+        const text = fs.readFileSync(resultFile, 'utf8').trim();
+        result = input.outputSchema ? JSON.parse(text) : text;
+      }
       for (const line of res.stdout.split('\n')) {
         try {
           const event = JSON.parse(line);
@@ -583,7 +586,9 @@ export async function executeInWorkspace(
         }
       }
     } else {
-      const envelope = parseGeminiOutput(res.stdout);
+      let envelope: ReturnType<typeof parseGeminiOutput>;
+      try { envelope = parseGeminiOutput(res.stdout); }
+      catch (error) { if (!savedReport) throw error; envelope = {}; reportNotice = 'CLI 缺少正常完成事件，已接纳保存的研报文件。'; }
       const models = Object.entries(envelope.stats?.models || {}) as Array<
         [string, any]
       >;
@@ -611,9 +616,9 @@ export async function executeInWorkspace(
             usage[key] = values.reduce((sum, value) => sum + value, 0);
         }
       }
-      if (envelope.error) throw new Error('Gemini CLI returned an error');
+      if (envelope.error && !savedReport) throw new Error('Gemini CLI returned an error');
       const response = envelope.response ?? envelope.text ?? envelope;
-      result =
+      if (!savedReport) result =
         input.outputSchema && typeof response === 'string'
           ? JSON.parse(response.replace(/^```json\s*|\s*```$/g, ''))
           : response;
@@ -628,8 +633,6 @@ export async function executeInWorkspace(
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
       throw new Error('代码深研未生成有效的 output/research.md');
-    if (repository)
-      await prepareRepositoryWorkspace(repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
       !input.outputSchema &&
       document &&
@@ -637,10 +640,10 @@ export async function executeInWorkspace(
       !fs.lstatSync(document).isSymbolicLink()
     )
       result = fs.readFileSync(document, 'utf8');
-    if (repository) validateRepositoryEvidence(repository, workspace, String(result));
     if (!result) throw new Error('AI 返回空结果');
     return {
       status: 'success',
+      notice: reportNotice || (savedReport && (res.code !== 0 || res.timedOut) ? 'CLI 未正常结束，已接纳保存的研报文件，未重新生成。' : undefined),
       result,
       provider: request.provider,
       model,
@@ -650,7 +653,7 @@ export async function executeInWorkspace(
       session,
       diagnostics,
       usage,
-      artifacts: collectArtifacts(path.join(workspace, 'output')),
+      artifacts: input.repository ? collectResearchArtifacts(path.join(workspace, 'output')) : collectArtifacts(path.join(workspace, 'output')),
     };
   } catch (error: any) {
     return {
@@ -671,4 +674,34 @@ export async function executeInWorkspace(
       release();
     }
   }
+}
+
+
+export function readRepositoryReport(workspace: string): string | undefined {
+  const output = path.join(workspace, 'output');
+  const file = path.join(output, 'research.md');
+  if (!fs.existsSync(file) || fs.lstatSync(output).isSymbolicLink() || fs.lstatSync(file).isSymbolicLink() || !fs.statSync(file).isFile()) return undefined;
+  return fs.readFileSync(file, 'utf8').trim() || undefined;
+}
+
+
+export function collectResearchArtifacts(folder: string): NonNullable<ExecutionResult['artifacts']> {
+  const files: NonNullable<ExecutionResult['artifacts']> = [];
+  let bytes = 0;
+  const walk = (directory: string, prefix = '') => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const relative = prefix + entry.name;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory() && (relative === 'assets' || relative.startsWith('assets/'))) walk(full, relative + '/');
+      else if (entry.isFile() && (relative === 'research.md' || /^assets\/.*\.(svg|png|jpe?g|webp)$/i.test(relative))) {
+        const size = fs.statSync(full).size;
+        if (bytes + size > MAX_BUNDLE_BYTES || files.length >= 200) continue;
+        bytes += size;
+        files.push({ path: relative, content: fs.readFileSync(full).toString('base64'), executable: false });
+      }
+    }
+  };
+  walk(folder);
+  return files;
 }

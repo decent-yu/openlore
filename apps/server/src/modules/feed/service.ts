@@ -234,6 +234,15 @@ export class FeedService {
         statusCode: 409,
       });
     try {
+      if (group.task_type === 'repository_research') {
+        const latest = getSqliteDatabase().prepare("SELECT id,status,archived_at FROM research_tasks WHERE group_id=? AND article_id=? ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string; status: string; archived_at: string | null } | undefined;
+        const reusable = latest && !latest.archived_at && latest.status !== 'running' ? await researchService.recoverRepositoryReport(latest.id) : null;
+        if (reusable?.status === 'succeeded') {
+          const archive = await deliveryService.deliverResearchReport(group, reusable);
+          if (!['updated', 'unchanged'].includes(archive.status)) throw Object.assign(new Error('研报已保留，归档失败，请重试交付'), { statusCode: 502 });
+          return (await researchService.listResearchTasks(groupId)).find(task => task.id === reusable.id)!;
+        }
+      }
       const target = group.task_type === 'repository_research'
         ? await repositoryProcessingService.prepareManualResearch(group, articleId)
         : articleId;

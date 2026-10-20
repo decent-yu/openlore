@@ -318,6 +318,7 @@ export class AppScheduler {
           .run();
       save();
       const researchTasks: ResearchTask[] = [];
+      let failure: unknown;
       if (result.entries.length) {
         setStage("research");
         const adapter = getAIAdapterWithFallback(
@@ -331,15 +332,15 @@ export class AppScheduler {
           ),
         );
         let next = 0;
-        let failure: unknown;
         await Promise.all(
           Array.from(
             { length: Math.min(concurrency, result.entries.length) },
             async () => {
               while (!failure && next < result.entries.length) {
                 const entry = result.entries[next++];
+                let task: ResearchTask | undefined;
                 try {
-                  const task = await researchService.runResearchOnArticle(
+                  task = await researchService.runResearchOnArticle(
                     group.id,
                     entry.article_id,
                     group.research_instructions,
@@ -372,17 +373,22 @@ export class AppScheduler {
                   save();
                 } catch (error) {
                   failure = error;
+                  logs.push({ timestamp: new Date().toISOString(), article_id: entry.article_id,
+                    article_title: entry.title, task_type: 'research', skill_id: task?.skill_id || group.research_skill_id,
+                    execution: task?.execution, prompt_preview: task?.execution?.prompt || '',
+                    response_preview: error instanceof Error ? error.message : String(error), status: 'failed' });
+                  save();
                 }
               }
             },
           ),
         );
-        if (failure) throw failure;
+        if (failure && !researchTasks.length) throw failure;
         setStage("delivery");
         const delivery = await deliveryService.buildAndDeliverBatch({
           group,
           runId,
-          entries: result.entries,
+          entries: result.entries.filter(entry => researchTasks.some(task => task.article_id === entry.article_id)),
           researchTasks,
         });
         if (!["updated", "unchanged"].includes(delivery.syncResult.status))
@@ -404,6 +410,7 @@ export class AppScheduler {
           )
           .get();
         for (const entry of output.entries) {
+          if (!researchTasks.some(task => task.article_id === entry.article_id)) continue;
           entry.is_deep_analyzed = true;
           const location = delivery.bundle.entries.find(
             (item) => item.article_id === entry.article_id,
@@ -414,8 +421,8 @@ export class AppScheduler {
       }
       db.update(runsTable)
         .set({
-          status: "succeeded",
-          errorMessage: null,
+          status: failure ? "partial" : "succeeded",
+          errorMessage: failure instanceof Error ? failure.message : failure ? String(failure) : null,
           stage: "completed",
           finishedAt: new Date().toISOString(),
           aiLogsJson: JSON.stringify(logs),
@@ -423,7 +430,7 @@ export class AppScheduler {
         })
         .where(eq(runsTable.id, runId))
         .run();
-      this.notifySse("run", runId, "succeeded");
+      this.notifySse("run", runId, failure ? "partial" : "succeeded");
     } finally {
       releaseResearchClaims(runId);
     }

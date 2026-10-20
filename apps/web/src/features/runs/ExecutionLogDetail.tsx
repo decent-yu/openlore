@@ -342,8 +342,8 @@ export function ExecutionLogDetail({
                     >
                       <div className="flex flex-wrap justify-between gap-2">
                         <h4 className="text-sm font-semibold">
-                          第 {attempt.index} 次 · {attempt.executor_name}
-                          {attempt.phase === "correction"
+                          {attempt.phase === "recovery" ? "产物恢复" : `第 ${attempt.index} 次`} · {attempt.executor_name}
+                          {attempt.phase === "recovery" ? "（未调用 AI）" : attempt.phase === "correction"
                             ? attempt.resumed
                               ? "（原会话校验修正）"
                               : "（接管修正）"
@@ -405,6 +405,8 @@ export function ExecutionLogDetail({
                           </div>
                         ))}
                       </dl>
+                      {attempt.context_reports !== undefined && <p className="text-xs text-neutral-500">研读上下文：{attempt.context_reports} 篇历史研报</p>}
+                      {attempt.notice && <p className="rounded border border-blue-100 bg-blue-50 p-2 text-xs text-blue-700">{attempt.notice}</p>}
                       {attempt.error && (
                         <p
                           role="alert"
@@ -425,7 +427,7 @@ export function ExecutionLogDetail({
                       {attempt.index < detail.attempts.length && (
                         <p className="text-xs text-amber-800">
                           本次未通过；下一步为{" "}
-                          {detail.attempts[attempt.index].phase === "correction"
+                          {detail.attempts[attempt.index].phase === "recovery" ? "使用已有产物恢复" : detail.attempts[attempt.index].phase === "correction"
                             ? "校验修正"
                             : "备用接管"}{" "}
                           · {detail.attempts[attempt.index].executor_name}。

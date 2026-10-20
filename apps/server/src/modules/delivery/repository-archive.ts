@@ -51,8 +51,8 @@ export async function buildRepositoryArchive(
         task.report_markdown.trim(),
     );
     const study = task?.repository_study || repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
-    if (!study?.commit || !task)
-      throw new Error("仓库归档需要固定版本材料与已完成的代码研报");
+    if (!study || !task)
+      throw new Error("仓库归档需要仓库信息与已完成的研报");
     const existing = manifest.article_locations[entry.article_id];
     const location = db
       .prepare(
@@ -86,7 +86,7 @@ export async function buildRepositoryArchive(
       markdownFile(`${base}/${reportPath}`, report),
       markdownFile(
         `${base}/${sourcePath}`,
-        `# ${entry.title}\n\n[阅读中文研报](../${archiveHref(`${stem}.md`)})\n\n${entry.organized_markdown}\n\n## 本次源码证据\n\nCommit：${study.commit}\n\n${task.evidence.map((evidence: any) => `### ${evidence.claim || '源码依据'}\n\n[${evidence.file}:${evidence.start_line}-${evidence.end_line}](${study.repository_url}/blob/${study.commit}/${String(evidence.file || '').split('/').map(encodeURIComponent).join('/')}#L${evidence.start_line}-L${evidence.end_line})\n\n\`\`\`\n${evidence.quote || ''}\n\`\`\``).join('\n\n')}`,
+        `# ${entry.title}\n\n[阅读中文研报](../${archiveHref(`${stem}.md`)})\n\n${entry.organized_markdown}\n\n仓库：${study.repository_url}\n${study.commit ? `\n执行时源码版本：${study.commit}\n` : ''}`,
       ),
     );
     bundle.entries.push({

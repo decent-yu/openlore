@@ -191,7 +191,8 @@ export function ExecutionLogs({
                   : duration(log.duration_ms)}
               </span>
               <span>
-                {log.attempts.length} 次尝试
+                {log.attempts.filter(attempt => attempt.phase !== "recovery").length} 次执行
+                {log.attempts.some(attempt => attempt.phase === "recovery") ? " · 已复用产物" : ""}
                 {new Set(log.attempts.map((attempt) => attempt.profile_id))
                   .size > 1
                   ? " · 含主备切换"
@@ -201,8 +202,7 @@ export function ExecutionLogs({
                   : ""}
               </span>
               <span>
-                {log.attempts.at(-1)?.executor_name || "正在准备"} · 时限{" "}
-                {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒
+                {log.attempts.at(-1)?.phase === 'recovery' ? '复用已有研报，未调用 AI' : <>{log.attempts.at(-1)?.executor_name || "正在准备"} · 时限 {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒</>}
                 {log.status === "running" &&
                 log.attempts.at(-1)?.progress_state === "queued"
                   ? " · 等待执行槽位"

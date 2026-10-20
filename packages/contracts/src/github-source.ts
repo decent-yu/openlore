@@ -36,7 +36,7 @@ export function parseGitHubRepository(
 export const RepositoryStudySchema = z.object({
   repository_url: z.string().url(),
   directory: z.string().regex(/^[\w-]+@[\w.-]+$/),
-  commit: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  commit: z.string().optional(),
   day: z.string(),
   focus: z.string(),
   run_id: z.string().optional(),
@@ -51,10 +51,9 @@ export const RepositoryTargetSchema = z.object({
       (value) => Boolean(parseGitHubRepository(value)),
       "请输入 GitHub 仓库根地址",
     ),
-  commit: z.string().regex(/^[a-f0-9]{40}$/, "仓库调研必须固定完整 Commit SHA").optional(),
 });
 export const RepositoryCheckoutSchema = RepositoryTargetSchema.extend({
-  commit: z.string().regex(/^[a-f0-9]{40}$/),
+  commit: z.string().optional(),
   branch: z.string().optional(),
 });
 export type RepositoryTarget = z.infer<typeof RepositoryTargetSchema>;

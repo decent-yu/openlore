@@ -7,7 +7,7 @@ import type {
   AIExecutionOptions,
   AIValidationIssue,
 } from './adapter.js';
-import { ExecutorConfigSchema, RepositoryCheckoutSchema, type ExecutorConfig } from '@openlore/contracts';
+import { ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
 import { ExecutorAdapter } from './executor_adapter.js';
 import { getDb } from '../persistence/sqlite/db.js';
 import {
@@ -45,7 +45,7 @@ export class FallbackAIAdapter implements AIAdapter {
     options.onStart?.(traceId);
     const attempts: AIExecutionAttempt[] = [];
     let corrected = false;
-    let repository: AIResult["repository"];
+    let lastResult: AIResult | undefined;
     let repairData:
       { result: unknown; issues: AIValidationIssue[] } | undefined;
     const finish = (result: AIResult): AIResult => {
@@ -77,6 +77,7 @@ export class FallbackAIAdapter implements AIAdapter {
         status: 'running',
         phase,
         resumed: Boolean(task.session),
+        context_reports: task.repository_context?.history.length,
         correction_of: correctionOf,
         session_id: task.session?.id,
       };
@@ -131,6 +132,8 @@ export class FallbackAIAdapter implements AIAdapter {
           result.queue_duration_ms ?? attempt.queue_duration_ms,
         execution: result.execution || attempt.execution,
         diagnostics: result.diagnostics || attempt.diagnostics,
+        notice: result.notice,
+        report_reused: result.report_reused,
         session_id: result.session?.id || attempt.session_id,
         output:
           typeof result.result === 'string'
@@ -146,7 +149,6 @@ export class FallbackAIAdapter implements AIAdapter {
         entry,
         {
           ...input,
-          repository: repository || input.repository,
           session: index === 0 ? input.session : undefined,
           prompt: repairData
             ? `${input.prompt}\n\n${correctionPrompt(repairData)}`
@@ -155,14 +157,6 @@ export class FallbackAIAdapter implements AIAdapter {
         repairData ? 'correction' : 'execute',
         repairData ? attempts.length : undefined,
       );
-      if (result.repository) {
-        const checked = RepositoryCheckoutSchema.safeParse(result.repository);
-        if (!checked.success || checked.data.url !== input.repository?.url ||
-          ((repository?.commit || input.repository?.commit) && checked.data.commit !== (repository?.commit || input.repository?.commit))) {
-          return finish({ ...result, status: 'failed', error: { code: 'repository_mismatch', message: '执行器返回的源码版本与任务不匹配' } });
-        }
-        repository = checked.data;
-      }
       while (result.status === 'success'  && options.validateResult) {
         const issues = options.validateResult(result.result);
         if (!issues.length) break;
@@ -202,6 +196,7 @@ export class FallbackAIAdapter implements AIAdapter {
           attempt.index,
         );
       }
+      lastResult = result;
       if (result.status === 'success') return finish(result);
       console.warn(
         redactExecutionText(
@@ -210,8 +205,8 @@ export class FallbackAIAdapter implements AIAdapter {
       );
     }
     return finish({
+      ...lastResult,
       status: 'failed',
-      repository,
       provider: this.targets[0]?.target.provider || 'none',
       model: input.model || 'unknown',
       durationMs: Date.now() - started,

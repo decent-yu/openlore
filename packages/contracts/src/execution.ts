@@ -71,6 +71,8 @@ export const ExecutionInputSchema = z.object({
 });
 export type ExecutionInput = z.infer<typeof ExecutionInputSchema>;
 export const ExecutionResultSchema = z.object({
+  notice: z.string().optional(),
+  report_reused: z.boolean().optional(),
   repository: RepositoryCheckoutSchema.optional(),
   status: z.enum([
     'success',

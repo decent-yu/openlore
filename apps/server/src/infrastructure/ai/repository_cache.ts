@@ -12,7 +12,6 @@ export async function repositoryCache(
   root: string,
   run: typeof runProcess,
   timeoutMs: number,
-  commit?: string,
   signal?: AbortSignal,
 ): Promise<{ cache: string; commit: string; branch?: string }> {
   if (!parseGitHubRepository(url)) throw new Error("请输入 GitHub 仓库根地址");
@@ -79,7 +78,7 @@ export async function repositoryCache(
             ? "仓库读取权限不足或地址不存在"
             : "Git 操作失败";
       throw new Error(
-        `无法获取或校验完整源码（${reason}），请检查 Git、网络与仓库读取权限；私有仓库使用执行机自身的 Git 凭据`,
+        `无法获取源码（${reason}），请检查 Git、网络与仓库读取权限；私有仓库使用执行机自身的 Git 凭据`,
       );
     }
     return result.stdout.trim();
@@ -88,28 +87,6 @@ export async function repositoryCache(
     if (!fs.existsSync(path.join(cache, "HEAD"))) {
       fs.mkdirSync(cache, { recursive: true });
       await git(["init", "--bare", "--quiet"]);
-    }
-    if (commit) {
-      const found = await run(
-        "git",
-        ["cat-file", "-e", `${commit}^{commit}`],
-        cache,
-        "",
-        Math.max(1, deadline - Date.now()),
-        signal,
-      );
-      if (found.code !== 0)
-        await git([
-          "fetch",
-          "--quiet",
-          "--depth=1",
-          "--no-tags",
-          "--no-recurse-submodules",
-          url,
-          commit,
-        ]);
-      await git(["update-ref", `refs/heads/openlore-${commit}`, commit]);
-      return { cache, commit };
     }
     // Resolve remote HEAD on every new investigation, including default-branch changes.
     const head = await git(["ls-remote", "--symref", url, "HEAD"]);
@@ -128,7 +105,6 @@ export async function repositoryCache(
       "rev-parse",
       "refs/heads/openlore-default^{commit}",
     ]);
-    if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("仓库返回了无效 Commit");
     return { cache, commit: sha, branch };
   } finally {
     // A terminated Git process can leave an incomplete pack; never accumulate it on retries.

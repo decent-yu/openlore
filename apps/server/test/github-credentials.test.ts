@@ -194,7 +194,7 @@ it("authenticates remote cache operations without exposing the token through arg
       run,
       10000,
     ),
-  ).rejects.toThrow("无法获取或校验");
+  ).rejects.toThrow("无法获取源码");
   const remote = run.mock.calls.find(([, args]) => args.includes("ls-remote"))!;
   expect(JSON.stringify(remote.slice(0, 2))).not.toContain("cache-test-token");
   expect((remote as any)[6].env.GIT_CONFIG_VALUE_3).toContain(

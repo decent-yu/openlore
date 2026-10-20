@@ -222,7 +222,7 @@ export class RepositoryProcessingService {
           existing?.title ||
           `${repository.owner}/${repository.repo} · 深入研读`,
         author: repository.owner,
-        published_at: now,
+        published_at: undefined,
         date_evidence: { repository_study: study },
         body: {
           value: `# ${repository.owner}/${repository.repo}\n\n研读目标：${study.focus || "核心架构、设计方案与实现思想"}\n仓库：${source.url}\n源码由 AI 执行器在研读时准备。`,
