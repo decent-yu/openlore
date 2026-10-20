@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { StructuredEntry } from "@openlore/contracts";
+import * as prompts from "@openlore/contracts";
 import {
   initDatabase,
   getSqliteDatabase,
@@ -150,6 +151,26 @@ it("reuses the translation when retrying a failed GitHub publication", async () 
       organized_markdown: entry.organized_markdown + "\n\nNew paragraph.",
     },
   ]);
+  expect(execute).toHaveBeenCalledTimes(2);
+});
+
+it("regenerates a cached translation after its writing prompt changes", async () => {
+  await deliver();
+  const originalPrompt = execute.mock.calls[0][0].prompt;
+  const buildPrompt = prompts.buildTranslationPrompt;
+  vi.spyOn(prompts, "buildTranslationPrompt").mockImplementation(
+    () => `${buildPrompt()}\n补充要求：仔细检查译文语序。`,
+  );
+
+  await deliver();
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute.mock.calls[1][0].material).toBe(
+    execute.mock.calls[0][0].material,
+  );
+  expect(execute.mock.calls[1][0].prompt).not.toBe(originalPrompt);
+
+  // Publication retries still reuse the translation generated with the current rules.
+  await deliver();
   expect(execute).toHaveBeenCalledTimes(2);
 });
 
