@@ -465,6 +465,13 @@ describe('Task execution and independent multi-task reports', () => {
   });
 
   it('archives research with the articles in one GitHub batch and never sends task notifications', async () => {
+    vi.spyOn(aiAdapters, 'getAIAdapterWithFallback').mockReturnValue({
+      execute: async (input) => ({
+        status: 'success', provider: 'mock', model: 'mock', durationMs: 1,
+        result: {markdown: input.material.replaceAll('Article body', '文章正文')},
+      }),
+      testConnection: async () => ({ok: true, message: 'mock'}),
+    });
     const db = getSqliteDatabase();
     db.prepare(
       "INSERT INTO repository_connections (id, name, revision, owner, repo, default_branch, credential_ref, state) VALUES ('repo', 'Repo', 'v1', 'owner', 'knowledge', 'main', 'secret', 'ready')",

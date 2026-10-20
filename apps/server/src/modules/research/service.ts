@@ -1,6 +1,9 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt } from "@openlore/contracts";
+import {
+  buildResearchPrompt,
+  DEFAULT_RESEARCH_INSTRUCTIONS,
+} from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -18,6 +21,7 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
   async listResearchTasks(groupId?: string): Promise<ResearchTask[]> {
@@ -42,12 +46,7 @@ export class ResearchService {
         group_id: r.groupId,
         article_id: r.articleId,
         article_title: art?.title || "Untitled Article",
-        article_slug: (art?.title || "article")
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .slice(0, 40),
+        article_slug: articleSlug(art?.title || "article"),
         status: r.status as any,
         questions: JSON.parse(r.questionsJson || "[]"),
         evidence: JSON.parse(r.evidenceJson || "[]"),
@@ -135,7 +134,7 @@ export class ResearchService {
     const instructions =
       customInstructions ||
       group?.researchInstructions ||
-      "深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。";
+      DEFAULT_RESEARCH_INSTRUCTIONS;
 
     // Generate research report (using AI adapter with primary and fallback support)
     const aiAdapter = getAIAdapterWithFallback(group?.aiProfileId);
@@ -144,12 +143,16 @@ export class ResearchService {
       group?.researchSkillId || "deep-research-expert",
       group?.aiProfileId || "default",
     );
+    const prompt = researchSkill
+      ? buildResearchPrompt(researchSkill.id, instructions)
+      : "";
     const requestHash = crypto
       .createHash("sha256")
       .update(
         JSON.stringify([
           art.latestRevision,
           instructions,
+          prompt,
           researchSkill?.revision,
           group?.researchSkillId,
           group?.aiProfileId,
@@ -211,8 +214,6 @@ export class ResearchService {
 
     if (aiAdapter && researchSkill?.type === "research") {
       try {
-        const prompt = buildResearchPrompt(researchSkill.id, instructions);
-
         const aiRes = await aiAdapter.execute({
           jobId: taskId,
           runId,

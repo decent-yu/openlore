@@ -13,6 +13,7 @@ import { deliveryService } from "../src/modules/delivery/service.js";
 import { articleSlug } from "../src/modules/delivery/archive-layout.js";
 import { GitHubClient } from "../src/infrastructure/repositories/github/client.js";
 import { secretsStore } from "../src/infrastructure/secrets/local_file/secrets_store.js";
+import { articleTranslationService } from "../src/modules/delivery/translation.js";
 
 const entry = (
   id: string,
@@ -56,6 +57,9 @@ beforeEach(async () => {
     base_path: "docs/agent-learning",
   });
   vi.spyOn(secretsStore, "getSecret").mockReturnValue("test");
+  vi.spyOn(articleTranslationService, "translate").mockImplementation(
+    async ({ markdown }) => markdown.replace("Article body", "文章正文"),
+  );
   vi.spyOn(GitHubClient, "syncFiles").mockImplementation(async (options) => ({
     status: "updated",
     changedPaths: options.files.map((file) => file.path),
@@ -110,6 +114,17 @@ it("stores the three real article subjects independently of batches and links ev
   expect(read(bundle, "README.md")).toContain("最近收录（3 篇）");
   expect(read(bundle, "README.md")).toContain("最近更新");
   expect(read(bundle, "README.md")).toContain("batches/20261020-01.md");
+  for (const article of bundle.entries) {
+    expect(read(bundle, `${article.directory}/README.md`)).toContain(
+      "[阅读简体中文](article-zh-CN.md)",
+    );
+    expect(read(bundle, `${article.directory}/article-zh-CN.md`)).toContain(
+      "文章正文",
+    );
+    expect(read(bundle, "README.md")).toContain(
+      `${article.directory}/article-zh-CN.md`,
+    );
+  }
   const paths = new Set(bundle.files.map((file) => file.path));
   for (const file of bundle.files.filter((file) => file.path.endsWith(".md"))) {
     const text = Buffer.from(file.content_bytes!, "base64").toString("utf8");
@@ -133,6 +148,9 @@ it("preserves earlier articles, batches and managed files when delivering the ne
     .bundle;
   expect(read(second, "README.md")).toContain("最近收录（2 篇）");
   expect(read(second, "README.md")).toContain("Agent Evals");
+  expect(read(second, "README.md")).toContain(
+    `${first.entries[0].directory}/article-zh-CN.md`,
+  );
   const manifest = JSON.parse(read(second, ".openlore/manifest.json"));
   expect(Object.keys(manifest.collection_locations)).toHaveLength(2);
   expect(
@@ -188,8 +206,17 @@ it("updates article and date navigation when research is added later, and retain
   expect(Buffer.from(overview.content, "base64").toString()).toContain(
     "research.md",
   );
+  expect(Buffer.from(overview.content, "base64").toString()).toContain(
+    "article-zh-CN.md",
+  );
   const next = (await deliver([entry("two", "Second article")])).bundle;
   expect(read(next, "README.md")).toContain("20261020-agent-evals/research.md");
+  const updated = (await deliver([entry("one", "Updated Agent Evals")])).bundle;
+  for (const filename of ["article.md", "article-zh-CN.md"]) {
+    expect(
+      read(updated, `articles/20261020-agent-evals/${filename}`),
+    ).toContain("[查看专题调研报告](research.md)");
+  }
 });
 
 it("keeps Unicode slugs and avoids splitting an English word at the length limit", () => {

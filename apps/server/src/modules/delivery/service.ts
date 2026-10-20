@@ -38,6 +38,27 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { GitHubClient } from "../../infrastructure/repositories/github/client.js";
 import { secretsStore } from "../../infrastructure/secrets/local_file/secrets_store.js";
+import {
+  articleTranslationService,
+  CHINESE_ARTICLE_FILENAME,
+} from "./translation.js";
+
+function buildArticleMarkdown(
+  entry: StructuredEntry,
+  hasResearch: boolean,
+): string {
+  return (
+    `# ${entry.title}\n\n` +
+    `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
+    `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
+    (hasResearch ? `> **深度调研**: [查看专题调研报告](research.md)  \n` : "") +
+    `> **标签**: ${entry.tags.join(", ")}\n\n` +
+    `---\n\n` +
+    `## AI 导读\n\n${entry.summary}\n\n` +
+    `---\n\n` +
+    `## 原文整理\n\n${entry.organized_markdown}\n`
+  );
+}
 
 export class DeliveryService {
   private loadManifest(group: Group): Manifest {
@@ -145,6 +166,29 @@ export class DeliveryService {
       };
     }
 
+    const manifest = this.loadManifest(group);
+
+    // Complete and validate every translation before allocating archive locations or publishing.
+    const articles: Array<{ original: string; chinese: string }> = [];
+    for (const entry of entries) {
+      const original = buildArticleMarkdown(
+        entry,
+        researchTasks.some((task) => task.article_id === entry.article_id) ||
+          !!manifest.article_locations[entry.article_id]?.has_research,
+      );
+      articles.push({
+        original,
+        chinese: await articleTranslationService.translate({
+          markdown: original,
+          articleId: entry.article_id,
+          articleTitle: entry.title,
+          groupId: group.id,
+          runId,
+          profileId: group.ai_profile_id,
+        }),
+      });
+    }
+
     // 1. Allocate collection date sequence (e.g. 20261015-01)
     const { collectionId, dateSequence } =
       await this.allocateCollectionSequence(group.id, group.timezone);
@@ -153,7 +197,6 @@ export class DeliveryService {
     const bundleAssets: ArtifactBundleAsset[] = [];
     const articleEntries: ArtifactBundle["entries"] = [];
 
-    const manifest = this.loadManifest(group);
     const now = new Date().toISOString();
 
     // 2. Process each article
@@ -205,7 +248,7 @@ export class DeliveryService {
       bundleFiles.push(
         markdownFile(
           `${articleFullPath}/README.md`,
-          articleOverview(manifest.article_locations[entry.article_id]),
+          articleOverview(manifest.article_locations[entry.article_id], true),
         ),
       );
 
@@ -223,35 +266,14 @@ export class DeliveryService {
         })
         .run();
 
-      // Build article.md
-      const articleMdContent =
-        `# ${entry.title}\n\n` +
-        `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
-        `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
-        (hasResearch
-          ? `> **深度调研**: [查看专题调研报告](research.md)  \n`
-          : "") +
-        `> **标签**: ${entry.tags.join(", ")}\n\n` +
-        `---\n\n` +
-        `## AI 导读\n\n` +
-        `${entry.summary}\n\n` +
-        `---\n\n` +
-        `## 原文整理\n\n` +
-        `${entry.organized_markdown}\n`;
-
-      const artMdSha = crypto
-        .createHash("sha256")
-        .update(articleMdContent)
-        .digest("hex");
-      bundleFiles.push({
-        path: `${articleFullPath}/article.md`,
-        content_bytes: Buffer.from(articleMdContent, "utf-8").toString(
-          "base64",
-        ),
-        encoding: "utf-8",
-        sha256: artMdSha,
-        media_type: "text/markdown",
-      });
+      for (const [filename, content] of [
+        ["article.md", articles[i].original],
+        [CHINESE_ARTICLE_FILENAME, articles[i].chinese],
+      ]) {
+        bundleFiles.push(
+          markdownFile(`${articleFullPath}/${filename}`, content),
+        );
+      }
 
       if (research) {
         bundleFiles.push({
@@ -316,6 +338,7 @@ export class DeliveryService {
               const article = manifest.article_locations[entry.article_id];
               return (
                 `- [${article.title}](../${entry.directory}/README.md)` +
+                ` · [简体中文](../${entry.directory}/${CHINESE_ARTICLE_FILENAME})` +
                 (article.has_research
                   ? ` · [调研](../${entry.directory}/research.md)`
                   : "")
@@ -325,7 +348,7 @@ export class DeliveryService {
           "\n\n[返回知识首页](../README.md)\n",
       ),
     );
-    bundleFiles.push(...navigationFiles(group, manifest));
+    bundleFiles.push(...navigationFiles(group, manifest, bundleFiles));
     // Retries may encounter the same media path; send one final version per path.
     const uniqueFiles = new Map(bundleFiles.map((file) => [file.path, file]));
     bundleFiles.splice(0, bundleFiles.length, ...uniqueFiles.values());
@@ -578,7 +601,12 @@ export class DeliveryService {
           files.push(
             markdownFile(
               `${basePath}/${article.directory}/README.md`,
-              articleOverview(article),
+              articleOverview(
+                article,
+                !!manifest.managed_files[
+                  `${basePath}/${article.directory}/${CHINESE_ARTICLE_FILENAME}`
+                ],
+              ),
             ),
             ...navigationFiles(group, manifest),
           );
