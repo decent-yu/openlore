@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="326" viewBox="0 0 1280 326" role="img" aria-labelledby="title desc">
+  <title id="title">网站统一管理，AI Runner 独立执行</title>
+  <desc id="desc">网站负责来源采集、任务编排、归档和通知；Runner 从网站领取任务，在自己的机器调用 Codex 或 Gemini CLI，回传执行结果。</desc>
+  <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto"><path d="M0 0 6 3.5 0 7" fill="none" stroke="#94a3b8" stroke-width="1.5"/></marker></defs>
+  <rect x="1" y="1" width="1278" height="324" rx="24" fill="#fafbfe" stroke="#e2e8f0"/>
+  <g font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'>
+    <text x="48" y="49" font-size="24" font-weight="650" fill="#0f172a">网站统一管理，AI Runner 独立执行。</text>
+    <g transform="translate(48 79)">
+      <rect width="456" height="172" rx="16" fill="#eff6ff" stroke="#dbeafe"/>
+      <rect x="22" y="22" width="34" height="27" rx="5" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+      <path d="M22 31h34" stroke="#2563eb" stroke-width="1.8"/>
+      <text x="72" y="45" font-size="22" font-weight="650" fill="#1e3a8a">网站 / 控制服务</text>
+      <text x="22" y="88" font-size="17" fill="#475569">来源采集 · 任务编排 · 进度追踪</text>
+      <text x="22" y="119" font-size="17" fill="#475569">GitHub 归档 · Wiki 链接 · 群汇报</text>
+      <text x="22" y="149" font-size="14" fill="#64748b">可部署在服务器，也可在本机运行</text>
+    </g>
+    <path d="M536 143h205" fill="none" stroke="#94a3b8" stroke-width="1.7" marker-end="url(#arrow)"/>
+    <text x="640" y="129" text-anchor="middle" font-size="14" fill="#64748b">领取任务与材料</text>
+    <path d="M744 206H539" fill="none" stroke="#94a3b8" stroke-width="1.7" marker-end="url(#arrow)"/>
+    <text x="640" y="191" text-anchor="middle" font-size="14" fill="#64748b">回传结果与产物</text>
+    <g transform="translate(776 79)">
+      <rect width="456" height="172" rx="16" fill="#f5f3ff" stroke="#ede9fe"/>
+      <rect x="22" y="22" width="34" height="27" rx="5" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+      <path d="m29 30 5 5-5 5m10 0h8" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="72" y="45" font-size="22" font-weight="650" fill="#5b21b6">独立 AI Runner</text>
+      <text x="22" y="88" font-size="17" fill="#475569">Codex CLI · Gemini CLI · 工作区 Skill</text>
+      <text x="22" y="119" font-size="17" fill="#475569">内容初审 · 批量选文 · 深度调研</text>
+      <text x="22" y="149" font-size="14" fill="#64748b">在自己的电脑或远程机器执行 AI 任务</text>
+    </g>
+    <text x="640" y="294" text-anchor="middle" font-size="15" fill="#64748b">浏览器配置与阅读，网站持续编排，执行器按需接入。</text>
+  </g>
+</svg>
