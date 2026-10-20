@@ -3,9 +3,9 @@ export interface GitHubSyncOptions {
   repo: string;
   branch: string;
   token: string;
-  basePath: string; // e.g. "docs/agent-leaning"
+  basePath: string; // e.g. "docs/agent-learning"
   files: Array<{
-    path: string; // relative to repo root, e.g. "docs/agent-leaning/README.md"
+    path: string; // relative to repo root, e.g. "docs/agent-learning/README.md"
     content: string; // text or base64
     encoding: 'utf-8' | 'binary';
     sha256: string;

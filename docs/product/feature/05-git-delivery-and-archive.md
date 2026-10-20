@@ -4,21 +4,29 @@
 
 ## 文件结构
 
-每条流水线配置仓库、分支与相对目录 `base_path`（如 `docs/agent-learning`）。批次按任务时区的日期和当天序号组织：
+每条流水线配置仓库、分支与相对目录 `base_path`（如 `docs/agent-learning`）。文章使用稳定目录，主题索引提供浏览入口，日期只用于追溯采集批次：
 
 ```text
 <base_path>/
-├── README.md
-├── .openlore/manifest.json
-└── 20261016-01/
-    ├── README.md
-    ├── 01-article-slug/
-    │   ├── article.md
-    │   ├── research.md          # 完成调研时提供
-    │   └── assets/              # 成功归档的图片与生成配图
-    └── 02-another-article/
-        └── article.md
+├── README.md                         # 主题导航、全部文章、采集批次
+├── articles/
+│   └── article-slug/
+│       ├── README.md                 # 原文、研报、来源与收录时间
+│       ├── article.md
+│       ├── research.md               # 完成调研时提供
+│       └── assets/                   # 成功归档的图片与生成配图
+├── topics/
+│   ├── evaluation.md
+│   ├── cost-optimization.md
+│   └── case-studies.md
+├── batches/
+│   └── 2026-10-20-01.md               # 链接到文章，不复制正文
+└── .openlore/manifest.json
 ```
+
+文章目录不含批次日期或排序号；重新调研和标题变更沿用已发布目录，同名的不同文章使用标识摘要消歧。目录支持中文和完整词边界，避免固定截断造成半个单词。现有文章可使用人工精简的语义名称。
+
+主题根据标题和标签匹配，可同时归入多个主题；仅生成有内容的主题，未匹配文章进入“其他主题”。首页、主题索引和 manifest 累计保留已成功归档的文章与批次，失败交付不进入后续索引。追加研报时同步更新文章概览和主题入口。
 
 流水线不生成批次 `digest.md`。简报由独立的[汇报方案](06-reporting.md)生成并发送，不能混作每次文章归档的必选产物。
 
@@ -35,8 +43,8 @@
 在“系统设置 → 外部集成与执行器 → GitHub 仓库连接”中配置 Wiki Base URL 与 Wiki 展示路由（仓库目录）。例如 Base URL 为 `https://wiki.mua5201314.com/raven/openlore-knowledge-vault`、目录为 `docs` 时：
 
 ```text
-docs/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research.md
-→ https://wiki.mua5201314.com/raven/openlore-knowledge-vault/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research
+docs/agent-learning/articles/deno-is-joining-cloudflare/research.md
+→ https://wiki.mua5201314.com/raven/openlore-knowledge-vault/agent-learning/articles/deno-is-joining-cloudflare/research
 ```
 
 移除完整目录前缀与 `.md`，按路径段编码后拼到 Base URL；目录留空表示仓库根目录，Base URL 留空关闭 Wiki 链接。目录外的文件不生成链接。

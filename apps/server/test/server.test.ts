@@ -69,7 +69,7 @@ describe('OpenLore Server Core Tests', () => {
 
   describe('Groups Routing and Path Normalization', () => {
     it('normalizes leading and trailing slashes', () => {
-      expect(normalizeRoutePath('/docs/agent-leaning/')).toBe('docs/agent-leaning');
+      expect(normalizeRoutePath('/docs/agent-learning/')).toBe('docs/agent-learning');
       expect(normalizeRoutePath('docs/backend-perf')).toBe('docs/backend-perf');
     });
 

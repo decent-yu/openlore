@@ -28,8 +28,8 @@ import { secretsStore } from "../src/infrastructure/secrets/local_file/secrets_s
 
 const base = "https://wiki.mua5201314.com/raven/openlore-knowledge-vault";
 const directory = "20261015-02/01-deno-is-joining-cloudflare";
-const prefix = `docs/agent-leaning/${directory}`;
-const expected = `${base}/agent-leaning/${directory}`;
+const prefix = `docs/agent-learning/${directory}`;
+const expected = `${base}/agent-learning/${directory}`;
 const wiki = { wiki_base_url: base, wiki_root_path: "docs" };
 let app: Awaited<ReturnType<typeof createServer>>;
 
@@ -63,7 +63,7 @@ beforeEach(async () => {
     id: "task",
     name: "Task",
     repository_connection_id: "repo",
-    base_path: "docs/agent-leaning",
+    base_path: "docs/agent-learning",
   });
   const now = new Date().toISOString();
   db.prepare(
@@ -257,7 +257,7 @@ it("resolves historical paths for feed, content pool and report summaries using 
   expect(
     (await feedService.getDailyFeed("task")).deep_articles[0].research
       ?.wiki_url,
-  ).toBe(`https://new.example/wiki/agent-leaning/${directory}/research`);
+  ).toBe(`https://new.example/wiki/agent-learning/${directory}/research`);
 });
 
 it("does not expose an unacknowledged bundle or a failed standalone research publication", async () => {

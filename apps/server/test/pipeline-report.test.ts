@@ -500,16 +500,16 @@ describe('Task execution and independent multi-task reports', () => {
     expect(sync).toHaveBeenCalledTimes(1);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/01-article-1/research.md'),
+        file.path.endsWith('/articles/article-1/research.md'),
       ),
     ).toBe(true);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/02-article-2/research.md'),
+        file.path.endsWith('/articles/article-2/research.md'),
       ),
     ).toBe(false);
     const secondArticle = delivery.bundle.files.find((file) =>
-      file.path.endsWith('/02-article-2/article.md'),
+      file.path.endsWith('/articles/article-2/article.md'),
     )!;
     expect(
       Buffer.from(secondArticle.content_bytes!, 'base64').toString(),
