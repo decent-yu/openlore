@@ -25,7 +25,6 @@ import {
 
 export function DailyFeedPage() {
   const client = useQueryClient();
-  const [groupId, setGroupId] = useState("");
   const [date, setDate] = useState("");
   const [report, setReport] = useState<{
     title: string;
@@ -39,16 +38,9 @@ export function DailyFeedPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["daily-feed", groupId, date],
-    queryFn: () => api.getDailyFeed(groupId || undefined, date || undefined),
+    queryKey: ["daily-feed", "", date],
+    queryFn: () => api.getDailyFeed(undefined, date || undefined),
     refetchInterval: 10000,
-  });
-  const run = useMutation({
-    mutationFn: api.triggerGroupRun,
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["daily-feed"] });
-      client.invalidateQueries({ queryKey: ["runs"] });
-    },
   });
   const interest = useMutation({
     mutationFn: ({ id, value }: { id: string; value: boolean }) =>
@@ -59,6 +51,14 @@ export function DailyFeedPage() {
     },
   });
   const running = feed?.current_run?.status === "running";
+  const sections = (feed?.groups || [])
+    .map((group) => ({
+      ...group,
+      articles: feed!.deep_articles.filter(
+        (article) => article.group_id === group.id,
+      ),
+    }))
+    .filter((group) => group.articles.length > 0);
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -85,29 +85,20 @@ export function DailyFeedPage() {
               ))}
             </select>
           </label>
-          {groupId ? (
-            <Button
-              disabled={!feed?.group || running || run.isPending}
-              onClick={() => run.mutate(feed!.group!.id)}
-            >
-              {running ? "任务运行中" : "立即运行"}
-            </Button>
-          ) : (
-            <Link
-              to="/pipelines"
-              className="inline-flex h-9 items-center rounded-md border bg-white px-3 text-sm font-medium hover:bg-neutral-100"
-            >
-              管理任务
-            </Link>
-          )}
+          <Link
+            to="/pipelines"
+            className="inline-flex h-9 items-center rounded-md border bg-white px-3 text-sm font-medium hover:bg-neutral-100"
+          >
+            管理任务
+          </Link>
         </div>
       </header>
-      {(error || run.error || interest.error) && (
+      {(error || interest.error) && (
         <p
           role="alert"
           className="rounded border bg-red-50 p-3 text-sm text-red-700"
         >
-          {error?.message || run.error?.message || interest.error?.message}
+          {error?.message || interest.error?.message}
         </p>
       )}
       {running && (
@@ -135,29 +126,6 @@ export function DailyFeedPage() {
           ))}
         </div>
       )}
-      <div
-        role="group"
-        aria-label="流水线任务分类"
-        className="flex flex-wrap items-center gap-2"
-      >
-        {[{ id: "", name: "全部任务" }, ...(feed?.groups || [])].map(
-          (group) => (
-            <button
-              key={group.id}
-              type="button"
-              aria-pressed={groupId === group.id}
-              onClick={() => {
-                setGroupId(group.id);
-                setDate("");
-              }}
-              className={`max-w-full truncate rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${groupId === group.id ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}`}
-              title={group.name}
-            >
-              {group.name}
-            </button>
-          ),
-        )}
-      </div>
       {isLoading ? (
         <p className="py-12 text-center text-neutral-400">加载中…</p>
       ) : !feed?.deep_articles.length ? (
@@ -165,7 +133,7 @@ export function DailyFeedPage() {
           <BookOpen className="mx-auto h-8 w-8 text-neutral-300" />
           <p className="mt-3 font-medium">当天暂无已归档研报</p>
           <p className="mt-2 text-sm text-neutral-500">
-            可切换任务或归档日期，未归档的文章请在内容池查看。
+            可切换归档日期，未归档的文章请在内容池查看。
           </p>
           <Link
             to="/pool"
@@ -176,157 +144,192 @@ export function DailyFeedPage() {
         </div>
       ) : (
         <TooltipProvider delayDuration={300}>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {feed.deep_articles.map((article) => (
-              <article
-                key={`${article.group_id}:${article.id}`}
-                className="flex min-w-0 flex-col rounded-xl border bg-white p-4 transition-shadow hover:shadow-sm sm:p-5"
+          <div className="space-y-8">
+            {sections.map((group) => (
+              <section
+                key={group.id}
+                aria-labelledby={`feed-group-${group.id}`}
+                className="space-y-4"
               >
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span
-                    title={article.group_name}
-                    className="truncate rounded-md border border-blue-100 bg-blue-50/60 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                <header className="flex items-center gap-3">
+                  <h3
+                    id={`feed-group-${group.id}`}
+                    className="min-w-0 break-words text-base font-semibold"
                   >
-                    {article.group_name}
+                    {group.name}
+                  </h3>
+                  <span className="shrink-0 text-xs text-neutral-400">
+                    {group.articles.length} 篇研报
                   </span>
-                  <button
-                    type="button"
-                    aria-label={
-                      article.user_interested ? "取消感兴趣" : "标为感兴趣"
-                    }
-                    aria-pressed={article.user_interested}
-                    className="-mr-1 shrink-0 rounded-md p-2 transition-colors hover:bg-neutral-100"
-                    onClick={() =>
-                      interest.mutate({
-                        id: article.id,
-                        value: !article.user_interested,
-                      })
-                    }
-                  >
-                    <Heart
-                      className={`h-4 w-4 ${article.user_interested ? "fill-rose-500 text-rose-500" : "text-neutral-400"}`}
-                    />
-                  </button>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <h3
-                      tabIndex={article.research?.wiki_url ? undefined : 0}
-                      className="line-clamp-2 break-words text-base font-semibold leading-snug"
+                  <div
+                    aria-hidden="true"
+                    className="h-px flex-1 bg-neutral-200"
+                  />
+                </header>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {group.articles.map((article) => (
+                    <article
+                      key={`${article.group_id}:${article.id}`}
+                      className="flex min-w-0 flex-col rounded-xl border bg-white p-4 transition-shadow hover:shadow-sm sm:p-5"
                     >
-                      {article.research?.wiki_url ? (
-                        <a
-                          href={article.research.wiki_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:text-blue-700 hover:underline"
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span
+                          title={article.group_name}
+                          className="truncate rounded-md border border-blue-100 bg-blue-50/60 px-2 py-0.5 text-[11px] font-medium text-blue-700"
                         >
-                          {article.title}
-                        </a>
-                      ) : (
-                        article.title
+                          {article.group_name}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={
+                            article.user_interested
+                              ? "取消感兴趣"
+                              : "标为感兴趣"
+                          }
+                          aria-pressed={article.user_interested}
+                          className="-mr-1 shrink-0 rounded-md p-2 transition-colors hover:bg-neutral-100"
+                          onClick={() =>
+                            interest.mutate({
+                              id: article.id,
+                              value: !article.user_interested,
+                            })
+                          }
+                        >
+                          <Heart
+                            className={`h-4 w-4 ${article.user_interested ? "fill-rose-500 text-rose-500" : "text-neutral-400"}`}
+                          />
+                        </button>
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <h4
+                            tabIndex={
+                              article.research?.wiki_url ? undefined : 0
+                            }
+                            className="line-clamp-2 break-words text-base font-semibold leading-snug"
+                          >
+                            {article.research?.wiki_url ? (
+                              <a
+                                href={article.research.wiki_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="hover:text-blue-700 hover:underline"
+                              >
+                                {article.title}
+                              </a>
+                            ) : (
+                              article.title
+                            )}
+                          </h4>
+                        </TooltipTrigger>
+                        <TooltipContent>{article.title}</TooltipContent>
+                      </Tooltip>
+                      {article.author && (
+                        <p
+                          className="mt-2 truncate text-xs text-neutral-400"
+                          title={article.author}
+                        >
+                          {article.author}
+                        </p>
                       )}
-                    </h3>
-                  </TooltipTrigger>
-                  <TooltipContent>{article.title}</TooltipContent>
-                </Tooltip>
-                {article.author && (
-                  <p
-                    className="mt-2 truncate text-xs text-neutral-400"
-                    title={article.author}
-                  >
-                    {article.author}
-                  </p>
-                )}
-                {article.summary && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <p
-                        tabIndex={0}
-                        className="mt-3 line-clamp-2 cursor-help break-words text-sm leading-relaxed text-neutral-500"
-                      >
-                        {article.summary}
-                      </p>
-                    </TooltipTrigger>
-                    <TooltipContent>{article.summary}</TooltipContent>
-                  </Tooltip>
-                )}
-                <div className="mt-auto pt-4">
-                  <div className="flex items-center justify-between gap-2 border-t border-neutral-100 pt-3">
-                    <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400">
-                      <CheckCircle2
-                        className="h-3 w-3 text-emerald-600"
-                        aria-hidden="true"
-                      />
-                      已归档
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setReport({
-                            title: article.title,
-                            markdown: article.research!.report_markdown,
-                            wikiUrl: article.research?.wiki_url,
-                            articleUrl: article.wiki_url,
-                          })
-                        }
-                      >
-                        <BookOpen className="mr-1 h-3 w-3" />
-                        阅读研报
-                      </Button>
-                      {(article.original_url ||
-                        article.wiki_url ||
-                        article.research?.wiki_url ||
-                        article.delivery?.commit_url) && (
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger asChild>
+                      {article.summary && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p
+                              tabIndex={0}
+                              className="mt-3 line-clamp-2 cursor-help break-words text-sm leading-relaxed text-neutral-500"
+                            >
+                              {article.summary}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent>{article.summary}</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <div className="mt-auto pt-4">
+                        <div className="flex items-center justify-between gap-2 border-t border-neutral-100 pt-3">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400">
+                            <CheckCircle2
+                              className="h-3 w-3 text-emerald-600"
+                              aria-hidden="true"
+                            />
+                            已归档
+                          </span>
+                          <div className="flex items-center gap-1">
                             <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-neutral-500"
-                              aria-label={`更多链接：${article.title}`}
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setReport({
+                                  title: article.title,
+                                  markdown: article.research!.report_markdown,
+                                  wikiUrl: article.research?.wiki_url,
+                                  articleUrl: article.wiki_url,
+                                })
+                              }
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <BookOpen className="mr-1 h-3 w-3" />
+                              阅读研报
                             </Button>
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Portal>
-                            <DropdownMenu.Content
-                              align="end"
-                              sideOffset={6}
-                              collisionPadding={12}
-                              className="z-50 min-w-36 rounded-lg border bg-white p-1 shadow-lg"
-                            >
-                              {[
-                                ["Wiki 研报", article.research?.wiki_url],
-                                ["Wiki 正文", article.wiki_url],
-                                ["原文", article.original_url],
-                                ["GitHub 归档", article.delivery?.commit_url],
-                              ].map(
-                                ([label, url]) =>
-                                  url && (
-                                    <DropdownMenu.Item key={label} asChild>
-                                      <a
-                                        href={url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex items-center justify-between gap-4 rounded-md px-3 py-2 text-xs text-neutral-600 outline-none data-[highlighted]:bg-neutral-100"
-                                      >
-                                        {label}
-                                        <ExternalLink className="h-3 w-3" />
-                                      </a>
-                                    </DropdownMenu.Item>
-                                  ),
-                              )}
-                            </DropdownMenu.Content>
-                          </DropdownMenu.Portal>
-                        </DropdownMenu.Root>
-                      )}
-                    </div>
-                  </div>
+                            {(article.original_url ||
+                              article.wiki_url ||
+                              article.research?.wiki_url ||
+                              article.delivery?.commit_url) && (
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-neutral-500"
+                                    aria-label={`更多链接：${article.title}`}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    align="end"
+                                    sideOffset={6}
+                                    collisionPadding={12}
+                                    className="z-50 min-w-36 rounded-lg border bg-white p-1 shadow-lg"
+                                  >
+                                    {[
+                                      ["Wiki 研报", article.research?.wiki_url],
+                                      ["Wiki 正文", article.wiki_url],
+                                      ["原文", article.original_url],
+                                      [
+                                        "GitHub 归档",
+                                        article.delivery?.commit_url,
+                                      ],
+                                    ].map(
+                                      ([label, url]) =>
+                                        url && (
+                                          <DropdownMenu.Item
+                                            key={label}
+                                            asChild
+                                          >
+                                            <a
+                                              href={url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="flex items-center justify-between gap-4 rounded-md px-3 py-2 text-xs text-neutral-600 outline-none data-[highlighted]:bg-neutral-100"
+                                            >
+                                              {label}
+                                              <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                          </DropdownMenu.Item>
+                                        ),
+                                    )}
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              </article>
+              </section>
             ))}
           </div>
         </TooltipProvider>
