@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const GITHUB_CODE_RESEARCH_SKILL = "github-code-research";
+
 export function parseGitHubRepository(
   value: string,
 ): { owner: string; repo: string; url: string; directory: string } | null {
@@ -39,6 +41,16 @@ export const RepositoryStudySchema = z.object({
   focus: z.string(),
   files: z.array(z.string()),
 });
+export const RepositoryCheckoutSchema = z.object({
+  url: z
+    .string()
+    .refine(
+      (value) => Boolean(parseGitHubRepository(value)),
+      "请输入 GitHub 仓库根地址",
+    ),
+  commit: z.string().regex(/^[a-f0-9]{40}$/, "仓库调研必须固定完整 Commit SHA"),
+});
+export type RepositoryCheckout = z.infer<typeof RepositoryCheckoutSchema>;
 export type RepositoryStudy = z.infer<typeof RepositoryStudySchema>;
 
 export function repositoryStudy(

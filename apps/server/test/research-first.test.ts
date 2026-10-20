@@ -118,6 +118,9 @@ it("selects from shared reviews across all old and new content and only excludes
     (await scheduler.triggerGroupRun("task")).id,
   );
   expect(first.status).toBe("succeeded");
+  const articleResearch = execute.mock.calls.find(([input]) => input.taskType === 'research_report')![0];
+  expect(articleResearch.skillId).toBe('deep-research-expert');
+  expect(articleResearch.repository).toBeUndefined();
   expect(first.output.entries.map((e) => e.article_id)).toEqual([ids[0]]);
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "assess"),

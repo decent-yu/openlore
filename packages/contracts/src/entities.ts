@@ -192,6 +192,7 @@ export const PushDeliveryRecordSchema = z.object({
 export type PushDeliveryRecord = z.infer<typeof PushDeliveryRecordSchema>;
 
 export const ResearchTaskSchema = z.object({
+  skill_id: z.string().optional(),
   execution: ExecutionResultSchema.shape.execution,
   model: z.string().optional(),
   id: z.string(),

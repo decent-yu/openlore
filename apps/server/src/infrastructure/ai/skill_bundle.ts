@@ -101,7 +101,7 @@ export function scanSkillDirectory(
       if (!match) throw new Error(`Invalid Skill manifest: ${entry.name}`);
       const field = (name: string) =>
         match[1]
-          .match(new RegExp(`^${name}:\\s*(.+)$`, 'm'))?.[1]
+          .match(new RegExp(`^(?: {2})?${name}:\\s*(.+)$`, 'm'))?.[1]
           .trim()
           .replace(/^['"]|['"]$/g, '');
       const id = field('name') || entry.name;

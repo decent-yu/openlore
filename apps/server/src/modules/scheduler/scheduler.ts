@@ -3,7 +3,7 @@ import {
   markResearchArchived,
 } from "../research/state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, RunOutputSchema } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, RunOutputSchema } from "@openlore/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import type {
   Group,
@@ -359,13 +359,13 @@ export class AppScheduler {
                     article_id: entry.article_id,
                     article_title: entry.title,
                     task_type: "research",
-                    skill_id: group.research_skill_id,
+                    skill_id: task.skill_id || group.research_skill_id,
                     model: task.model || "research-engine",
                     execution: task.execution,
-                    prompt_preview: buildResearchPrompt(
+                    prompt_preview: task.execution?.prompt || (task.skill_id === GITHUB_CODE_RESEARCH_SKILL ? buildCodeResearchPrompt(group.research_instructions) : buildResearchPrompt(
                       group.research_skill_id,
                       group.research_instructions,
-                    ),
+                    )),
                     response_preview: task.report_markdown.slice(0, 600),
                     status: "succeeded",
                   });

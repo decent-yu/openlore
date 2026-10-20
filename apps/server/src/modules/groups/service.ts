@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { validateCron } from '../../infrastructure/time/cron.js';
 import { eq } from 'drizzle-orm';
 import type { Group } from '@openlore/contracts';
+import { GITHUB_CODE_RESEARCH_SKILL } from '@openlore/contracts';
 import { getDb } from '../../infrastructure/persistence/sqlite/db.js';
 import {
   groupsTable,
@@ -134,6 +135,7 @@ export class GroupsService {
     research_skill_id?: string;
     ai_profile_id?: string | null;
   }): Promise<Group> {
+    if (data.research_skill_id === GITHUB_CODE_RESEARCH_SKILL) throw new Error('文章调研 Skill 不能使用 github-code-research；GitHub 来源自动使用独立代码调研 Skill');
     validateCron(data.schedule_cron || '0 8 * * *');
     new Intl.DateTimeFormat('en', { timeZone: data.timezone || 'Asia/Shanghai' });
     const id = data.id || `group_${crypto.randomUUID().slice(0, 8)}`;

@@ -77,7 +77,7 @@ beforeEach(async () => {
   vi.spyOn(SafeHttpClient, "fetch").mockImplementation(async (url) => {
     let body: any;
     if (/\/commits\//.test(url))
-      body = { sha: "pinned-commit", commit: { tree: { sha: "tree" } } };
+      body = { sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commit: { tree: { sha: "tree" } } };
     else if (/\/git\/trees\//.test(url))
       body = {
         tree: [
@@ -188,10 +188,10 @@ it("collects pinned code once per local day, rotates files without a new commit,
   ).toEqual({ n: 0 });
   const first = await collectionService.discoverSource("orca");
   expect(first.stats.items_new).toBe(1);
-  expect(first.items[0].body.value).toContain("/blob/pinned-commit/src/");
+  expect(first.items[0].body.value).toContain("/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/");
   expect(first.items[0].date_evidence).toHaveProperty(
     "repository_study.commit",
-    "pinned-commit",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   );
   const requests = vi.mocked(SafeHttpClient.fetch).mock.calls.length;
   expect((await collectionService.discoverSource("orca")).status).toBe(
@@ -218,6 +218,10 @@ it("runs directly through research and archives numbered topics, source material
     "research_report",
   ]);
   expect(execute.mock.calls[0][0].prompt).toContain("执行器与工作区隔离");
+  expect(execute.mock.calls[0][0].skillId).toBe('github-code-research');
+  expect(execute.mock.calls[0][0].repository).toEqual({url: 'https://github.com/stablyai/orca', commit: 'a'.repeat(40)});
+  expect(execute.mock.calls[0][0].prompt).not.toContain('deep-research-expert');
+  expect(first.ai_logs.find(log => log.task_type === 'research')?.skill_id).toBe('github-code-research');
   const files = vi.mocked(GitHubClient.syncFiles).mock.calls[0][0].files;
   const research = files.find(
     (file) => file.path === "docs/xxx/stablyai@orca/01-核心执行架构.md",
@@ -392,4 +396,24 @@ it("leaves the day retryable when GitHub fails and does not generate placeholder
     getSqliteDatabase().prepare("SELECT count(*) n FROM source_states").get(),
   ).toEqual({ n: 0 });
   expect((await run()).status).toBe("succeeded");
+});
+
+it('does not fall back to the article Skill when the code research Skill is missing', async () => {
+  vi.mocked(skillsService.getSkill).mockImplementation(async id => id === 'github-code-research' ? null : ({id,name:id,type:'selection',description:'',tags:[],file_path:'',system_prompt:''}));
+  const result = await run();
+  expect(result.status).toBe('failed');
+  expect(execute).not.toHaveBeenCalled();
+  expect(skillsService.getSkill).not.toHaveBeenCalledWith('deep-research-expert', expect.anything());
+});
+
+it('keeps code research reuse independent of article Skill changes', async () => {
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({status:'failed',changedPaths:[],errorMessage:'offline'});
+  expect((await run()).status).toBe('failed');
+  getSqliteDatabase().prepare("UPDATE groups SET research_skill_id='another-article-skill' WHERE id='study'").run();
+  expect((await run()).status).toBe('succeeded');
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it('rejects assigning the code Skill to the article research setting', async () => {
+  await expect(groupsService.saveGroup({id:'study',name:'Invalid mix',repository_connection_id:'vault',base_path:'docs/xxx',research_skill_id:'github-code-research'})).rejects.toThrow('文章调研 Skill 不能使用');
 });
