@@ -46,7 +46,7 @@ docs/xxx/
         └── 01-核心执行架构/         # 该主题的可用配图
 ```
 
-编号在每条流水线的每个仓库内独立递增；目录使用小写 `owner@repo`。重试保持首次分配的路径，避免重复编号或覆盖历史研报。仓库索引保留已归档主题，manifest 累积托管文件。文章和研报的实际路径记录在归档包中，Wiki 与汇报使用已确认成功的真实路径。RSS 文章继续使用日期批次目录，混合来源也可同批归档。
+编号在每条流水线的每个仓库内独立递增；目录使用小写 `owner@repo`。重试保持首次分配的路径，避免重复编号或覆盖历史研报。仓库索引保留已归档主题，manifest 累积托管文件。文章和研报的实际路径记录在归档包中，Wiki 与汇报使用已确认成功的真实路径。文章调研采用 `articles/YYYYMMDD-slug/` 目录。两类流水线各自产出归档包，共用 manifest、首页和批次导航、上传与交付记录；汇报方案统一汇总两类成功结果。
 
 例如目标仓库选择 `Openlore Knowledge Vault`，目录填 `docs/agent-leaning`，则生成 `docs/agent-leaning/stablyai@orca/01-主题.md`；改填 `docs/xxx` 则生成 `docs/xxx/stablyai@orca/01-主题.md`。
 
@@ -54,9 +54,9 @@ docs/xxx/
 
 - 无新调研产出时返回 `unchanged`，不生成文件或空提交。
 - 批次包含文章、本次完成研报和可用图片；成功下载的图片按哈希存储并重写为相对引用。下载失败不能声称“所有图片已永久保存”。
-- 每篇文章同时交付 `article.md` 与 `article-zh-CN.md`，文章概览、首页和批次索引提供中文入口。译文逐段翻译标题、导读和正文，保留原文结构、图片引用、链接目标与代码，两份文章共用同一份图片资源。
+- 文章调研任务每篇文章同时交付 `article.md` 与 `article-zh-CN.md`，文章概览、首页和批次索引提供中文入口。译文逐段翻译标题、导读和正文，保留原文结构、图片引用、链接目标与代码，两份文章共用同一份图片资源。
 - 译文使用自然、直白的中文，允许在同一文本节点内调整语序、将长句译成短句，保留原意、语气和适用限制；不增添术语定义、背景、例子或建议。已有中文与受保护内容保持不变，不套用调研文章的章节和配图模板。
-- 中文翻译使用流水线配置的 AI 执行器，执行记录标为“中文翻译”。翻译失败或结构校验不通过时停止本次归档；原文和完整翻译 Prompt 一致时，重试可复用已校验的译文，规则变化后重新翻译。历史已归档批次不会自动补译。
+- 文章调研的中文翻译使用流水线配置的 AI 执行器，执行记录标为“中文翻译”。翻译失败或结构校验不通过时停止本次归档；原文和完整翻译 Prompt 一致时，重试可复用已校验的译文，规则变化后重新翻译。历史已归档批次不会自动补译。
 - GitHub 客户端使用 Git Data API 构造 Blob、Tree、Commit 并更新 Ref；交付结果记录状态、变更路径、Commit 与错误信息。
 - `.openlore/manifest.json` 描述托管文件与文章/批次位置；交付结果和 Commit 记录在云端数据库，不应把 manifest 当作完整提交历史账本。
 - 文章与研报一起归档成功后流水线才完成，汇报方案只消费成功结果。手动追加调研也要单独记录归档结果。
@@ -80,7 +80,10 @@ docs/agent-learning/articles/20261015-deno-is-joining-cloudflare/research.md
 
 ## 实现位置
 
-- `modules/delivery/service.ts`：批次分配、归档包、目录与 manifest。
+- `modules/delivery/service.ts`：统一交付入口、文章归档与手动追加调研。
+- `modules/delivery/repository-archive.ts`：仓库研读产物与连续编号目录。
+- `modules/delivery/publication.ts`：共享 manifest 读取、上传、交付记录和归档确认。
+- `modules/delivery/archive-layout.ts`：共享首页和批次索引。
 - `infrastructure/repositories/github/client.ts`：GitHub 写入。
 - `infrastructure/media_assets/archiver.ts`：图片下载与相对引用处理。
 - `modules/processing/service.ts`、`modules/research/service.ts`：组织文章和调研材料。
