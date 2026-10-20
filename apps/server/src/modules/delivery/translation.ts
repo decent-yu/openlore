@@ -44,12 +44,19 @@ export class ArticleTranslationService {
     runId: string;
     profileId?: string | null;
   }): Promise<string> {
-    const { markdown, articleId, articleTitle, groupId, runId, profileId } = options;
+    const { markdown, articleId, articleTitle, groupId, runId, profileId } =
+      options;
     // Publication retries reuse the same translation without another AI call.
-    const hash = crypto.createHash("sha256").update(`zh-CN-v1\n${markdown}`).digest("hex");
+    const hash = crypto
+      .createHash("sha256")
+      .update(`zh-CN-v1\n${markdown}`)
+      .digest("hex");
     const cache = path.join(getAppPaths().blobsDir, `translation-${hash}.json`);
     if (fs.existsSync(cache))
-      return validateTranslation(markdown, JSON.parse(fs.readFileSync(cache, "utf8")));
+      return validateTranslation(
+        markdown,
+        JSON.parse(fs.readFileSync(cache, "utf8")),
+      );
 
     const adapter = getAIAdapterWithFallback(profileId);
     if (!adapter) throw new Error("中文翻译失败：请先配置可用的 AI 执行器");
@@ -76,7 +83,9 @@ export class ArticleTranslationService {
       },
     });
     if (response.status !== "success")
-      throw new Error(`中文翻译失败：${response.error?.message || "AI 执行失败"}`);
+      throw new Error(
+        `中文翻译失败：${response.error?.message || "AI 执行失败"}`,
+      );
     let translated: string;
     try {
       translated = validateTranslation(markdown, response.result);

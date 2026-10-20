@@ -27,6 +27,27 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { GitHubClient } from "../../infrastructure/repositories/github/client.js";
 import { secretsStore } from "../../infrastructure/secrets/local_file/secrets_store.js";
+import {
+  articleTranslationService,
+  CHINESE_ARTICLE_FILENAME,
+} from "./translation.js";
+
+function buildArticleMarkdown(
+  entry: StructuredEntry,
+  research?: ResearchTask,
+): string {
+  return (
+    `# ${entry.title}\n\n` +
+    `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
+    `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
+    (research ? `> **深度调研**: [查看专题调研报告](research.md)  \n` : "") +
+    `> **标签**: ${entry.tags.join(", ")}\n\n` +
+    `---\n\n` +
+    `## AI 导读\n\n${entry.summary}\n\n` +
+    `---\n\n` +
+    `## 原文整理\n\n${entry.organized_markdown}\n`
+  );
+}
 
 export class DeliveryService {
   async allocateCollectionSequence(
@@ -104,6 +125,26 @@ export class DeliveryService {
       };
     }
 
+    // Complete and validate every translation before allocating archive locations or publishing.
+    const articles: Array<{ original: string; chinese: string }> = [];
+    for (const entry of entries) {
+      const original = buildArticleMarkdown(
+        entry,
+        researchTasks.find((task) => task.article_id === entry.article_id),
+      );
+      articles.push({
+        original,
+        chinese: await articleTranslationService.translate({
+          markdown: original,
+          articleId: entry.article_id,
+          articleTitle: entry.title,
+          groupId: group.id,
+          runId,
+          profileId: group.ai_profile_id,
+        }),
+      });
+    }
+
     // 1. Allocate collection date sequence (e.g. 20261015-01)
     const { collectionId, dateSequence } =
       await this.allocateCollectionSequence(group.id, group.timezone);
@@ -155,35 +196,18 @@ export class DeliveryService {
       const research = researchTasks.find(
         (task) => task.article_id === entry.article_id,
       );
-      // Build article.md
-      const articleMdContent =
-        `# ${entry.title}\n\n` +
-        `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
-        `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
-        (research
-          ? `> **深度调研**: [查看专题调研报告](research.md)  \n`
-          : "") +
-        `> **标签**: ${entry.tags.join(", ")}\n\n` +
-        `---\n\n` +
-        `## AI 导读\n\n` +
-        `${entry.summary}\n\n` +
-        `---\n\n` +
-        `## 原文整理\n\n` +
-        `${entry.organized_markdown}\n`;
-
-      const artMdSha = crypto
-        .createHash("sha256")
-        .update(articleMdContent)
-        .digest("hex");
-      bundleFiles.push({
-        path: `${articleFullPath}/article.md`,
-        content_bytes: Buffer.from(articleMdContent, "utf-8").toString(
-          "base64",
-        ),
-        encoding: "utf-8",
-        sha256: artMdSha,
-        media_type: "text/markdown",
-      });
+      for (const [filename, content] of [
+        ["article.md", articles[i].original],
+        [CHINESE_ARTICLE_FILENAME, articles[i].chinese],
+      ]) {
+        bundleFiles.push({
+          path: `${articleFullPath}/${filename}`,
+          content_bytes: Buffer.from(content, "utf-8").toString("base64"),
+          encoding: "utf-8",
+          sha256: crypto.createHash("sha256").update(content).digest("hex"),
+          media_type: "text/markdown",
+        });
+      }
 
       if (research) {
         bundleFiles.push({
@@ -241,6 +265,7 @@ export class DeliveryService {
         .map(
           (e, idx) =>
             `- [${e.title}](${String(idx + 1).padStart(2, "0")}-${e.slug}/article.md)` +
+            ` ([简体中文](${String(idx + 1).padStart(2, "0")}-${e.slug}/${CHINESE_ARTICLE_FILENAME}))` +
             (researchTasks.some((task) => task.article_id === e.article_id)
               ? ` ([调研报告](${String(idx + 1).padStart(2, "0")}-${e.slug}/research.md))`
               : ""),
