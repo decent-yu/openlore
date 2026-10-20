@@ -373,8 +373,6 @@ export function SourcesPage() {
               {/* Actions Footer */}
               <div className="px-4 pb-3 text-xs text-neutral-600 space-y-2">
                 {s.capability_id === 'github_repository' ? <>
-                  <p>按目标持续研读 · 不要求仓库有新提交</p>
-                  {(groups || []).filter(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))).map(group => <p key={group.id} className="break-all">{group.name} · {group.schedule_cron}（{group.timezone}）<br />归档：{group.route.base_path}/{parseGitHubRepository(s.url)?.directory}/01-主题.md</p>)}
                   {!groups?.some(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))) && <Link to="/pipelines" className="underline">关联流水线并设置归档目录</Link>}
                 </> : <>
                 <p>最近 {s.options.max_age_days} 天{s.options.current_year_only ? ' · 仅今年' : ''} · {s.options.verify_publication_date ? '核验原文日期' : '采用来源日期'} · {s.options.keyword_policy==='assist' ? '关键词辅助' : '关键词严格'}</p>
