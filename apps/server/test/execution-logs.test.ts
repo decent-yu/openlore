@@ -94,37 +94,55 @@ it("shows an in-flight call before the executor returns, then saves full input a
 it("keeps a timed-out primary attempt, partial document and the successful fallback separately", async () => {
   const adapter = new FallbackAIAdapter([
     {
-      target: target("primary"),
-      adapter: {
-        execute: async () => ({
-          status: "timeout",
-          provider: "gemini_cli",
-          model: "primary-model",
-          durationMs: 1800000,
-          error: { code: "timeout", message: "Reached 1800 seconds" },
-          diagnostics: {
-            stdout: "",
-            stderr: "process still running",
-            exit_code: null,
-            timed_out: true,
-            timeout_seconds: 1800,
-            output_truncated: false,
-            partial_document: "Unconfirmed draft",
-          },
+      target: {
+        ...target("primary"),
+        execution: ExecutorConfigSchema.parse({
+          timeout_seconds: 1800,
+          reasoning_effort: 'high',
         }),
+      },
+      adapter: {
+        execute: async (request) => {
+          expect(request.reasoning_effort).toBe('high');
+          return {
+            status: "timeout",
+            provider: "gemini_cli",
+            model: "primary-model",
+            durationMs: 1800000,
+            error: { code: "timeout", message: "Reached 1800 seconds" },
+            diagnostics: {
+              stdout: "",
+              stderr: "process still running",
+              exit_code: null,
+              timed_out: true,
+              timeout_seconds: 1800,
+              output_truncated: false,
+              partial_document: "Unconfirmed draft",
+            },
+          };
+        },
         testConnection: async () => ({ ok: true, message: "test" }),
       },
     },
     {
-      target: target("backup"),
-      adapter: {
-        execute: async () => ({
-          status: "success",
-          provider: "codex_cli",
-          model: "backup-model",
-          durationMs: 2,
-          result: "Complete article",
+      target: {
+        ...target("backup"),
+        execution: ExecutorConfigSchema.parse({
+          timeout_seconds: 1800,
+          reasoning_effort: 'medium',
         }),
+      },
+      adapter: {
+        execute: async (request) => {
+          expect(request.reasoning_effort).toBe('medium');
+          return {
+            status: "success",
+            provider: "codex_cli",
+            model: "backup-model",
+            durationMs: 2,
+            result: "Complete article",
+          };
+        },
         testConnection: async () => ({ ok: true, message: "test" }),
       },
     },
@@ -136,11 +154,13 @@ it("keeps a timed-out primary attempt, partial document and the successful fallb
   expect(log.attempts).toHaveLength(2);
   expect(log.attempts[0]).toMatchObject({
     status: "timeout",
+    reasoning_effort: 'high',
     error: { code: "timeout" },
     diagnostics: { partial_document: "Unconfirmed draft" },
   });
   expect(log.attempts[1]).toMatchObject({
     status: "success",
+    reasoning_effort: 'medium',
     executor_name: "backup",
   });
 });

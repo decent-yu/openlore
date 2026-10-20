@@ -74,7 +74,8 @@ it("groups evidence correction under the same task and distinguishes it from exe
         executor_name: "Local Codex",
         provider: "codex_cli",
         transport: "local",
-        model: "test",
+        model: "gpt-6.1-sol",
+        reasoning_effort: "high",
         timeout_seconds: 900,
         queue_timeout_seconds: 3600,
         started_at: "2026-10-19T08:00:00Z",
@@ -94,7 +95,8 @@ it("groups evidence correction under the same task and distinguishes it from exe
         executor_name: "Local Codex",
         provider: "codex_cli",
         transport: "local",
-        model: "test",
+        model: "gpt-6.1-sol",
+        reasoning_effort: "high",
         timeout_seconds: 900,
         queue_timeout_seconds: 3600,
         started_at: "2026-10-19T08:00:01Z",
@@ -111,6 +113,7 @@ it("groups evidence correction under the same task and distinguishes it from exe
     </QueryClientProvider>,
   );
   expect(html).toContain("原会话校验修正");
+  expect(html).toContain("codex_cli / GPT-6.1-Sol · high");
   expect(html).toContain("evidence_refs[0]");
   expect(html).toContain("引用来自标题");
   expect(html).toContain("累计 Token 50");

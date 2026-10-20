@@ -1,4 +1,5 @@
 import type { ExecutionInput, ExecutionResult } from "./execution.js";
+import type { ReasoningEffort } from "./model-spec.js";
 
 export interface AIExecutionAttempt {
   index: number;
@@ -7,6 +8,7 @@ export interface AIExecutionAttempt {
   provider: string;
   transport: string;
   model: string;
+  reasoning_effort?: ReasoningEffort;
   timeout_seconds: number;
   queue_timeout_seconds: number;
   started_at: string;

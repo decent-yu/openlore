@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Clock, Download, FileInput, FileOutput, X } from "lucide-react";
 import type { AIExecutionLogDetail } from "@openlore/contracts";
+import { formatModelSpec } from "@openlore/contracts";
 import { api } from "../../lib/api.js";
 import { Button } from "../../components/ui/button.js";
 import { useDialog } from "../../lib/useDialog.js";
@@ -360,7 +361,7 @@ export function ExecutionLogDetail({
                       </div>
                       <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
                         {Object.entries({
-                          "执行器 / 模型": `${attempt.provider} / ${attempt.model}`,
+                          "执行器 / 模型": `${attempt.provider} / ${formatModelSpec(attempt.model, attempt.reasoning_effort)}`,
                           连接方式:
                             (
                               {

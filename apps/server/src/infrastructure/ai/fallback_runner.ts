@@ -60,6 +60,8 @@ export class FallbackAIAdapter implements AIAdapter {
       correctionOf?: number,
     ): Promise<AIResult> => {
       const { target, adapter } = entry;
+      const reasoningEffort =
+        task.reasoning_effort || target.execution?.reasoning_effort;
       const attempt: AIExecutionAttempt = {
         index: attempts.length + 1,
         profile_id: target.id,
@@ -67,6 +69,7 @@ export class FallbackAIAdapter implements AIAdapter {
         provider: target.provider,
         transport: target.execution?.transport || 'local',
         model: task.model || target.model || 'default',
+        reasoning_effort: reasoningEffort,
         timeout_seconds: target.execution?.timeout_seconds || 900,
         queue_timeout_seconds: target.execution?.queue_timeout_seconds || 3600,
         started_at: new Date().toISOString(),
@@ -86,7 +89,7 @@ export class FallbackAIAdapter implements AIAdapter {
             ...task,
             profileId: target.id,
             model: task.model || target.model,
-            reasoning_effort: task.reasoning_effort || target.execution?.reasoning_effort,
+            reasoning_effort: reasoningEffort,
           },
           (progress) => {
             Object.assign(attempt, {
