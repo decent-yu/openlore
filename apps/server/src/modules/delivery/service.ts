@@ -21,7 +21,7 @@ import { ManifestSchema } from "@openlore/contracts";
 import {
   articleSlug,
   articleOverview,
-  batchLabel,
+  archiveDate,
   markdownFile,
   navigationFiles,
   finalizeManifest,
@@ -161,7 +161,9 @@ export class DeliveryService {
       const entry = entries[i];
       const existing = manifest.article_locations[entry.article_id];
       let slug = existing?.slug || articleSlug(entry.slug || entry.title);
-      let articleRelDir = existing?.directory || `articles/${slug}`;
+      let articleRelDir =
+        existing?.directory ||
+        `articles/${archiveDate(now, group.timezone)}-${slug}`;
       // Two distinct sources may have the same title. Never overwrite their directories.
       const occupied = db
         .select()
@@ -177,7 +179,7 @@ export class DeliveryService {
         )
       ) {
         slug += `-${crypto.createHash("sha256").update(entry.article_id).digest("hex").slice(0, 12)}`;
-        articleRelDir = `articles/${slug}`;
+        articleRelDir = `articles/${archiveDate(now, group.timezone)}-${slug}`;
       }
       const articleFullPath = `${basePath}/${articleRelDir}`;
       const research = researchTasks.find(
@@ -298,7 +300,7 @@ export class DeliveryService {
       }
     }
 
-    const batchPath = `${basePath}/batches/${batchLabel(dateSequence)}.md`;
+    const batchPath = `${basePath}/batches/${dateSequence}.md`;
     manifest.collection_locations[collectionId] = {
       path: batchPath,
       date_sequence: dateSequence,
@@ -308,7 +310,7 @@ export class DeliveryService {
     bundleFiles.push(
       markdownFile(
         batchPath,
-        `# 采集批次：${batchLabel(dateSequence)}\n\n生成时间：${now}  \n本批共包含 ${entries.length} 篇文章：\n\n` +
+        `# 采集批次：${dateSequence}\n\n生成时间：${now}  \n本批共包含 ${entries.length} 篇文章：\n\n` +
           articleEntries
             .map((entry) => {
               const article = manifest.article_locations[entry.article_id];

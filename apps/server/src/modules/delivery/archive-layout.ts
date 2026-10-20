@@ -17,8 +17,18 @@ export function articleSlug(text: string): string {
     .replace(/-$/, "");
 }
 
-export function batchLabel(sequence: string): string {
-  return sequence.replace(/^(\d{4})(\d{2})(\d{2})-/, "$1-$2-$3-");
+export function archiveDate(
+  value: string | Date,
+  timezone = "Asia/Shanghai",
+): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date(value))
+    .replace(/-/g, "");
 }
 
 export function markdownFile(
@@ -37,27 +47,9 @@ export function markdownFile(
 }
 
 const label = (text: string) =>
-  text.replace(/[\r\n]+/g, " ").replace(/([\\\[\]])/g, "\\$1");
+  text.replace(/[\r\n]+/g, " ").replace(/([\\\[\]|])/g, "\\$1");
 const href = (filePath: string) =>
   filePath.split("/").map(encodeURIComponent).join("/");
-
-const topics = [
-  {
-    slug: "evaluation",
-    title: "评测与可靠性",
-    matches: /eval|benchmark|testing|评测|评估|回归|可靠性/i,
-  },
-  {
-    slug: "cost-optimization",
-    title: "成本与性能优化",
-    matches: /cost|optimiza|cach|inference|latency|成本|优化|缓存|推理|延迟/i,
-  },
-  {
-    slug: "case-studies",
-    title: "实践案例",
-    matches: /\bhow\b.+\bbuilt\b|case stud|实践案例|健康辅导|代码审查/i,
-  },
-];
 
 export function articleOverview(article: ArchivedArticle): string {
   return (
@@ -71,62 +63,48 @@ export function articleOverview(article: ArchivedArticle): string {
 }
 
 export function navigationFiles(
-  group: Pick<Group, "name" | "description" | "route">,
+  group: Pick<Group, "name" | "description" | "route" | "timezone">,
   manifest: Manifest,
 ): ArtifactBundleFile[] {
   const base = group.route.base_path;
-  const articles = Object.values(manifest.article_locations).sort(
+  const articles = Object.values(manifest.article_locations);
+  const newest = [...articles].sort(
     (a, b) =>
-      b.updated_at.localeCompare(a.updated_at) ||
+      Date.parse(b.collected_at) - Date.parse(a.collected_at) ||
       a.directory.localeCompare(b.directory),
   );
-  const link = (article: ArchivedArticle, prefix = "") =>
-    `- [${label(article.title)}](${href(`${prefix}${article.directory}/README.md`)})` +
-    (article.has_research
-      ? ` · [调研](${href(`${prefix}${article.directory}/research.md`)})`
-      : "");
-  const sections = topics.map((topic) => ({
-    ...topic,
-    articles: articles.filter((article) =>
-      topic.matches.test(`${article.title} ${article.tags.join(" ")}`),
-    ),
-  }));
-  const other = articles.filter(
-    (article) =>
-      !sections.some((section) => section.articles.includes(article)),
+  const updated = [...articles].sort(
+    (a, b) =>
+      Date.parse(b.updated_at) - Date.parse(a.updated_at) ||
+      a.directory.localeCompare(b.directory),
   );
-  sections.push({
-    slug: "other",
-    title: "其他主题",
-    matches: /./,
-    articles: other,
-  });
-  const active = sections.filter((section) => section.articles.length);
-  const batches = Object.values(manifest.collection_locations).sort((a, b) =>
-    b.created_at.localeCompare(a.created_at),
+  const rows = (
+    list: ArchivedArticle[],
+    field: "collected_at" | "updated_at",
+  ) =>
+    list
+      .map(
+        (article) =>
+          `| ${archiveDate(article[field], group.timezone)} | [${label(article.title)}](${href(`${article.directory}/README.md`)}) | ` +
+          (article.has_research
+            ? `[调研](${href(`${article.directory}/research.md`)})`
+            : "—") +
+          " |",
+      )
+      .join("\n");
+  const batches = Object.values(manifest.collection_locations).sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
   );
-  const files = sections
-    .filter(
-      (section) =>
-        section.articles.length ||
-        manifest.managed_files[`${base}/topics/${section.slug}.md`],
-    )
-    .map((section) =>
-      markdownFile(
-        `${base}/topics/${section.slug}.md`,
-        `# ${section.title}\n\n${section.articles.map((article) => link(article, "../")).join("\n") || "暂无文章。"}\n\n[返回知识首页](../README.md)\n`,
-      ),
-    );
-  files.push(
+  return [
     markdownFile(
       `${base}/README.md`,
       `# ${group.name}\n\n${group.description}\n\n` +
-        `## 主题导航\n\n${active.map((section) => `- [${section.title}](topics/${section.slug}.md)（${section.articles.length} 篇）`).join("\n")}\n\n` +
-        `## 全部文章（${articles.length} 篇）\n\n${articles.map((article) => link(article)).join("\n")}\n\n` +
-        `## 采集批次\n\n${batches.map((batch) => `- [${batchLabel(batch.date_sequence)}](${href(batch.path.slice(base.length + 1))})（${batch.article_ids.length} 篇）`).join("\n")}\n`,
+        `## 最近收录（${articles.length} 篇）\n\n按首次收录时间从新到旧排列；更新旧文章不改变收录日期和目录。\n\n` +
+        `| 收录日期 | 文章 | 深度调研 |\n| --- | --- | --- |\n${rows(newest, "collected_at")}\n\n` +
+        `## 最近更新\n\n| 更新日期 | 文章 | 深度调研 |\n| --- | --- | --- |\n${rows(updated, "updated_at")}\n\n` +
+        `## 采集批次\n\n${batches.map((batch) => `- [${batch.date_sequence}](${href(batch.path.slice(base.length + 1))})（${batch.article_ids.length} 篇）`).join("\n")}\n`,
     ),
-  );
-  return files;
+  ];
 }
 
 export function finalizeManifest(

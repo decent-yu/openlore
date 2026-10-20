@@ -19,7 +19,7 @@ it("shows editable repository Wiki fields and the requested full URL preview", (
   expect(html).toContain("Wiki Base URL");
   expect(html).toContain("Wiki 展示路由（仓库目录）");
   expect(html).toContain(
-    `href="${base}/agent-learning/articles/deno-is-joining-cloudflare/research"`,
+    `href="${base}/agent-learning/articles/20261015-deno-is-joining-cloudflare/research"`,
   );
   expect(html).toContain('value="docs"');
 });

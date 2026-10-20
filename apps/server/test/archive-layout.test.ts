@@ -39,6 +39,8 @@ const read = (bundle: ArtifactBundle, name: string) =>
   ).toString("utf8");
 beforeAll(() => initDatabase());
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-20T02:00:00Z"));
   getSqliteDatabase().exec(
     "DELETE FROM artifact_bundles; DELETE FROM deliveries; DELETE FROM article_locations; DELETE FROM collections; DELETE FROM groups; DELETE FROM repository_connections",
   );
@@ -60,7 +62,10 @@ beforeEach(async () => {
     commitSha: "commit",
   }));
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 async function deliver(
   entries: StructuredEntry[],
   researchTasks: ResearchTask[] = [],
@@ -95,20 +100,16 @@ it("stores the three real article subjects independently of batches and links ev
     },
   ]);
   expect(bundle.entries.map((entry) => entry.directory)).toEqual([
-    "articles/inference-cost-optimization",
-    "articles/agent-evals-faq",
-    "articles/numan-ai-health-coach",
+    "articles/20261020-inference-cost-optimization",
+    "articles/20261020-agent-evals-faq",
+    "articles/20261020-numan-ai-health-coach",
   ]);
-  expect(read(bundle, "topics/evaluation.md")).toContain(
-    "../articles/agent-evals-faq/README.md",
+  expect(bundle.files.some((file) => file.path.includes("/topics/"))).toBe(
+    false,
   );
-  expect(read(bundle, "topics/evaluation.md")).toContain(
-    "../articles/numan-ai-health-coach/README.md",
-  );
-  expect(read(bundle, "topics/case-studies.md")).toContain(
-    "../articles/numan-ai-health-coach/README.md",
-  );
-  expect(read(bundle, "README.md")).toMatch(/batches\/\d{4}-\d{2}-\d{2}-01.md/);
+  expect(read(bundle, "README.md")).toContain("最近收录（3 篇）");
+  expect(read(bundle, "README.md")).toContain("最近更新");
+  expect(read(bundle, "README.md")).toContain("batches/20261020-01.md");
   const paths = new Set(bundle.files.map((file) => file.path));
   for (const file of bundle.files.filter((file) => file.path.endsWith(".md"))) {
     const text = Buffer.from(file.content_bytes!, "base64").toString("utf8");
@@ -130,7 +131,7 @@ it("preserves earlier articles, batches and managed files when delivering the ne
   const first = (await deliver([entry("one", "Agent Evals")])).bundle;
   const second = (await deliver([entry("two", "Inference optimization")]))
     .bundle;
-  expect(read(second, "README.md")).toContain("全部文章（2 篇）");
+  expect(read(second, "README.md")).toContain("最近收录（2 篇）");
   expect(read(second, "README.md")).toContain("Agent Evals");
   const manifest = JSON.parse(read(second, ".openlore/manifest.json"));
   expect(Object.keys(manifest.collection_locations)).toHaveLength(2);
@@ -162,7 +163,7 @@ it("does not promote an unsuccessful collection into subsequent navigation", asy
   expect(read(bundle, "README.md")).not.toContain("Failed article");
 });
 
-it("updates article and topic navigation when research is added later, and retains it in the next batch", async () => {
+it("updates article and date navigation when research is added later, and retains it in the next batch", async () => {
   await deliver([entry("one", "Agent Evals")]);
   const task: ResearchTask = {
     id: "research",
@@ -182,15 +183,13 @@ it("updates article and topic navigation when research is added later, and retai
   );
   const upload = vi.mocked(GitHubClient.syncFiles).mock.calls[1][0];
   const overview = upload.files.find((file) =>
-    file.path.endsWith("articles/agent-evals/README.md"),
+    file.path.endsWith("articles/20261020-agent-evals/README.md"),
   )!;
   expect(Buffer.from(overview.content, "base64").toString()).toContain(
     "research.md",
   );
   const next = (await deliver([entry("two", "Second article")])).bundle;
-  expect(read(next, "topics/evaluation.md")).toContain(
-    "agent-evals/research.md",
-  );
+  expect(read(next, "README.md")).toContain("20261020-agent-evals/research.md");
 });
 
 it("keeps Unicode slugs and avoids splitting an English word at the length limit", () => {
@@ -207,4 +206,33 @@ it("does not allocate a collection or publish files without articles", async () 
       .prepare("SELECT count(*) AS count FROM collections")
       .get(),
   ).toEqual({ count: 0 });
+});
+
+it("uses the group timezone and preserves the first collection date when updating on a later day", async () => {
+  vi.setSystemTime(new Date("2026-10-19T16:30:00Z"));
+  const original = (
+    await deliver([
+      { ...entry("one", "First article"), published_at: "1999-01-01" },
+    ])
+  ).bundle;
+  expect(original.entries[0].directory).toBe("articles/20261020-first-article");
+  vi.setSystemTime(new Date("2026-10-21T02:00:00Z"));
+  await deliver([entry("two", "Second article")]);
+  vi.setSystemTime(new Date("2026-10-22T02:00:00Z"));
+  const latest = (await deliver([entry("one", "Updated first article")]))
+    .bundle;
+  expect(latest.entries[0].directory).toBe(original.entries[0].directory);
+  const index = read(latest, "README.md");
+  const collected = index.split("## 最近更新")[0];
+  const updated = index.split("## 最近更新")[1].split("## 采集批次")[0];
+  expect(collected.indexOf("Second article")).toBeLessThan(
+    collected.indexOf("Updated first article"),
+  );
+  expect(updated.indexOf("Updated first article")).toBeLessThan(
+    updated.indexOf("Second article"),
+  );
+  const meta = JSON.parse(read(latest, ".openlore/manifest.json"))
+    .article_locations.one;
+  expect(meta.collected_at).toBe("2026-10-19T16:30:00.000Z");
+  expect(meta.updated_at).toBe("2026-10-22T02:00:00.000Z");
 });
