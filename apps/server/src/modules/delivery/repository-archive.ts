@@ -13,12 +13,10 @@ import {
   navigationFiles,
   finalizeManifest,
   batchNavigationFile,
-  markdownLabel,
-  archiveHref,
 } from "./archive-layout.js";
 import type { ArchiveInput } from "./publication.js";
 
-/** Repository studies build Chinese reports and source evidence; no article translation step. */
+/** Repository studies archive each report once, directly beneath its repository directory. */
 export async function buildRepositoryArchive(
   input: ArchiveInput,
   collection: { collectionId: string; dateSequence: string },
@@ -39,7 +37,6 @@ export async function buildRepositoryArchive(
     assets: [],
     files: [],
   };
-  const repositories = new Set<string>();
   for (const entry of entries) {
     const row = db
       .prepare("SELECT date_evidence_json FROM articles WHERE id=?")
@@ -76,24 +73,16 @@ export async function buildRepositoryArchive(
       `${prefix}${String(order).padStart(2, "0")}-${articleSlug(entry.title)}`;
     const stem = directory.split("/").at(-1)!;
     const reportPath = `${directory}.md`;
-    const sourcePath = `${study.directory}/articles/${stem}.md`;
     const assetRoot = `${study.directory}/assets/${stem}`;
     const report = task.report_markdown.replace(
       /(\]\()(?:\.\/)?assets\//g,
       `$1./assets/${stem}/`,
     );
-    bundle.files.push(
-      markdownFile(`${base}/${reportPath}`, report),
-      markdownFile(
-        `${base}/${sourcePath}`,
-        `# ${entry.title}\n\n[阅读中文研报](../${archiveHref(`${stem}.md`)})\n\n${entry.organized_markdown}\n\n仓库：${study.repository_url}\n${study.commit ? `\n执行时源码版本：${study.commit}\n` : ''}`,
-      ),
-    );
+    bundle.files.push(markdownFile(`${base}/${reportPath}`, report));
     bundle.entries.push({
       article_id: entry.article_id,
       slug: entry.slug,
       directory,
-      article_path: `${base}/${sourcePath}`,
       research_path: `${base}/${reportPath}`,
     });
     manifest.article_locations[entry.article_id] = {
@@ -107,7 +96,6 @@ export async function buildRepositoryArchive(
       updated_at: now,
       has_research: true,
       reading_path: reportPath,
-      article_path: sourcePath,
       research_path: reportPath,
     };
     if (!location)
@@ -153,20 +141,6 @@ export async function buildRepositoryArchive(
         size_bytes: asset.size_bytes,
       });
     }
-    repositories.add(study.directory);
-  }
-  for (const repository of repositories) {
-    const items = Object.values(manifest.article_locations)
-      .filter((item) => item.directory.startsWith(`${repository}/`))
-      .sort((a, b) =>
-        a.directory.localeCompare(b.directory, undefined, { numeric: true }),
-      );
-    bundle.files.push(
-      markdownFile(
-        `${base}/${repository}/README.md`,
-        `# ${repository} 仓库研读\n\n${items.map((item) => `- [${markdownLabel(item.title)}](${archiveHref(item.research_path!.slice(repository.length + 1))})`).join("\n")}\n`,
-      ),
-    );
   }
   manifest.collection_locations[collection.collectionId] = {
     path: `${base}/batches/${collection.dateSequence}.md`,

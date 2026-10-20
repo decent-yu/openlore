@@ -176,7 +176,7 @@ it('rejects controller-side repository polling and skips repositories even durin
   expect(getSqliteDatabase().prepare('SELECT count(*) n FROM articles').get()).toEqual({ n: 0 });
 });
 
-it("runs directly through research and archives numbered topics, source material and valid Wiki links", async () => {
+it("archives numbered reports once and exposes the direct research Wiki link", async () => {
   const first = await run();
   expect(first.status).toBe("succeeded");
   expect(execute.mock.calls.map(([input]) => input.taskType)).toEqual([
@@ -203,7 +203,7 @@ it("runs directly through research and archives numbered topics, source material
       (file) =>
         file.path === "docs/xxx/stablyai@orca/articles/01-核心执行架构.md",
     ),
-  ).toBe(true);
+  ).toBe(false);
   expect(Buffer.from(research.content, "base64").toString()).toContain(
     "https://example.com/assets/remote.svg",
   );
@@ -216,9 +216,7 @@ it("runs directly through research and archives numbered topics, source material
   expect(decodeURIComponent(links.research_url!)).toBe(
     "https://wiki.example/vault/xxx/stablyai@orca/01-核心执行架构",
   );
-  expect(decodeURIComponent(links.article_url!)).toBe(
-    "https://wiki.example/vault/xxx/stablyai@orca/articles/01-核心执行架构",
-  );
+  expect(links.article_url).toBeUndefined();
   expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
   execute.mockImplementationOnce(async input => reportResult(input, "工作区隔离机制"));
   expect((await run()).status).toBe("succeeded");
@@ -230,12 +228,14 @@ it("runs directly through research and archives numbered topics, source material
     ),
   ).toBe(true);
   const index = Buffer.from(
-    nextFiles.find((file) => file.path === "docs/xxx/stablyai@orca/README.md")!
+    nextFiles.find((file) => file.path === "docs/xxx/README.md")!
       .content,
     "base64",
   ).toString();
   expect(decodeURIComponent(index)).toContain("01-核心执行架构.md");
   expect(decodeURIComponent(index)).toContain("02-工作区隔离机制.md");
+  expect(nextFiles.some(file=>file.path.includes('/stablyai@orca/articles/'))).toBe(false);
+  expect(nextFiles.some(file=>file.path==='docs/xxx/stablyai@orca/README.md')).toBe(false);
   const manifest = JSON.parse(
     Buffer.from(
       nextFiles.find(

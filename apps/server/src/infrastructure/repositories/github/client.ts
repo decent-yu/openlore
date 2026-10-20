@@ -10,6 +10,8 @@ export interface GitHubSyncOptions {
     encoding: 'utf-8' | 'binary';
     sha256: string;
   }>;
+  deletePaths?: string[];
+  expectedHead?: string;
   commitMessage: string;
 }
 
@@ -82,15 +84,23 @@ export class GitHubClient {
   }
 
   static async syncFiles(options: GitHubSyncOptions): Promise<GitHubSyncResult> {
-    const { owner, repo, branch, token, files, commitMessage } = options;
+    const { owner, repo, branch, token, files, commitMessage, deletePaths = [] } = options;
 
     try {
+      const writes = new Set(files.map(file => file.path));
+      for (const path of new Set(deletePaths)) {
+        if (!path.startsWith(options.basePath.replace(/\/$/, '') + '/') || path.split('/').some(part => part === '..' || part === '.' || !part) || writes.has(path))
+          throw new Error('删除路径必须位于当前归档目录内且不能与写入路径重复');
+      }
+
       // 1. Get branch reference
       const refData = await this.request(
         `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`,
         token,
       );
       const headCommitSha = refData.object.sha;
+      if (options.expectedHead && options.expectedHead !== headCommitSha)
+        return { status: 'conflict', changedPaths: [], errorMessage: '归档分支在准备修复后发生变化，请重新核对后重试' };
 
       // 2. Get head commit to find base_tree
       const commitData = await this.request(
@@ -104,7 +114,7 @@ export class GitHubClient {
         path: string;
         mode: string;
         type: string;
-        sha: string;
+        sha: string | null;
       }> = [];
 
       for (const file of files) {
@@ -127,6 +137,9 @@ export class GitHubClient {
           sha: blobData.sha,
         });
       }
+
+      for (const path of new Set(deletePaths))
+        treeEntries.push({ path, mode: '100644', type: 'blob', sha: null });
 
       // 4. Create new tree
       const newTreeData = await this.request(
@@ -180,13 +193,11 @@ export class GitHubClient {
         },
       );
 
-      const commitUrl = `https://github.com/`;
-
       return {
         status: 'updated',
         commitSha: newCommitSha,
         commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommitSha}`,
-        changedPaths: files.map((f) => f.path),
+        changedPaths: [...files.map((f) => f.path), ...new Set(deletePaths)],
       };
     } catch (err: any) {
       if (err.message && err.message.includes('409')) {

@@ -35,18 +35,14 @@
 ```text
 docs/xxx/
 └── stablyai@orca/
-    ├── README.md
     ├── 01-核心执行架构.md
     ├── 02-工作区隔离机制.md
     ├── 03-任务状态与恢复.md
-    ├── articles/
-    │   ├── 01-核心执行架构.md       # 本次源码与文档材料
-    │   └── 02-工作区隔离机制.md
     └── assets/
         └── 01-核心执行架构/         # 该主题的可用配图
 ```
 
-编号在每条流水线的每个仓库内独立递增；目录使用小写 `owner@repo`。重试保持首次分配的路径，避免重复编号或覆盖历史研报。仓库索引保留已归档主题，manifest 累积托管文件。文章和研报的实际路径记录在归档包中，Wiki 与汇报使用已确认成功的真实路径。文章调研采用 `articles/YYYYMMDD-slug/` 目录。两类流水线各自产出归档包，共用 manifest、首页和批次导航、上传与交付记录；汇报方案统一汇总两类成功结果。
+编号在每条流水线的每个仓库内独立递增；目录使用小写 `owner@repo`。重试保持首次分配的路径，避免重复编号或覆盖历史研报。仓库目录直接保存编号研报与配图，不生成 `articles/` 材料副本或仓库内 `README.md`。流水线根目录首页和批次导航保留，manifest 累积托管文件。归档包只记录实际研报路径，Wiki 与汇报直接链接研报。文章调研采用 `articles/YYYYMMDD-slug/` 目录。两类流水线各自产出归档包，共用 manifest、首页和批次导航、上传与交付记录；汇报方案统一汇总两类成功结果。
 
 例如目标仓库选择 `Openlore Knowledge Vault`，目录填 `docs/agent-leaning`，则生成 `docs/agent-leaning/stablyai@orca/01-主题.md`；改填 `docs/xxx` 则生成 `docs/xxx/stablyai@orca/01-主题.md`。
 
@@ -91,3 +87,13 @@ docs/agent-learning/articles/20261015-deno-is-joining-cloudflare/research.md
 - `modules/processing/service.ts`、`modules/research/service.ts`：组织文章和调研材料。
 
 示例见[人工阅读样例](examples/README.md)，不能代替真实归档验收。
+
+## 清理旧版仓库研读副本
+
+更新并构建服务端后，执行只读预览：
+
+```sh
+node apps/server/scripts/repair-repository-layout.mjs --group <仓库研读流水线ID>
+```
+
+加 `--apply` 执行清理。工具只删除 manifest 托管的 `owner@repo/articles/` 副本与 `owner@repo/README.md`，保留研报、配图、流水线根首页与批次导航。先备份本地数据库、旧 manifest、待删文件及远端 HEAD，再用一个非强制 Git 提交删除重复页面并更新索引；分支变化时停止，完成后保存新的修复交付记录。报告路径与编号不变，旧交付记录和 Git 历史保留，重复执行不再次修改。
