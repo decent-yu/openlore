@@ -88,10 +88,15 @@ export class FeedService {
           error_message: current.errorMessage,
         }
       : undefined;
-    const sourceIds = scopedGroups.some((item) => !item.source_ids.length)
-      ? []
-      : [...new Set(scopedGroups.flatMap((item) => item.source_ids))];
-    const pool = listPoolCandidates(sourceIds);
+    const pool = [
+      ...new Map(
+        scopedGroups
+          .flatMap((item) =>
+            listPoolCandidates(item.source_ids, item.task_type),
+          )
+          .map((item) => [item.id, item]),
+      ).values(),
+    ];
     response.stats.pool_count = pool.length;
     response.stats.pending_count = pool.filter(
       (item) => !item.processed && !item.busy,
@@ -127,6 +132,18 @@ export class FeedService {
       dated.map((task) => task.article_id),
       group?.id,
     );
+    const summaries = new Map<string, string>();
+    for (const run of runs.filter((run) => run.status === "succeeded")) {
+      const output = JSON.parse(run.outputJson || "{}") as {
+        entries?: Array<{ article_id: string; summary: string }>;
+      };
+      for (const entry of output.entries || [])
+        if (!summaries.has(wikiLinkKey(run.groupId, entry.article_id)))
+          summaries.set(
+            wikiLinkKey(run.groupId, entry.article_id),
+            entry.summary,
+          );
+    }
     for (const task of dated) {
       const group = groupsById.get(task.group_id)!;
       const article = getDb()
@@ -152,7 +169,7 @@ export class FeedService {
           "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
         )
         .get(article.id) as { result_json: string } | undefined;
-      let summary = "";
+      let summary = summaries.get(wikiLinkKey(group.id, article.id)) || "";
       if (assessment) {
         try {
           summary = JSON.parse(assessment.result_json).positioning || "";
@@ -169,6 +186,7 @@ export class FeedService {
         .all(article.id) as Array<{ id: string; name: string }>;
       response.deep_articles.push({
         id: article.id,
+        task_type: group.task_type,
         title: article.title || "Untitled",
         slug: task.article_slug,
         author: article.author,

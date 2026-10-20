@@ -1,9 +1,6 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import {
-  buildResearchPrompt,
-  DEFAULT_RESEARCH_INSTRUCTIONS,
-} from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -11,7 +8,7 @@ import { safeRelativePath } from "../../infrastructure/ai/skill_bundle.js";
 import { and, eq } from "drizzle-orm";
 import type { ResearchTask } from "@openlore/contracts";
 import { getAIAdapterWithFallback } from "../../infrastructure/ai/fallback_runner.js";
-import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
+import { getDb, getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import {
   articleRevisionsTable,
   articlesTable,
@@ -21,6 +18,8 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { groupsService } from "../groups/service.js";
+import { listPoolCandidates } from "../processing/candidates.js";
 import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
@@ -43,6 +42,7 @@ export class ResearchService {
         .get();
       tasks.push({
         id: r.id,
+        skill_id: JSON.parse(r.executionJson || '{}').skill_id || (repositoryStudy(JSON.parse(art?.dateEvidenceJson || '{}')) ? GITHUB_CODE_RESEARCH_SKILL : undefined),
         group_id: r.groupId,
         article_id: r.articleId,
         article_title: art?.title || "Untitled Article",
@@ -73,6 +73,9 @@ export class ResearchService {
     runId?: string,
     claimOwner?: string,
   ): Promise<ResearchTask> {
+    const pipeline = await groupsService.getGroup(groupId);
+    if (!pipeline || !listPoolCandidates(pipeline.source_ids, pipeline.task_type).some(item=>item.id===articleId))
+      throw Object.assign(new Error('研究材料不属于当前任务类型或来源范围'), {statusCode:400});
     const owner = claimOwner || runId || `manual_${crypto.randomUUID()}`;
     if (!claimResearchArticle(articleId, groupId, owner, !runId)) {
       throw Object.assign(new Error("文章正在其他任务中调研，或已完成归档"), {
@@ -131,20 +134,37 @@ export class ResearchService {
       .from(groupsTable)
       .where(eq(groupsTable.id, groupId))
       .get();
-    const instructions =
+    let instructions =
       customInstructions ||
       group?.researchInstructions ||
       DEFAULT_RESEARCH_INSTRUCTIONS;
+    const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
+    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
+    if (study) {
+      const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown FROM research_tasks t JOIN articles a ON a.id=t.article_id
+        WHERE t.status='succeeded' AND t.archived_at IS NOT NULL AND t.article_id<>?
+          AND json_extract(a.date_evidence_json,'$.repository_study.directory')=?
+        ORDER BY t.created_at DESC LIMIT 40`).all(articleId, study.directory) as Array<{ title: string; report_markdown: string }>;
+      instructions += `
+
+仓库：${study.repository_url}
+固定 Commit：${study.commit}
+研读重点：${study.focus || '架构设计与核心思想'}
+已归档研读（最近 40 篇）：
+${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).join('\n\n') || '暂无，从整体架构与核心执行链路开始。'}`;
+    }
 
     // Generate research report (using AI adapter with primary and fallback support)
     const aiAdapter = getAIAdapterWithFallback(group?.aiProfileId);
 
+    const skillId = study ? GITHUB_CODE_RESEARCH_SKILL : group?.researchSkillId || 'deep-research-expert';
+    if (!study && skillId === GITHUB_CODE_RESEARCH_SKILL) throw new Error('github-code-research 仅用于 GitHub 仓库来源，请为文章选择文章调研 Skill');
     const researchSkill = await skillsService.getSkill(
-      group?.researchSkillId || "deep-research-expert",
+      skillId,
       group?.aiProfileId || "default",
     );
     const prompt = researchSkill
-      ? buildResearchPrompt(researchSkill.id, instructions)
+      ? (study ? buildCodeResearchPrompt(instructions) : buildResearchPrompt(researchSkill.id, instructions))
       : "";
     const requestHash = crypto
       .createHash("sha256")
@@ -154,7 +174,7 @@ export class ResearchService {
           instructions,
           prompt,
           researchSkill?.revision,
-          group?.researchSkillId,
+          skillId,
           group?.aiProfileId,
           (aiAdapter as any)?.targets?.[0]?.target,
         ]),
@@ -224,6 +244,7 @@ export class ResearchService {
           taskType: "research_report",
           skillId: researchSkill.id,
           skillRevision: researchSkill.revision,
+          repository: study ? {url: study.repository_url, commit: study.commit} : undefined,
           prompt,
           material: `Title: ${art.title}\nSource URL: ${art.canonicalUrl || "未提供"}\n\n${content}`,
         });
@@ -349,6 +370,10 @@ export class ResearchService {
     }
 
     const finishedAt = new Date().toISOString();
+    if (study) {
+      const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim().slice(0, 160);
+      if (title) db.update(articlesTable).set({ title, updatedAt: finishedAt }).where(eq(articlesTable.id, articleId)).run();
+    }
     db.update(researchTasksTable)
       .set({
         status: "succeeded",

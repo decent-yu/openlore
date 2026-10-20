@@ -98,6 +98,7 @@ export function LibraryPage() {
   const [selectedArticleForResearch, setSelectedArticleForResearch] =
     useState<LibraryArticle | null>(null);
   const [researchGroupId, setResearchGroupId] = useState<string>("");
+  const compatibleGroups = (article: LibraryArticle) => (groups || []).filter(group => group.task_type === (article.task_type || 'article_research'));
   const [viewingResearchArticle, setViewingResearchArticle] =
     useState<LibraryArticle | null>(null);
   const [copiedReport, setCopiedReport] = useState<boolean>(false);
@@ -595,11 +596,7 @@ export function LibraryPage() {
                           onClick={() => {
                             researchMutation.reset();
                             setSelectedArticleForResearch(art);
-                            if (art.groups && art.groups.length > 0) {
-                              setResearchGroupId(art.groups[0].id);
-                            } else if (groups && groups.length > 0) {
-                              setResearchGroupId(groups[0].id);
-                            }
+                            setResearchGroupId(compatibleGroups(art).find(group => art.groups.some(item=>item.id===group.id))?.id || compatibleGroups(art)[0]?.id || '');
                           }}
                         >
                           <RotateCw className="h-3.5 w-3.5" />
@@ -623,11 +620,7 @@ export function LibraryPage() {
                         className="h-8 text-xs gap-1"
                         onClick={() => {
                           setSelectedArticleForResearch(art);
-                          if (art.groups && art.groups.length > 0) {
-                            setResearchGroupId(art.groups[0].id);
-                          } else if (groups && groups.length > 0) {
-                            setResearchGroupId(groups[0].id);
-                          }
+                          setResearchGroupId(compatibleGroups(art).find(group => art.groups.some(item=>item.id===group.id))?.id || compatibleGroups(art)[0]?.id || '');
                         }}
                       >
                         <Sparkles className="h-3.5 w-3.5 text-amber-500" />
@@ -721,7 +714,7 @@ export function LibraryPage() {
                   onChange={(e) => setResearchGroupId(e.target.value)}
                 >
                   <option value="">-- 选择流水线任务 --</option>
-                  {groups?.map((g) => (
+                  {compatibleGroups(selectedArticleForResearch).map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
                     </option>

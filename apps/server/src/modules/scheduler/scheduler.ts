@@ -3,7 +3,7 @@ import {
   markResearchArchived,
 } from "../research/state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, RunOutputSchema } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, RunOutputSchema } from "@openlore/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import type {
   Group,
@@ -350,18 +350,22 @@ export class AppScheduler {
                       `深度调研未完成：${entry.title}；${task?.error_message || "请检查 AI 执行器"}`,
                     );
                   researchTasks.push(task);
+                  entry.title = task.article_title;
+                  entry.slug = task.article_slug;
+                  const publishedEntry = output.entries.find(item => item.article_id === entry.article_id);
+                  if (publishedEntry) publishedEntry.title = task.article_title;
                   logs.push({
                     timestamp: new Date().toISOString(),
                     article_id: entry.article_id,
                     article_title: entry.title,
                     task_type: "research",
-                    skill_id: group.research_skill_id,
+                    skill_id: task.skill_id || group.research_skill_id,
                     model: task.model || "research-engine",
                     execution: task.execution,
-                    prompt_preview: buildResearchPrompt(
+                    prompt_preview: task.execution?.prompt || (task.skill_id === GITHUB_CODE_RESEARCH_SKILL ? buildCodeResearchPrompt(group.research_instructions) : buildResearchPrompt(
                       group.research_skill_id,
                       group.research_instructions,
-                    ),
+                    )),
                     response_preview: task.report_markdown.slice(0, 600),
                     status: "succeeded",
                   });
@@ -405,7 +409,7 @@ export class AppScheduler {
             (item) => item.article_id === entry.article_id,
           );
           if (repo && location)
-            entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${[group.route.base_path, location.directory, "research.md"].join("/").split("/").map(encodeURIComponent).join("/")}`;
+            entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${(location.research_path || [group.route.base_path, location.directory, "research.md"].join("/")).split("/").map(encodeURIComponent).join("/")}`;
         }
       }
       db.update(runsTable)
@@ -471,6 +475,7 @@ export class AppScheduler {
       id: r.id,
       group_id: r.groupId,
       group_name: groupName,
+      task_type: JSON.parse(r.snapshotJson || "{}").group?.task_type || "article_research",
       status: r.status,
       stage: r.stage,
       counts: JSON.parse(r.countsJson || "{}"),

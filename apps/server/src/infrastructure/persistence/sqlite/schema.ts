@@ -74,6 +74,7 @@ export const sourceStatesTable = sqliteTable('source_states', {
 });
 
 export const groupsTable = sqliteTable('groups', {
+  taskType: text('task_type').notNull().default('article_research'),
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),

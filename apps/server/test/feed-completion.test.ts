@@ -9,6 +9,7 @@ let db: ReturnType<typeof getSqliteDatabase>;
 beforeAll(async () => {
   initDatabase();
   db = getSqliteDatabase();
+  db.prepare("INSERT OR IGNORE INTO sources(id,name,url) VALUES ('source','Source','https://example.com/feed')").run();
   await groupsService.saveGroup({
     id: "task",
     name: "Task",
@@ -69,7 +70,7 @@ it("does not cap published results by the per-run research quota", async () => {
 });
 it("includes the short introduction, original publication time, and deduplicated collection source names", async () => {
   report("report", "article", "2026-10-19T01:00:00Z");
-  db.exec(`INSERT INTO sources(id,name,url) VALUES
+  db.exec(`INSERT OR REPLACE INTO sources(id,name,url) VALUES
     ('source','Cloudflare Blog','https://blog.cloudflare.com'),
     ('other-source','Other feed','https://example.com/feed');
     UPDATE articles SET published_at='2026-10-18T19:00:00Z' WHERE id='article';

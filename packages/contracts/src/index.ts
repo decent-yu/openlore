@@ -13,3 +13,5 @@ export * from './execution.js';
 export * from './model-spec.js';
 export * from './ai_logs.js';
 export * from './article-review.js';
+export * from './github-source.js';
+export * from './pipelines.js';

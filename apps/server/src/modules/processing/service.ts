@@ -1,4 +1,9 @@
-import crypto from "node:crypto";
+import {
+  createProcessedBatch,
+  saveProcessedBatch,
+  recordProcessedEntry,
+} from "./batch.js";
+import { repositoryProcessingService } from "./repository.js";
 import fs from "node:fs";
 import {
   ArticleSelectionSchema,
@@ -17,20 +22,8 @@ import { skillsService } from "../skills/service.js";
 import { listPoolCandidates } from "./candidates.js";
 import { getArticleReviews } from "./article-reviews.js";
 
-export interface ProcessedBatchResult {
-  decisions: Decision[];
-  entries: StructuredEntry[];
-  aiLogs: RunAILog[];
-  counts: {
-    observed: number;
-    already_processed: number;
-    candidate: number;
-    planned: number;
-    excluded: number;
-    deferred: number;
-    unreviewed: number;
-  };
-}
+export type { ProcessedBatchResult } from "@openlore/contracts";
+import type { ProcessedBatchResult } from "@openlore/contracts";
 export { articleSlug as slugify } from "../delivery/archive-layout.js";
 import { articleSlug as slugify } from "../delivery/archive-layout.js";
 const MATERIAL_LIMIT = 48000;
@@ -67,30 +60,12 @@ export class ProcessingService {
     group: Group,
     runId: string,
   ): Promise<ProcessedBatchResult> {
+    if (group.task_type === "repository_research")
+      return repositoryProcessingService.runProcessingForGroup(group, runId);
     const db = getSqliteDatabase();
-    const pool = listPoolCandidates(group.source_ids);
-    const result: ProcessedBatchResult = {
-      decisions: [],
-      entries: [],
-      aiLogs: [],
-      counts: {
-        observed: pool.length,
-        already_processed: 0,
-        candidate: 0,
-        planned: 0,
-        excluded: 0,
-        deferred: 0,
-        unreviewed: 0,
-      },
-    };
-    const save = () =>
-      db
-        .prepare("UPDATE runs SET counts_json=?,ai_logs_json=? WHERE id=?")
-        .run(
-          JSON.stringify(result.counts),
-          JSON.stringify(result.aiLogs),
-          runId,
-        );
+    const pool = listPoolCandidates(group.source_ids, group.task_type);
+    const result = createProcessedBatch(pool.length);
+    const save = () => saveProcessedBatch(runId, result);
     const reviews = getArticleReviews(pool.map((item) => item.id));
     const candidates: Candidate[] = [];
     for (const item of pool) {
@@ -249,13 +224,6 @@ export class ProcessingService {
           )
           .all(article.id) as { source_id: string }[]
       ).map((row) => row.source_id);
-      result.decisions.push({
-        article_id: article.id,
-        revision: article.latest_revision,
-        decision: "qualified",
-        reason: choice.reason,
-        matched_source_ids: sources,
-      });
       const assetRefs: string[] = [],
         urlMap = new Map<string, string>();
       for (const match of content.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
@@ -281,7 +249,7 @@ export class ProcessingService {
           "downloaded",
         );
       }
-      result.entries.push({
+      const entry: StructuredEntry = {
         article_id: article.id,
         revision: article.latest_revision,
         slug: slugify(article.title),
@@ -298,32 +266,8 @@ export class ProcessingService {
         asset_refs: assetRefs,
         evidence_refs: review.result!.evidence_refs,
         limitations: [],
-      });
-      const prior = db
-        .prepare("SELECT id FROM group_items WHERE group_id=? AND article_id=?")
-        .get(group.id, article.id) as { id: string } | undefined;
-      if (prior)
-        db.prepare(
-          "UPDATE group_items SET revision_hash=?,rules_revision='batch-selection-v1',decision='qualified',reason=?,matched_source_ids_json=?,updated_at=? WHERE id=?",
-        ).run(
-          article.latest_revision,
-          choice.reason,
-          JSON.stringify(sources),
-          new Date().toISOString(),
-          prior.id,
-        );
-      else
-        db.prepare(
-          "INSERT INTO group_items(id,group_id,article_id,revision_hash,rules_revision,decision,reason,matched_source_ids_json,updated_at) VALUES (?,?,?,?,'batch-selection-v1','qualified',?,?,?)",
-        ).run(
-          `gi_${crypto.randomUUID()}`,
-          group.id,
-          article.id,
-          article.latest_revision,
-          choice.reason,
-          JSON.stringify(sources),
-          new Date().toISOString(),
-        );
+      };
+      recordProcessedEntry(group, entry, choice.reason, sources, result);
     }
     result.counts.planned = result.entries.length;
     result.counts.deferred = candidates.length - result.entries.length;

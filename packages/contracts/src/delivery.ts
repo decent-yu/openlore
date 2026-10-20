@@ -72,6 +72,8 @@ export const ArtifactBundleSchema = z.object({
       article_id: z.string(),
       slug: z.string(),
       directory: z.string(),
+      article_path: z.string().optional(),
+      research_path: z.string().optional(),
     }),
   ),
   assets: z.array(ArtifactBundleAssetSchema).default([]),
@@ -129,6 +131,9 @@ export const ManifestSchema = z.object({
       collected_at: z.string(),
       updated_at: z.string(),
       has_research: z.boolean(),
+      reading_path: z.string().optional(),
+      article_path: z.string().optional(),
+      research_path: z.string().optional(),
     }),
   ),
   collection_locations: z.record(

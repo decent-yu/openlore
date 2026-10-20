@@ -16,7 +16,7 @@ import type {
 } from '@openlore/contracts';
 import { ExecutorAdapter } from '../../infrastructure/ai/executor_adapter.js';
 import { getAppPaths } from '../../infrastructure/config/paths.js';
-import { getDb } from '../../infrastructure/persistence/sqlite/db.js';
+import { getDb, getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
 import {
   aiProfilesTable,
   groupsTable,
@@ -206,6 +206,8 @@ export class SettingsService {
 
   async deleteRepositoryConnection(id: string): Promise<{ ok: boolean }> {
     const db = getDb();
+    const readingSource = getSqliteDatabase().prepare("SELECT name FROM sources WHERE capability_id='github_repository' AND json_extract(options_json,'$.github_connection_id')=? LIMIT 1").get(id) as {name: string} | undefined;
+    if (readingSource) throw Object.assign(new Error(`无法删除：来源「${readingSource.name}」正在使用该 GitHub 读取凭据，请先更换来源连接。`), {statusCode: 409});
     const inUseGroups = db
       .select({ id: groupsTable.id, name: groupsTable.name })
       .from(groupsTable)

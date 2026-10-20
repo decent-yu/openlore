@@ -14,6 +14,7 @@ import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js
 import { sourcesService } from "../sources/service.js";
 import { settingsService } from "../settings/service.js";
 import { GithubApiCollectorAdapter } from "./collectors/github_api/adapter.js";
+import { GithubRepositoryCollectorAdapter } from "./collectors/github_repository/adapter.js";
 import { PlatformCollectorAdapter } from "./collectors/platform/adapter.js";
 import { WebFeedCollectorAdapter } from "./collectors/web_feed/adapter.js";
 import { WebPageCollectorAdapter } from "./collectors/web_page/adapter.js";
@@ -30,6 +31,7 @@ export { matchesSourceKeywords } from "./quality.js";
 collectorRegistry.register(new WebFeedCollectorAdapter());
 collectorRegistry.register(new WebPageCollectorAdapter());
 collectorRegistry.register(new GithubApiCollectorAdapter());
+collectorRegistry.register(new GithubRepositoryCollectorAdapter());
 collectorRegistry.register(new PlatformCollectorAdapter());
 
 type Candidate = {
@@ -57,10 +59,10 @@ export class CollectionService {
     const adapter = collectorRegistry.get(source.capability_id);
     if (!adapter)
       throw new Error(`Unsupported capability: ${source.capability_id}`);
-    const result = await adapter.collect(
-      this.request(source, `preview_${crypto.randomUUID()}`, null, 10),
-    );
     const { timezone } = await settingsService.getSettings();
+    const previewRequest = this.request(source, `preview_${crypto.randomUUID()}`, null, 10);
+    previewRequest.options = { ...previewRequest.options, timezone };
+    const result = await adapter.collect(previewRequest);
     const counts: Record<string, number> = {};
     for (const item of result.items) {
       const decision = evaluateContent(item, source.options, timezone);
@@ -87,6 +89,9 @@ export class CollectionService {
     state: any,
     limit = 100,
   ): CollectionRequest {
+    const connectionId = source.capability_id === 'github_repository' ? source.options.github_connection_id : '';
+    const connection = connectionId ? getSqliteDatabase().prepare('SELECT credential_ref FROM repository_connections WHERE id=?').get(connectionId) as {credential_ref: string} | undefined : undefined;
+    if (connectionId && !connection) throw new Error('GitHub 读取连接不存在，请重新选择来源凭据');
     return {
       run_id: runId,
       source_id: source.id,
@@ -97,7 +102,8 @@ export class CollectionService {
       scope: { limit },
       state,
       options: source.options,
-      budget: { timeout_seconds: 20, max_requests: 10 },
+      credential_ref: connection?.credential_ref,
+      budget: { timeout_seconds: source.capability_id === 'github_repository' ? 60 : 20, max_requests: 10 },
     };
   }
 
@@ -119,10 +125,10 @@ export class CollectionService {
       .get(sourceId, source.capability_id) as
       { state_json: string } | undefined;
     const id = runId || `collect_${crypto.randomUUID()}`;
-    const result = await adapter.collect(
-      this.request(source, id, state ? JSON.parse(state.state_json) : null),
-    );
     const { timezone } = await settingsService.getSettings();
+    const collectionRequest = this.request(source, id, state ? JSON.parse(state.state_json) : null);
+    collectionRequest.options = { ...collectionRequest.options, timezone };
+    const result = await adapter.collect(collectionRequest);
     const counts: Record<string, number> = {};
     let newlyReady = 0;
     // Durably store every discovered candidate before acknowledging the feed cursor/ETag.
@@ -541,7 +547,7 @@ export class CollectionService {
       now,
     );
     const current = db.prepare('SELECT latest_revision FROM articles WHERE id=?').get(articleId) as {latest_revision: string};
-    if (!existing || current.latest_revision !== existing.latest_revision) articleReviewsService.enqueue([articleId]);
+    if (item.fetch_method !== 'github_repository' && (!existing || current.latest_revision !== existing.latest_revision)) articleReviewsService.enqueue([articleId]);
     return articleId;
   }
 }

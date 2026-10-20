@@ -9,7 +9,9 @@ import {
   type ExecutionResult,
   type SkillBundle,
   type ExecutionProgress,
+  GITHUB_CODE_RESEARCH_SKILL,
 } from '@openlore/contracts';
+import { prepareRepositoryWorkspace } from './repository_workspace.js';
 import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
   sessionBinding,
@@ -37,6 +39,7 @@ export async function runProcess(
   timeout: number,
   signal?: AbortSignal,
   options: {
+    env?: Record<string, string>;
     onOutput?: (stdout: string, stderr: string) => void;
     shouldStop?: (stdout: string, stderr: string) => boolean;
     onStdoutChunk?: (chunk: string) => void;
@@ -58,7 +61,7 @@ export async function runProcess(
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      env,
+      env: { ...env, ...options.env },
       detached: process.platform !== 'win32',
     });
     let stdout = '',
@@ -300,6 +303,10 @@ export async function executeInWorkspace(
     const binding = sessionBinding(request, bundle);
     if (input.session)
       verifySession(workspace, input.session, binding, input.material);
+    if (input.repository || input.skillId === GITHUB_CODE_RESEARCH_SKILL) {
+      if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
+      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(180000, config.timeout_seconds * 1000), signal, Boolean(input.session));
+    }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
     const prompt = input.prompt;
     if (!input.session)
@@ -453,7 +460,7 @@ export async function executeInWorkspace(
       args,
       workspace,
       request.provider === 'codex_cli' ? prompt : '',
-      config.timeout_seconds * 1000,
+      Math.max(1, config.timeout_seconds * 1000 - (Date.now() - started)),
       signal,
       {
         onOutput: progress,
@@ -604,6 +611,10 @@ export async function executeInWorkspace(
         : input.taskType === 'digest'
           ? path.join(workspace, 'output', 'digest.md')
           : null;
+    if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
+      throw new Error('代码深研未生成有效的 output/research.md');
+    if (input.repository)
+      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
       !input.outputSchema &&
       document &&

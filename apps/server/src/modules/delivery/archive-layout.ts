@@ -51,6 +51,37 @@ const label = (text: string) =>
   text.replace(/[\r\n]+/g, " ").replace(/([\\\[\]|])/g, "\\$1");
 const href = (filePath: string) =>
   filePath.split("/").map(encodeURIComponent).join("/");
+export { label as markdownLabel, href as archiveHref };
+
+export function batchNavigationFile(
+  group: Group,
+  manifest: Manifest,
+  collectionId: string,
+  pendingFiles: ArtifactBundleFile[],
+): ArtifactBundleFile {
+  const batch = manifest.collection_locations[collectionId];
+  const paths = new Set([
+    ...Object.keys(manifest.managed_files),
+    ...pendingFiles.map((file) => file.path),
+  ]);
+  const rows = batch.article_ids.map((id) => {
+    const item = manifest.article_locations[id];
+    const chinese = `${item.directory}/${CHINESE_ARTICLE_FILENAME}`;
+    return (
+      `- [${label(item.title)}](../${href(item.reading_path || `${item.directory}/README.md`)})` +
+      (paths.has(`${group.route.base_path}/${chinese}`)
+        ? ` · [简体中文](../${href(chinese)})`
+        : "") +
+      (item.has_research
+        ? ` · [调研](../${href(item.research_path || `${item.directory}/research.md`)})`
+        : "")
+    );
+  });
+  return markdownFile(
+    batch.path,
+    `# 采集批次：${batch.date_sequence}\n\n生成时间：${batch.created_at}  \n本批共包含 ${rows.length} 篇内容：\n\n${rows.join("\n")}\n\n[返回知识首页](../README.md)\n`,
+  );
+}
 
 export function articleOverview(
   article: ArchivedArticle,
@@ -95,13 +126,13 @@ export function navigationFiles(
     list
       .map(
         (article) =>
-          `| ${archiveDate(article[field], group.timezone)} | [${label(article.title)}](${href(`${article.directory}/README.md`)}) | ` +
+          `| ${archiveDate(article[field], group.timezone)} | [${label(article.title)}](${href(article.reading_path || `${article.directory}/README.md`)}) | ` +
           (paths.has(`${base}/${article.directory}/${CHINESE_ARTICLE_FILENAME}`)
             ? `[简体中文](${href(`${article.directory}/${CHINESE_ARTICLE_FILENAME}`)})`
             : "—") +
           " | " +
           (article.has_research
-            ? `[调研](${href(`${article.directory}/research.md`)})`
+            ? `[调研](${href(article.research_path || `${article.directory}/research.md`)})`
             : "—") +
           " |",
       )

@@ -5,6 +5,10 @@ import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
   buildSelectionPrompt,
   buildResearchPrompt,
+  GITHUB_CODE_RESEARCH_SKILL,
+  pipelineTaskLabels,
+  sourceSupportsTask,
+  type PipelineTaskType,
   DEFAULT_RESEARCH_INSTRUCTIONS,
   type Group,
   type Skill,
@@ -17,6 +21,7 @@ import { useDialog } from "../../lib/useDialog.js";
 const fieldClass =
   "w-full rounded-md border border-neutral-200 bg-white p-2 text-sm";
 const initialForm = {
+  task_type: "article_research" as PipelineTaskType,
   name: "",
   description: "",
   preferences: "",
@@ -98,6 +103,7 @@ export function PipelinesPage() {
     setForm(
       group
         ? {
+            task_type: group.task_type,
             name: group.name,
             description: group.description,
             preferences: group.preferences,
@@ -225,10 +231,10 @@ export function PipelinesPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2 rounded-lg border bg-blue-50/40 p-4">
               <h4 className="flex items-center gap-2 text-sm font-semibold">
-                <Bot className="h-4 w-4" />1 · 选文与调研
+                <Bot className="h-4 w-4" />1 · {pipelineTaskLabels[group.task_type]}
               </h4>
               <p className="text-sm">
-                AI 批量选文 → 每次最多深度调研 {group.deep_analysis_count}{" "}
+                {(group.task_type === "article_research") ? 'AI 批量选文' : '每日仓库研读'} → 每次最多深度调研 {group.deep_analysis_count}{" "}
                 篇
               </p>
               <p className="text-xs text-neutral-500">
@@ -241,10 +247,12 @@ export function PipelinesPage() {
                           id,
                       )
                       .join("、")
-                  : "全部来源"}
+                  : "全部同类型来源"}
               </p>
+              {(group.task_type === "repository_research") && <p className="text-xs text-neutral-500">代码调研：{GITHUB_CODE_RESEARCH_SKILL}</p>}
+              {(group.task_type === "article_research") && <p className="text-xs text-neutral-500">文章调研：{group.research_skill_id}</p>}
               <p className="text-xs text-neutral-500">
-                范围内已初审、未完成调研的文章参与，不限入池日期；流水线不补跑初审。
+                {(group.task_type === "article_research") ? '范围内已初审、未完成调研的文章参与，不限入池日期；流水线不补跑初审。' : '每天深入探索一个仓库主题，读取固定 Commit 的完整源码。'}
               </p>
             </div>
             <div className="space-y-2 rounded-lg border bg-emerald-50/40 p-4">
@@ -260,7 +268,7 @@ export function PipelinesPage() {
                 {group.route.base_path}
               </p>
               <p className="text-xs text-neutral-500">
-                文章与深度研报完成后统一归档。
+                {group.task_type === "repository_research" ? "中文研报与源码材料统一归档。" : "双语文章与深度研报完成后统一归档。"}
               </p>
             </div>
           </div>
@@ -304,7 +312,7 @@ export function PipelinesPage() {
                     {editingId ? "编辑流水线任务" : "新建流水线任务"}
                   </h3>
                   <p className="mt-0.5 text-[11px] text-neutral-400">
-                    定义主题与审核方式，让高分文章的调研结果沉淀到知识库
+                    定义主题与审核方式，选择任务类型，将调研结果沉淀到知识库
                   </p>
                 </div>
               </div>
@@ -326,6 +334,11 @@ export function PipelinesPage() {
                   {save.error.message}
                 </p>
               )}
+              <label className="block text-xs font-medium text-neutral-700">任务类型
+                <select aria-label="任务类型" disabled={Boolean(editingId)} className={`${fieldClass} mt-1.5`} value={form.task_type} onChange={event => setForm(previous => ({...previous,task_type:event.target.value as PipelineTaskType,source_ids:[],research_skill_id:event.target.value === 'repository_research' ? GITHUB_CODE_RESEARCH_SKILL : 'deep-research-expert'}))}>
+                  {Object.entries(pipelineTaskLabels).map(([type,label]) => <option key={type} value={type}>{label}</option>)}
+                </select>
+              </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <label className="space-y-1.5 text-xs font-medium text-neutral-700">
                   任务名称 *
@@ -380,7 +393,7 @@ export function PipelinesPage() {
               </label>
               <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-neutral-500">
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                  1 · 审核评分
+                  1 · {form.task_type === "repository_research" ? "仓库准备" : "审核评分"}
                 </span>
                 <span>→</span>
                 <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-700">
@@ -397,9 +410,9 @@ export function PipelinesPage() {
                     1
                   </span>
                   <div>
-                    <h4 className="text-sm font-semibold">AI 批量选文</h4>
+                    <h4 className="text-sm font-semibold">{form.task_type === "repository_research" ? "仓库材料准备" : "AI 批量选文"}</h4>
                     <p className="mt-0.5 text-[11px] text-neutral-500">
-                      共享评分与简介 → AI 比较候选 → 最多选择 M 篇
+                      {form.task_type === "repository_research" ? "每天准备仓库材料 → 按主题深入研读源码" : "共享评分与简介 → AI 比较候选 → 最多选择 M 篇"}
                     </p>
                   </div>
                 </div>
@@ -407,11 +420,11 @@ export function PipelinesPage() {
                   <legend className="mb-2 text-xs font-medium text-neutral-600">
                     池内来源范围{" "}
                     <span className="font-normal text-neutral-400">
-                      · 不勾选表示全部来源
+                      · 不勾选表示全部同类型来源
                     </span>
                   </legend>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {sources.map((source) => (
+                    {sources.filter(source => sourceSupportsTask(source.capability_id, form.task_type)).map((source) => (
                       <label
                         key={source.id}
                         className={`flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-xs ${form.source_ids.includes(source.id) ? "border-blue-200" : "border-neutral-200"}`}
@@ -436,7 +449,7 @@ export function PipelinesPage() {
                     ))}
                   </div>
                 </fieldset>
-                <SkillPicker
+                {(form.task_type === "article_research") && <SkillPicker
                   label="选文 Skill"
                   type="selection"
                   value={form.selection_skill_id}
@@ -447,7 +460,7 @@ export function PipelinesPage() {
                   instructions={form.preferences}
                   onInstructionsChange={(value) => update("preferences", value)}
                   instructionsPlaceholder="根据任务定位选择值得深入研究的文章"
-                />
+                />}
               </section>
               <section className="space-y-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -460,7 +473,7 @@ export function PipelinesPage() {
                         深度调研
                       </h4>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
-                        默认面向未研究过该领域的读者，先讲清问题，再解释原理和取舍
+                        {form.task_type === "repository_research" ? "读取固定 Commit 的完整源码，生成中文研报" : "读取选中文章全文，按任务要求生成研报"}
                       </p>
                     </div>
                   </div>
@@ -480,15 +493,13 @@ export function PipelinesPage() {
                   />
                 </label>
                 <p className="text-xs text-neutral-500">
-                  AI 根据已初审文章的评分和简介选择最多{" "}
-                  {form.deep_analysis_count}{" "}
-                  篇，不要求凑满；未选中的文章下轮继续参与。M 为 0 时不选文、不调研。
+                  {(form.task_type === "repository_research") ? '按仓库材料进入代码调研；' : 'AI 根据已初审文章的评分和简介选文；'}每轮最多 {form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。
                 </p>
-                <SkillPicker
-                  label="深度调研 Skill"
+                {(form.task_type === "article_research") && <SkillPicker
+                  label="文章调研 Skill"
                   type="research"
                   value={form.research_skill_id}
-                  skills={skills}
+                  skills={skills.filter(skill => skill.id !== GITHUB_CODE_RESEARCH_SKILL)}
                   onChange={(id) => update("research_skill_id", id)}
                   prompt={buildResearchPrompt(
                     form.research_skill_id,
@@ -499,8 +510,14 @@ export function PipelinesPage() {
                   onInstructionsChange={(value) =>
                     update("research_instructions", value)
                   }
-                  instructionsPlaceholder={DEFAULT_RESEARCH_INSTRUCTIONS}
-                />
+                  instructionsPlaceholder="深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。"
+                />}
+                {(form.task_type === "repository_research") && <div className="rounded-md border bg-white p-3 text-xs text-neutral-600">
+                  <p className="font-medium">GitHub 代码调研 Skill：{GITHUB_CODE_RESEARCH_SKILL}（固定）</p>
+                  <p className="mt-1">仓库来源独立读取固定 Commit 的完整源码，追踪调用链、测试和设计取舍；文章调研 Skill 仅用于文章来源。</p>
+                  {!skills.some(skill => skill.id === GITHUB_CODE_RESEARCH_SKILL) && <p className="mt-1 text-amber-700">当前执行器未提供代码调研 Skill，请同步 Skills 或安装到执行机的 Skill 目录。</p>}
+                  <label className="mt-3 block">代码调研补充要求<textarea className={`${fieldClass} mt-1`} value={form.research_instructions} onChange={event => update('research_instructions', event.target.value)} placeholder="例如：重点分析状态恢复机制与测试覆盖" /></label>
+                </div>}
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center gap-2">
