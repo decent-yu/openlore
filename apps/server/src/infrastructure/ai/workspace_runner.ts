@@ -613,6 +613,8 @@ export async function executeInWorkspace(
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
       throw new Error('代码深研未生成有效的 output/research.md');
+    if (input.repository)
+      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
       !input.outputSchema &&
       document &&

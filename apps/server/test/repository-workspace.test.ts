@@ -261,3 +261,12 @@ it('requires a written research document instead of accepting a conversational r
   expect(result.status).toBe('failed');
   expect(result.error?.message).toContain('未生成有效的 output/research.md');
 });
+
+it('rejects reports if the AI changes the pinned implementation while researching', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const cli = path.join(root, 'modifies-source-cli');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('input/repository/src/core.ts','changed');fs.writeFileSync('output/research.md','# Report');console.log(JSON.stringify({response:'Done'}));`, {mode:0o700});
+  const result = await executeInWorkspace({...request(), cli_path:cli});
+  expect(result.status).toBe('failed');
+  expect(result.error?.message).toContain('源码工作区已修改');
+});
