@@ -72,6 +72,8 @@ export const ArtifactBundleSchema = z.object({
       article_id: z.string(),
       slug: z.string(),
       directory: z.string(),
+      article_path: z.string().optional(),
+      research_path: z.string().optional(),
     }),
   ),
   assets: z.array(ArtifactBundleAssetSchema).default([]),

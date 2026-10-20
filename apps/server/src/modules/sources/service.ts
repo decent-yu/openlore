@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { SourceOptionsSchema, type Source } from '@openlore/contracts';
+import { SourceCapabilitySchema, SourceOptionsSchema, parseGitHubRepository, type Source } from '@openlore/contracts';
 import { getDb, getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
 import { sourcesTable, sourceStatesTable } from '../../infrastructure/persistence/sqlite/schema.js';
 
@@ -62,16 +62,23 @@ export class SourcesService {
     const id = data.id || `src_${crypto.randomUUID().slice(0, 12)}`;
     const previous = data.id ? await this.getSource(data.id) : null;
     const name = z.string().trim().min(1, '请输入来源名称').parse(data.name ?? previous?.name);
-    const url = z.string().trim().url('请输入有效的来源地址').refine(
+    let url = z.string().trim().url('请输入有效的来源地址').refine(
       value => /^https?:\/\//i.test(value), '来源地址仅支持 HTTP 或 HTTPS',
     ).parse(data.url ?? previous?.url);
-    const options = SourceOptionsSchema.parse(data.options ?? previous?.options ?? {});
+    const capability = SourceCapabilitySchema.parse(data.capability_id ?? previous?.capability_id ?? 'web_feed');
+    z.string().refine(value => !previous || previous.capability_id === value, '来源类型不能修改，请新建来源').parse(capability);
+    if (capability === 'github_repository') {
+      const repository = parseGitHubRepository(url);
+      z.string().refine(value => Boolean(parseGitHubRepository(value)), '请输入 GitHub 仓库地址，例如 https://github.com/stablyai/orca').parse(url);
+      url = repository!.url;
+    }
+    const options = SourceOptionsSchema.parse(data.options ?? previous?.options ?? (capability === 'github_repository' ? { poll_interval_mins: 60 } : {}));
     const record = {
       id,
       name,
       url,
       description: data.description ?? previous?.description ?? '',
-      capabilityId: data.capability_id ?? previous?.capability_id ?? 'web_feed',
+      capabilityId: capability,
       enabled: data.enabled ?? previous?.enabled ?? true,
       optionsJson: JSON.stringify(options),
       updatedAt: new Date().toISOString(),

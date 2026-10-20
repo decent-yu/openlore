@@ -50,16 +50,20 @@ export function getPublishedWikiLinks(
     WHERE d.target_kind='github' AND d.status IN ('updated','unchanged')
       AND (t.article_id IN (${placeholders}) OR b.collection_id IN (
         SELECT collection_id FROM article_locations WHERE article_id IN (${placeholders})
+      ) OR EXISTS (
+        SELECT 1 FROM json_each(b.bundle_json,'$.entries') e
+        WHERE json_extract(e.value,'$.article_id') IN (${placeholders})
       ))
     ORDER BY d.created_at DESC, d.rowid DESC
   `,
     )
-    .all(...articleIds, ...articleIds) as Array<{
+    .all(...articleIds, ...articleIds, ...articleIds) as Array<{
     group_id: string;
     changed_paths_json: string;
     bundle_json: string | null;
   }>;
   const pathsByGroup = new Map<string, Set<string>>();
+  const explicitPaths = new Map<string, { article?: string; research?: string }>();
   const reports = db
     .prepare(
       `
@@ -90,8 +94,16 @@ export function getPublishedWikiLinks(
     if (publication.bundle_json) {
       const bundle = JSON.parse(publication.bundle_json) as {
         files: Array<{ path: string }>;
+        entries?: Array<{ article_id: string; article_path?: string; research_path?: string }>;
       };
       for (const file of bundle.files) paths.add(file.path);
+      for (const entry of bundle.entries || []) {
+        const key = wikiLinkKey(publication.group_id, entry.article_id);
+        if (!explicitPaths.has(key)) explicitPaths.set(key, {
+          article: bundle.files.some(file => file.path === entry.article_path) ? entry.article_path : undefined,
+          research: bundle.files.some(file => file.path === entry.research_path) ? entry.research_path : undefined,
+        });
+      }
     }
     pathsByGroup.set(publication.group_id, paths);
   }
@@ -99,6 +111,9 @@ export function getPublishedWikiLinks(
     const key = wikiLinkKey(location.group_id, location.article_id);
     if (links.has(key)) continue;
     const published: PublishedWikiLinks = {};
+    const explicit = explicitPaths.get(key);
+    if (explicit?.article) published.article_url = buildWikiUrl(location, explicit.article);
+    if (explicit?.research) published.research_url = buildWikiUrl(location, explicit.research);
     let articlePath: string | undefined;
     for (const file of pathsByGroup.get(location.group_id) || []) {
       if (file.endsWith(`/${location.directory}/article.md`)) {

@@ -1,4 +1,5 @@
 import { markResearchArchived } from "../research/state.js";
+import { repositoryStudy } from '@openlore/contracts';
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +15,7 @@ import type {
   StructuredEntry,
 } from "@openlore/contracts";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
-import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
+import { getDb, getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import {
   articlesTable,
   articleRevisionsTable,
@@ -78,7 +79,7 @@ export class DeliveryService {
     const { group, runId, entries, researchTasks = [] } = options;
     const db = getDb();
     const paths = getAppPaths();
-    const batchId = `batch_${Date.now()}`;
+    const batchId = `batch_${crypto.randomUUID()}`;
     const basePath = group.route.base_path; // e.g. "docs/agent-leaning"
 
     if (entries.length === 0) {
@@ -123,13 +124,24 @@ export class DeliveryService {
       const entry = entries[i];
       const order = String(i + 1).padStart(2, "0");
       const articleDirName = `${order}-${entry.slug}`;
-      const articleRelDir = `${dateSequence}/${articleDirName}`;
+      const article = db.select().from(articlesTable).where(eq(articlesTable.id, entry.article_id)).get();
+      const study = repositoryStudy(JSON.parse(article?.dateEvidenceJson || '{}'));
+      const priorLocation = study ? db.select().from(articleLocationsTable).where(and(eq(articleLocationsTable.groupId, group.id), eq(articleLocationsTable.articleId, entry.article_id))).get() : undefined;
+      const nextOrder = study ? (getSqliteDatabase().prepare('SELECT COALESCE(MAX(order_seq),0)+1 n FROM article_locations WHERE group_id=? AND substr(directory,1,length(?))=?').get(group.id, `${study.directory}/`, `${study.directory}/`) as { n: number }).n : i + 1;
+      const filename = entry.title.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/g, '-').slice(0, 70) || 'research';
+      const articleRelDir = priorLocation?.directory || (study ? `${study.directory}/${String(nextOrder).padStart(2, '0')}-${filename}` : `${dateSequence}/${articleDirName}`);
       const articleFullPath = `${basePath}/${articleRelDir}`;
+      const stem = articleRelDir.split('/').at(-1)!;
+      const articlePath = study ? `${basePath}/${study.directory}/articles/${stem}.md` : `${articleFullPath}/article.md`;
+      const researchPath = study ? `${articleFullPath}.md` : `${articleFullPath}/research.md`;
+      const reportContent = (value: string) => study ? value.replace(/(?:\.\/)?assets\//g, `./assets/${stem}/`) : value;
 
       articleEntries.push({
         article_id: entry.article_id,
         slug: entry.slug,
         directory: articleRelDir,
+        article_path: articlePath,
+        research_path: researchPath,
       });
 
       manifestArticleLocations[entry.article_id] = {
@@ -139,13 +151,13 @@ export class DeliveryService {
       };
 
       // Record in article_locations table
-      db.insert(articleLocationsTable)
+      if (!priorLocation) db.insert(articleLocationsTable)
         .values({
           id: `loc_${crypto.randomUUID().slice(0, 12)}`,
           groupId: group.id,
           articleId: entry.article_id,
           collectionId,
-          orderSeq: i + 1,
+          orderSeq: nextOrder,
           slug: entry.slug,
           directory: articleRelDir,
           createdAt: new Date().toISOString(),
@@ -161,7 +173,7 @@ export class DeliveryService {
         `> **来源**: [${entry.original_url || "原文链接"}](${entry.original_url || "#"})  \n` +
         `> **作者**: ${entry.author || "未知"} | **发布时间**: ${entry.published_at || "未知"}  \n` +
         (research
-          ? `> **深度调研**: [查看专题调研报告](research.md)  \n`
+          ? `> **深度调研**: [查看专题调研报告](${study ? `../${stem}.md` : 'research.md'})  \n`
           : "") +
         `> **标签**: ${entry.tags.join(", ")}\n\n` +
         `---\n\n` +
@@ -169,14 +181,14 @@ export class DeliveryService {
         `${entry.summary}\n\n` +
         `---\n\n` +
         `## 原文整理\n\n` +
-        `${entry.organized_markdown}\n`;
+        `${study ? reportContent(entry.organized_markdown).replace(/\.\/assets\//g, '../assets/') : entry.organized_markdown}\n`;
 
       const artMdSha = crypto
         .createHash("sha256")
         .update(articleMdContent)
         .digest("hex");
       bundleFiles.push({
-        path: `${articleFullPath}/article.md`,
+        path: articlePath,
         content_bytes: Buffer.from(articleMdContent, "utf-8").toString(
           "base64",
         ),
@@ -187,15 +199,15 @@ export class DeliveryService {
 
       if (research) {
         bundleFiles.push({
-          path: `${articleFullPath}/research.md`,
+          path: researchPath,
           content_bytes: Buffer.from(
-            research.report_markdown,
+            reportContent(research.report_markdown),
             "utf-8",
           ).toString("base64"),
           encoding: "utf-8",
           sha256: crypto
             .createHash("sha256")
-            .update(research.report_markdown)
+            .update(reportContent(research.report_markdown))
             .digest("hex"),
           media_type: "text/markdown",
         });
@@ -211,7 +223,7 @@ export class DeliveryService {
       for (const asset of assets) {
         if (fs.existsSync(asset.blobRef)) {
           const fileBuf = fs.readFileSync(asset.blobRef);
-          const assetFilePath = `${articleFullPath}/${asset.localPath}`;
+          const assetFilePath = study ? `${basePath}/${study.directory}/assets/${stem}/${asset.localPath.replace(/^assets\//, '')}` : `${articleFullPath}/${asset.localPath}`;
           bundleFiles.push({
             path: assetFilePath,
             content_bytes: fileBuf.toString("base64"),
@@ -240,13 +252,24 @@ export class DeliveryService {
       entries
         .map(
           (e, idx) =>
-            `- [${e.title}](${String(idx + 1).padStart(2, "0")}-${e.slug}/article.md)` +
+            `- [${e.title}](../${articleEntries[idx].article_path!.slice(basePath.length + 1)})` +
             (researchTasks.some((task) => task.article_id === e.article_id)
-              ? ` ([调研报告](${String(idx + 1).padStart(2, "0")}-${e.slug}/research.md))`
+              ? ` ([调研报告](../${articleEntries[idx].research_path!.slice(basePath.length + 1)}))`
               : ""),
         )
         .join("\n") +
       "\n";
+
+    // Repository navigation retains earlier published topics; failed deliveries do not become links.
+    const repositories = new Set(articleEntries.filter(entry => entry.research_path?.endsWith(`${entry.directory}.md`)).map(entry => entry.directory.split('/')[0]));
+    const previousTopics = getSqliteDatabase().prepare(`SELECT DISTINCT l.directory,a.title FROM article_locations l JOIN articles a ON a.id=l.article_id
+      JOIN research_tasks t ON t.article_id=a.id AND t.group_id=l.group_id AND t.archived_at IS NOT NULL WHERE l.group_id=? ORDER BY l.order_seq`).all(group.id) as Array<{directory: string; title: string}>;
+    for (const repository of repositories) {
+      const topics = new Map(previousTopics.filter(item => item.directory.startsWith(`${repository}/`)).map(item => [item.directory, item.title]));
+      for (const entry of articleEntries.filter(item => item.directory.startsWith(`${repository}/`))) topics.set(entry.directory, entries.find(item => item.article_id === entry.article_id)!.title);
+      const content = `# ${repository} 仓库研读\n\n` + [...topics].sort(([a], [b]) => a.localeCompare(b)).map(([directory, title]) => `- [${title}](${directory.split('/').at(-1)}.md)`).join('\n') + '\n';
+      bundleFiles.push({ path: `${basePath}/${repository}/README.md`, content_bytes: Buffer.from(content).toString('base64'), encoding: 'utf-8', media_type: 'text/markdown', sha256: crypto.createHash('sha256').update(content).digest('hex') });
+    }
 
     const batchReadmeSha = crypto
       .createHash("sha256")
@@ -267,7 +290,8 @@ export class DeliveryService {
       `# ${group.name}\n\n` +
       `${group.description}\n\n` +
       `## 历史任务批次\n\n` +
-      `- [批次 ${dateSequence}](${dateSequence}/README.md)（${entries.length} 篇文章）\n`;
+      `- [批次 ${dateSequence}](${dateSequence}/README.md)（${entries.length} 篇文章）\n` +
+      [...new Set([...previousTopics.map(item => item.directory.split('/')[0]).filter(item => item.includes('@')), ...repositories])].map(directory => `- [${directory} 仓库研读](${directory}/README.md)\n`).join('');
 
     const groupReadmeSha = crypto
       .createHash("sha256")
@@ -307,6 +331,21 @@ export class DeliveryService {
         ]),
       ),
     };
+
+    const previousBundle = getSqliteDatabase().prepare(`SELECT b.bundle_json FROM artifact_bundles b
+      JOIN deliveries d ON d.batch_id=b.batch_id AND d.group_id=b.group_id
+      WHERE b.group_id=? AND d.target_kind='github' AND d.status IN ('updated','unchanged')
+      ORDER BY b.created_at DESC,b.rowid DESC LIMIT 1`).get(group.id) as { bundle_json: string } | undefined;
+    if (previousBundle) {
+      const previousFile = (JSON.parse(previousBundle.bundle_json) as ArtifactBundle).files.find(file => file.path === `${basePath}/.openlore/manifest.json`);
+      if (previousFile?.content_bytes) {
+        const previous = JSON.parse(Buffer.from(previousFile.content_bytes, 'base64').toString('utf8')) as Manifest;
+        manifest.article_locations = { ...previous.article_locations, ...manifest.article_locations };
+        manifest.collection_locations = { ...previous.collection_locations, ...manifest.collection_locations };
+        manifest.managed_files = { ...previous.managed_files, ...manifest.managed_files };
+        manifest.delivered_batches = [...new Set([...previous.delivered_batches, batchId])];
+      }
+    }
 
     const manifestJson = JSON.stringify(manifest, null, 2);
     const manifestSha = crypto
@@ -444,7 +483,8 @@ export class DeliveryService {
       )
       .get();
 
-    if (!loc) {
+    const articleMetadata = db.select().from(articlesTable).where(eq(articlesTable.id, task.article_id)).get();
+    if (!loc || repositoryStudy(JSON.parse(articleMetadata?.dateEvidenceJson || '{}'))) {
       const article = db
         .select()
         .from(articlesTable)

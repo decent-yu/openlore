@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { repositoryStudy } from '@openlore/contracts';
 import { hasReviewableBody } from "../../infrastructure/content/review-body.js";
 import type {
   ContentItem,
@@ -144,6 +145,9 @@ export function evaluateContent(
     status,
     reason,
   });
+  if (item.fetch_method === 'github_repository' && repositoryStudy(item.date_evidence || {}))
+    return item.body.completeness === 'full' && item.body.value.trim().length >= 80
+      ? done('ready', 'ready') : done('review', 'body_invalid');
   const issue = publicationIssue(item.published_at, options, timezone, now);
   if (issue === "previous_year" || issue === "outside_window")
     return done("history", issue);

@@ -350,6 +350,10 @@ export class AppScheduler {
                       `深度调研未完成：${entry.title}；${task?.error_message || "请检查 AI 执行器"}`,
                     );
                   researchTasks.push(task);
+                  entry.title = task.article_title;
+                  entry.slug = task.article_slug;
+                  const publishedEntry = output.entries.find(item => item.article_id === entry.article_id);
+                  if (publishedEntry) publishedEntry.title = task.article_title;
                   logs.push({
                     timestamp: new Date().toISOString(),
                     article_id: entry.article_id,
@@ -405,7 +409,7 @@ export class AppScheduler {
             (item) => item.article_id === entry.article_id,
           );
           if (repo && location)
-            entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${[group.route.base_path, location.directory, "research.md"].join("/").split("/").map(encodeURIComponent).join("/")}`;
+            entry.document_url = `https://github.com/${repo.owner}/${repo.repo}/blob/${encodeURIComponent(repo.defaultBranch)}/${(location.research_path || [group.route.base_path, location.directory, "research.md"].join("/")).split("/").map(encodeURIComponent).join("/")}`;
         }
       }
       db.update(runsTable)

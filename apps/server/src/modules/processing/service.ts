@@ -3,6 +3,7 @@ import fs from "node:fs";
 import {
   ArticleSelectionSchema,
   buildSelectionPrompt,
+  repositoryStudy,
   type Decision,
   type Group,
   type RunAILog,
@@ -16,6 +17,8 @@ import { claimResearchArticle } from "../research/state.js";
 import { skillsService } from "../skills/service.js";
 import { listPoolCandidates } from "./candidates.js";
 import { getArticleReviews } from "./article-reviews.js";
+import { sourcesService } from '../sources/service.js';
+import { collectionService } from '../collection/service.js';
 
 export interface ProcessedBatchResult {
   decisions: Decision[];
@@ -76,6 +79,13 @@ export class ProcessingService {
     runId: string,
   ): Promise<ProcessedBatchResult> {
     const db = getSqliteDatabase();
+    // Collect today's repository study before selection; an unchanged commit can still teach a new topic.
+    for (const source of await sourcesService.listSources()) {
+      if (source.enabled && source.capability_id === 'github_repository' && (!group.source_ids.length || group.source_ids.includes(source.id))) {
+        const collected = await collectionService.discoverSource(source.id);
+        if (collected.status === 'failed') throw new Error(collected.errors[0]?.message || 'GitHub 仓库采集失败');
+      }
+    }
     const pool = listPoolCandidates(group.source_ids);
     const result: ProcessedBatchResult = {
       decisions: [],
@@ -101,19 +111,22 @@ export class ProcessingService {
         );
     const reviews = getArticleReviews(pool.map((item) => item.id));
     const candidates: Candidate[] = [];
+    const repositoryChoices: Array<{ article_id: string; reason: string }> = [];
     for (const item of pool) {
       if (item.processed || item.busy) {
         result.counts.already_processed++;
         continue;
       }
       const review = reviews.get(item.id);
+      const article = db.prepare('SELECT title,date_evidence_json FROM articles WHERE id=?').get(item.id) as { title: string; date_evidence_json: string };
+      if (repositoryStudy(JSON.parse(article.date_evidence_json))) {
+        repositoryChoices.push({ article_id: item.id, reason: '每日仓库研读：探索架构设计与核心思想' });
+        continue;
+      }
       if (review?.status !== "succeeded" || !review.result) {
         result.counts.unreviewed++;
         continue;
       }
-      const article = db
-        .prepare("SELECT title FROM articles WHERE id=?")
-        .get(item.id) as { title: string };
       candidates.push({
         article_id: item.id,
         title: article.title,
@@ -123,20 +136,22 @@ export class ProcessingService {
         tags: review.result.tags,
       });
     }
-    result.counts.candidate = candidates.length;
-    result.counts.deferred = candidates.length;
+    result.counts.candidate = candidates.length + repositoryChoices.length;
+    result.counts.deferred = result.counts.candidate;
     save();
     // Pipelines never trigger per-article initial reviews. M=0 consumes no selection/research AI.
-    if (!candidates.length || group.deep_analysis_count === 0) return result;
+    if ((!candidates.length && !repositoryChoices.length) || group.deep_analysis_count === 0) return result;
+    const dailyChoices = repositoryChoices.slice(0, group.deep_analysis_count);
+    const selectionLimit = group.deep_analysis_count - dailyChoices.length;
     const adapter = getAIAdapterWithFallback(group.ai_profile_id);
-    if (!adapter) throw new Error("选文失败：请先配置可用的 AI 执行器");
+    if (!adapter) throw new Error("调研失败：请先配置可用的 AI 执行器");
     const skill = await skillsService.getSkill(
       group.selection_skill_id,
       group.ai_profile_id || "default",
     );
-    if (!skill || skill.type !== "selection")
+    if (candidates.length && selectionLimit && (!skill || skill.type !== "selection"))
       throw new Error(`选文 Skill 不存在：${group.selection_skill_id}`);
-    const prompt = buildSelectionPrompt(group.selection_skill_id, group);
+    const prompt = buildSelectionPrompt(group.selection_skill_id, { ...group, deep_analysis_count: selectionLimit });
     let sequence = 0;
     const select = async (batch: Candidate[]) => {
       const response = await adapter.execute({
@@ -146,7 +161,7 @@ export class ProcessingService {
         profileId: group.ai_profile_id || "default",
         taskType: "select",
         skillId: group.selection_skill_id,
-        skillRevision: skill.revision,
+        skillRevision: skill?.revision,
         prompt,
         material: JSON.stringify(batch),
         outputSchema: {
@@ -188,7 +203,7 @@ export class ProcessingService {
       const selected = parsed.success ? parsed.data.selected : [];
       if (
         !parsed.success ||
-        selected.length > group.deep_analysis_count ||
+        selected.length > selectionLimit ||
         new Set(selected.map((item) => item.article_id)).size !==
           selected.length ||
         selected.some((item) => !allowed.has(item.article_id))
@@ -202,7 +217,7 @@ export class ProcessingService {
       }
       return selected;
     };
-    let remaining = candidates;
+    let remaining = selectionLimit ? candidates : [];
     let selected: Array<{ article_id: string; reason: string }> = [];
     while (remaining.length) {
       const groups = batches(remaining);
@@ -221,7 +236,7 @@ export class ProcessingService {
       remaining = reduced;
     }
     // Validate all selection IDs before claiming or reading full articles.
-    for (const choice of selected) {
+    for (const choice of [...dailyChoices, ...selected]) {
       const article = db
         .prepare("SELECT * FROM articles WHERE id=?")
         .get(choice.article_id) as {
@@ -229,6 +244,7 @@ export class ProcessingService {
         title: string;
         latest_revision: string;
         canonical_url: string | null;
+        date_evidence_json: string;
         author: string | null;
         published_at: string | null;
       };
@@ -238,13 +254,14 @@ export class ProcessingService {
         )
         .get(article.id, article.latest_revision) as
         { content_ref: string } | undefined;
-      const review = reviews.get(article.id)!;
+      const study = repositoryStudy(JSON.parse(article.date_evidence_json));
+      const review = reviews.get(article.id);
       const current = getArticleReviews([article.id]).get(article.id);
-      if (
+      if (!study && (
         !current ||
         current.status !== "succeeded" ||
         JSON.stringify(current) !== JSON.stringify(review)
-      )
+      ))
         throw new Error(`文章 ${article.title} 的初审结果已变化，请重新选文`);
       if (!revision)
         throw new Error(`内容池文章 ${article.id} 的正文版本不存在`);
@@ -294,17 +311,17 @@ export class ProcessingService {
         revision: article.latest_revision,
         slug: slugify(article.title),
         title: article.title,
-        original_url: article.canonical_url,
+        original_url: study?.repository_url || article.canonical_url,
         author: article.author,
         published_at: article.published_at,
-        tags: review.result!.tags,
-        summary: review.result!.summary,
+        tags: study ? ['GitHub', '架构研读'] : review!.result!.tags,
+        summary: study ? (study.focus || '深入探索架构设计、核心机制与可复用思想') : review!.result!.summary,
         organized_markdown: mediaAssetsArchiver.rewriteMarkdownImageUrls(
           content,
           urlMap,
         ),
         asset_refs: assetRefs,
-        evidence_refs: review.result!.evidence_refs,
+        evidence_refs: study ? study.files : review!.result!.evidence_refs,
         limitations: [],
       });
       const prior = db
@@ -334,7 +351,7 @@ export class ProcessingService {
         );
     }
     result.counts.planned = result.entries.length;
-    result.counts.deferred = candidates.length - result.entries.length;
+    result.counts.deferred = result.counts.candidate - result.entries.length;
     save();
     return result;
   }

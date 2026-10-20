@@ -7,12 +7,15 @@ export const SourceCapabilitySchema = z.enum([
   'web_feed',
   'web_page',
   'github_api',
+  'github_repository',
   'platform',
 ]);
 export type SourceCapability = z.infer<typeof SourceCapabilitySchema>;
 
 export const SourceOptionsSchema = z.object({
   poll_interval_mins: z.number().int().min(1).max(10080).default(30),
+  github_ref: z.string().trim().max(200).default(''),
+  research_focus: z.string().trim().max(4000).default(''),
   keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_keywords: z.array(z.string().trim().min(1)).default([]),
   keyword_mode: z.enum(['any', 'all']).default('any'),
