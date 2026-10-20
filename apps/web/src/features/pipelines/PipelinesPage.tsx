@@ -5,6 +5,7 @@ import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
   buildSelectionPrompt,
   buildResearchPrompt,
+  GITHUB_CODE_RESEARCH_SKILL,
   type Group,
   type Skill,
 } from "@openlore/contracts";
@@ -59,6 +60,8 @@ export function PipelinesPage() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [form, setForm] = useState(initialForm);
+  const scopeHasCode = (ids: string[]) => sources.some(source => source.capability_id === 'github_repository' && (!ids.length || ids.includes(source.id)));
+  const scopeHasArticles = (ids: string[]) => !sources.length || sources.some(source => source.capability_id !== 'github_repository' && (!ids.length || ids.includes(source.id)));
   const { data: skills = [] } = useQuery({
     queryKey: ["skills", form.ai_profile_id || "default"],
     queryFn: () => api.listSkills(form.ai_profile_id || "default"),
@@ -227,7 +230,7 @@ export function PipelinesPage() {
                 <Bot className="h-4 w-4" />1 · 选文与调研
               </h4>
               <p className="text-sm">
-                AI 批量选文 → 每次最多深度调研 {group.deep_analysis_count}{" "}
+                {scopeHasArticles(group.source_ids) ? 'AI 批量选文' : '每日仓库研读'} → 每次最多深度调研 {group.deep_analysis_count}{" "}
                 篇
               </p>
               <p className="text-xs text-neutral-500">
@@ -242,8 +245,10 @@ export function PipelinesPage() {
                       .join("、")
                   : "全部来源"}
               </p>
+              {scopeHasCode(group.source_ids) && <p className="text-xs text-neutral-500">代码调研：{GITHUB_CODE_RESEARCH_SKILL}</p>}
+              {scopeHasArticles(group.source_ids) && <p className="text-xs text-neutral-500">文章调研：{group.research_skill_id}</p>}
               <p className="text-xs text-neutral-500">
-                范围内已初审、未完成调研的文章参与，不限入池日期；流水线不补跑初审。
+                {scopeHasArticles(group.source_ids) ? '范围内已初审、未完成调研的文章参与，不限入池日期；流水线不补跑初审。' : '每天深入探索一个仓库主题，读取固定 Commit 的完整源码。'}
               </p>
             </div>
             <div className="space-y-2 rounded-lg border bg-emerald-50/40 p-4">
@@ -435,7 +440,7 @@ export function PipelinesPage() {
                     ))}
                   </div>
                 </fieldset>
-                <SkillPicker
+                {scopeHasArticles(form.source_ids) && <SkillPicker
                   label="选文 Skill"
                   type="selection"
                   value={form.selection_skill_id}
@@ -446,7 +451,7 @@ export function PipelinesPage() {
                   instructions={form.preferences}
                   onInstructionsChange={(value) => update("preferences", value)}
                   instructionsPlaceholder="根据任务定位选择值得深入研究的文章"
-                />
+                />}
               </section>
               <section className="space-y-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -460,6 +465,7 @@ export function PipelinesPage() {
                       </h4>
                       <p className="mt-0.5 text-[11px] text-neutral-500">
                         读取选中文章全文，按任务要求生成研报
+                        ；GitHub 来源使用独立代码调研流程
                       </p>
                     </div>
                   </div>
@@ -479,15 +485,13 @@ export function PipelinesPage() {
                   />
                 </label>
                 <p className="text-xs text-neutral-500">
-                  AI 根据已初审文章的评分和简介选择最多{" "}
-                  {form.deep_analysis_count}{" "}
-                  篇，不要求凑满；未选中的文章下轮继续参与。M 为 0 时不选文、不调研。
+                  {scopeHasCode(form.source_ids) ? 'GitHub 仓库材料优先进入代码调研，剩余额度用于文章选文；' : 'AI 根据已初审文章的评分和简介选文；'}每轮最多 {form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。
                 </p>
-                <SkillPicker
-                  label="深度调研 Skill"
+                {scopeHasArticles(form.source_ids) && <SkillPicker
+                  label="文章调研 Skill"
                   type="research"
                   value={form.research_skill_id}
-                  skills={skills}
+                  skills={skills.filter(skill => skill.id !== GITHUB_CODE_RESEARCH_SKILL)}
                   onChange={(id) => update("research_skill_id", id)}
                   prompt={buildResearchPrompt(
                     form.research_skill_id,
@@ -499,7 +503,13 @@ export function PipelinesPage() {
                     update("research_instructions", value)
                   }
                   instructionsPlaceholder="深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。"
-                />
+                />}
+                {scopeHasCode(form.source_ids) && <div className="rounded-md border bg-white p-3 text-xs text-neutral-600">
+                  <p className="font-medium">GitHub 代码调研 Skill：{GITHUB_CODE_RESEARCH_SKILL}（固定）</p>
+                  <p className="mt-1">仓库来源独立读取固定 Commit 的完整源码，追踪调用链、测试和设计取舍；文章调研 Skill 仅用于文章来源。</p>
+                  {!skills.some(skill => skill.id === GITHUB_CODE_RESEARCH_SKILL) && <p className="mt-1 text-amber-700">当前执行器未提供代码调研 Skill，请同步 Skills 或安装到执行机的 Skill 目录。</p>}
+                  {!scopeHasArticles(form.source_ids) && <label className="mt-3 block">代码调研补充要求<textarea className={`${fieldClass} mt-1`} value={form.research_instructions} onChange={event => update('research_instructions', event.target.value)} placeholder="例如：重点分析状态恢复机制与测试覆盖" /></label>}
+                </div>}
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center gap-2">

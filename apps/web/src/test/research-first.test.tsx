@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it } from "vitest";
-import { GroupSchema, DailyFeedArticleSchema } from "@openlore/contracts";
+import { GroupSchema, DailyFeedArticleSchema, SourceSchema } from "@openlore/contracts";
 import { DailyFeedPage } from "../features/feed/DailyFeedPage.js";
 import { PipelinesPage } from "../features/pipelines/PipelinesPage.js";
 
@@ -73,4 +73,24 @@ it("describes a single M research quota rather than an N-then-M selection pipeli
   expect(html).toContain("每次最多深度调研");
   expect(html).not.toContain("精选最多");
   expect(html).not.toContain("精选篇数");
+});
+
+it('shows the dedicated code Skill for repository-only pipelines and keeps mixed-source Skill routes distinct', () => {
+  const client = new QueryClient();
+  const code = SourceSchema.parse({id:'code',name:'Code',url:'https://github.com/stablyai/orca',capability_id:'github_repository'});
+  const article = SourceSchema.parse({id:'article',name:'Articles',url:'https://example.com/rss'});
+  client.setQueryData(['sources'], [code,article]);
+  client.setQueryData(['groups'], [{...task,source_ids:['code']}]);
+  client.setQueryData(['runs'], []);
+  const html = render(<PipelinesPage />, client);
+  expect(html).toContain('每日仓库研读');
+  expect(html).toContain('github-code-research');
+  expect(html).not.toContain('deep-research-expert');
+  const mixedClient = new QueryClient();
+  mixedClient.setQueryData(['sources'], [code,article]);
+  mixedClient.setQueryData(['groups'], [task]);
+  mixedClient.setQueryData(['runs'], []);
+  const mixed = render(<PipelinesPage />, mixedClient);
+  expect(mixed).toContain('代码调研：github-code-research');
+  expect(mixed).toContain('文章调研：deep-research-expert');
 });
