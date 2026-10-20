@@ -720,6 +720,7 @@ it('preserves a failed archive snapshot and path across goal, code and prompt ch
   expect((await run()).status).toBe('failed');
   const before = (await sourcesService.getSource('orca'))!.repository_history![0];
   expect(before.status).toBe('awaiting_archive');
+  expect(before.error).toBe('offline');
   await sourcesService.saveSource({ id: 'orca', name: 'Orca', url: 'https://github.com/stablyai/orca', options: { research_focus: '新的目标' } });
   vi.mocked(repository.refreshRepository).mockRejectedValue(new Error('new code unavailable'));
   vi.mocked(skillsService.getSkill).mockResolvedValue(null);
@@ -746,4 +747,22 @@ it('keeps insufficient evidence retryable and rejects repeating a completed topi
   expect((await run()).status).toBe('failed');
   expect((await sourcesService.getSource('orca'))!.repository_history![0].error).toContain('重复');
   expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
+});
+
+it('serializes the same repository with concurrent executors and includes accepted reports from this batch in history', async () => {
+  getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=2 WHERE id='study'").run();
+  vi.mocked(ai.getAIAdapterWithFallback).mockReturnValue({ execute, testConnection: async () => ({ ok: true, message: 'mock' }), targets: [{ target: { execution: { concurrency: 4 } } }] } as any);
+  let ordinal = 0, active = 0, peak = 0;
+  execute.mockImplementation(async input => {
+    active++;
+    peak = Math.max(peak, active);
+    const current = ++ordinal;
+    await new Promise(resolve => setTimeout(resolve, 10));
+    active--;
+    return reportResult(input, `批内机制${current}`);
+  });
+  expect((await run()).status).toBe('succeeded');
+  expect(peak).toBe(1);
+  expect(execute.mock.calls[1][0].prompt).toContain('批内机制1');
+  expect(execute.mock.calls[1][0].prompt).toContain('批内机制1如何实现');
 });

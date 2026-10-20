@@ -19,16 +19,15 @@ export async function refreshRepository(
     source.url,
     path.join(getAppPaths().dataDir, "repository-cache"),
     runProcess,
-    180000,
+    600000,
   );
   const read = async (args: string[]) => {
     const result = await runProcess("git", args, snapshot.cache, "", 30000);
     if (result.code !== 0) throw new Error("读取本地仓库快照失败");
     return result.stdout;
   };
-  const files = (await read(["ls-tree", "-r", "--name-only", snapshot.commit]))
-    .trim()
-    .split("\n")
+  const files = (await read(["ls-tree", "-rz", "--name-only", snapshot.commit]))
+    .split("\0")
     .filter(Boolean);
   const readme = files.find((file) =>
     /^readme(?:\.md|\.rst|\.txt)?$/i.test(file),
@@ -73,9 +72,13 @@ export class RepositoryStudyService {
       const busy = db
         .prepare("SELECT 1 FROM research_claims WHERE article_id=?")
         .get(study.article_id);
-      const archiveFailure = db.prepare(`SELECT d.error_message FROM deliveries d JOIN artifact_bundles b ON b.batch_id=d.batch_id
+      const archiveFailure = db
+        .prepare(
+          `SELECT d.error_message FROM deliveries d JOIN artifact_bundles b ON b.batch_id=d.batch_id
         WHERE d.target_kind='github' AND d.status='failed' AND EXISTS(SELECT 1 FROM json_each(b.bundle_json,'$.entries') e WHERE json_extract(e.value,'$.article_id')=?)
-        ORDER BY d.rowid DESC LIMIT 1`).get(study.article_id) as { error_message?: string } | undefined;
+        ORDER BY d.rowid DESC LIMIT 1`,
+        )
+        .get(study.article_id) as { error_message?: string } | undefined;
       return {
         id: study.id,
         article_id: study.article_id,
@@ -90,7 +93,11 @@ export class RepositoryStudyService {
                 ? "failed"
                 : "pending",
         error:
-          tasks[0]?.status === "failed" ? tasks[0].error_message : !tasks.some(t => t.archived_at) ? archiveFailure?.error_message || undefined : undefined,
+          tasks[0]?.status === "failed"
+            ? tasks[0].error_message
+            : !tasks.some((t) => t.archived_at)
+              ? archiveFailure?.error_message || undefined
+              : undefined,
         commit:
           JSON.parse(study.date_evidence_json).repository_study?.commit || "",
         reports: tasks

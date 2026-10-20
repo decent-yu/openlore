@@ -64,10 +64,22 @@ export async function repositoryCache(
       signal,
       { env: { GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } },
     );
-    if (result.code !== 0 || result.timedOut)
+    if (result.code !== 0 || result.timedOut) {
+      const reason = result.timedOut
+        ? "下载超时"
+        : /could not resolve|failed to connect|timed out|connection.*(?:closed|reset|refused)/i.test(
+              result.stderr,
+            )
+          ? "网络连接失败"
+          : /permission denied|authentication|not found|could not read/i.test(
+                result.stderr,
+              )
+            ? "仓库读取权限不足或地址不存在"
+            : "Git 操作失败";
       throw new Error(
-        `无法获取或校验完整源码，请检查 Git、网络与仓库读取权限；私有仓库使用执行机自身的 Git 凭据：${result.stderr.slice(-500)}`,
+        `无法获取或校验完整源码（${reason}），请检查 Git、网络与仓库读取权限；私有仓库使用执行机自身的 Git 凭据`,
       );
+    }
     return result.stdout.trim();
   };
   try {
@@ -117,6 +129,13 @@ export async function repositoryCache(
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("仓库返回了无效 Commit");
     return { cache, commit: sha, branch };
   } finally {
+    // A terminated Git process can leave an incomplete pack; never accumulate it on retries.
+    const packs = path.join(cache, "objects", "pack");
+    if (fs.existsSync(packs))
+      for (const file of fs.readdirSync(packs)) {
+        if (file.startsWith("tmp_pack_"))
+          fs.rmSync(path.join(packs, file), { force: true });
+      }
     fs.rmSync(lock, { recursive: true, force: true });
   }
 }

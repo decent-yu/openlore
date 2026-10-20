@@ -23,6 +23,7 @@ import { listPoolCandidates } from "../processing/candidates.js";
 import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
+  private activeRepositories = new Map<string, Promise<ResearchTask>>();
   async listResearchTasks(groupId?: string): Promise<ResearchTask[]> {
     const db = getDb();
     const rows = groupId
@@ -83,12 +84,21 @@ export class ResearchService {
       });
     }
     try {
-      return await this.generateResearch(
-        groupId,
-        articleId,
-        customInstructions,
-        runId,
-      );
+      const article = getSqliteDatabase().prepare('SELECT date_evidence_json FROM articles WHERE id=?').get(articleId) as { date_evidence_json: string };
+      const study = pipeline.task_type === 'repository_research' ? repositoryStudy(JSON.parse(article.date_evidence_json)) : undefined;
+      if (!study) return await this.generateResearch(groupId, articleId, customInstructions, runId);
+      // Same-repository research is sequential so each report sees earlier accepted reports,
+      // including work awaiting archive in this very batch. Different repositories still run in parallel.
+      const key = study.source_id || study.directory;
+      const previous = this.activeRepositories.get(key);
+      const task = (async () => {
+        await previous?.catch(() => {});
+        return this.generateResearch(groupId, articleId, customInstructions, runId);
+      })();
+      this.activeRepositories.set(key, task);
+      try { return await task; }
+      finally { if (this.activeRepositories.get(key) === task) this.activeRepositories.delete(key); }
+
     } finally {
       if (!runId && !claimOwner) releaseResearchClaims(owner);
     }
@@ -147,7 +157,7 @@ export class ResearchService {
       )).all().find(task => !task.archivedAt && task.reportMarkdown.trim());
       if (ready) return (await this.listResearchTasks(groupId)).find(task => task.id === ready.id)!;
       const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id
-        WHERE t.status='succeeded' AND t.archived_at IS NOT NULL AND t.article_id<>?
+        WHERE t.status='succeeded' AND t.article_id<>?
           AND EXISTS(SELECT 1 FROM source_items si WHERE si.article_id=t.article_id AND si.source_id=?)
         ORDER BY t.created_at DESC`).all(articleId, study.source_id || '') as Array<{ title: string; report_markdown: string; questions_json: string }>;
       instructions = `${DEFAULT_RESEARCH_INSTRUCTIONS}
@@ -155,7 +165,7 @@ export class ResearchService {
 本次 Commit：${study.commit}
 来源研读目标：${study.focus || '理解核心架构、设计方案与实现思想'}
 研究记录 ID：${study.study_id || articleId}（重试保持不变）
-已归档历史（跨流水线共享）：
+已完成研究（跨流水线共享，含本批待归档结果）：
 ${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n${item.report_markdown.slice(0, 1200)}`).join('\n\n') || '暂无，从核心架构与执行链路开始。'}
 围绕目标选择历史尚未深入解释的机制，明确本次研究问题，避免改标题重复研究；Commit 只标识版本，普通 Bug 修复不能自动成为选题。`;
     }
@@ -283,11 +293,11 @@ ${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n$
               throw new Error('关键源码证据不足，保留未完成状态');
             const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim();
             const previous = getSqliteDatabase().prepare(`SELECT a.title,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id
-              WHERE t.archived_at IS NOT NULL AND EXISTS(SELECT 1 FROM source_items s WHERE s.article_id=a.id AND s.source_id=?)`).all(study.source_id || '') as Array<{ title: string; questions_json: string }>;
+              WHERE t.status='succeeded' AND t.article_id<>? AND EXISTS(SELECT 1 FROM source_items s WHERE s.article_id=a.id AND s.source_id=?)`).all(articleId, study.source_id || '') as Array<{ title: string; questions_json: string }>;
             const normalized = (value: string) => value.toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '');
             if (!title || previous.some(item => normalized(item.title) === normalized(title)) ||
               evidence.questions.every((question: string) => previous.some(item => (JSON.parse(item.questions_json) as string[]).some(old => normalized(old) === normalized(question)))))
-              throw new Error('本次主题与已归档研读重复，需选择尚未深入的问题');
+              throw new Error('本次主题与已有研读重复，需选择尚未深入的问题');
             db.update(researchTasksTable).set({ questionsJson: JSON.stringify(evidence.questions), evidenceJson: JSON.stringify(evidence.citations) }).where(eq(researchTasksTable.id, taskId)).run();
           }
           for (const artifact of aiRes.artifacts || []) {
