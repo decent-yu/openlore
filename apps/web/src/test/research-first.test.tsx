@@ -94,3 +94,24 @@ it('shows the dedicated code Skill for repository pipelines and keeps article pi
   expect(mixed).toContain('代码调研：github-code-research');
   expect(mixed).toContain('文章调研：deep-research-expert');
 });
+
+it('renders user goals and automatically associated research history without an AI plan editor', async () => {
+  const { RepositoryHistory } = await import('../features/sources/RepositoryHistory.js');
+  const source = SourceSchema.parse({
+    id: 'orca', name: 'Orca', url: 'https://github.com/stablyai/orca', capability_id: 'github_repository',
+    options: { research_focus: '理解执行器和状态恢复' },
+    repository_history: [
+      { id: 'one', article_id: 'one', title: '工作区隔离', status: 'completed', commit: 'a'.repeat(40), reports: [{ id: 'report', group_id: 'task', archived_at: '2026-10-20T00:00:00Z', report_markdown: '# 中文研报', wiki_url: 'https://wiki.example/orca/01-workspace' }] },
+      { id: 'two', article_id: 'two', title: '失败恢复', status: 'failed', error: '关键源码证据不足', commit: 'b'.repeat(40), reports: [] },
+    ],
+  });
+  const html = renderToStaticMarkup(<RepositoryHistory source={source} />);
+  expect(html).toContain('理解执行器和状态恢复');
+  expect(html).toContain('工作区隔离');
+  expect(html).toContain('1 篇已归档');
+  expect(html).toContain('关键源码证据不足');
+  expect(html).toContain('https://wiki.example/orca/01-workspace');
+  expect(html).toContain('中文研报');
+  expect(html).not.toContain('生成计划');
+  expect(html).not.toContain('优先级');
+});
