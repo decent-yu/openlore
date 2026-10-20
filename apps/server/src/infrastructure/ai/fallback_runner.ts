@@ -7,7 +7,7 @@ import type {
   AIExecutionOptions,
   AIValidationIssue,
 } from './adapter.js';
-import { ExecutorConfigSchema, type ExecutorConfig } from '@openlore/contracts';
+import { ExecutorConfigSchema, RepositoryCheckoutSchema, type ExecutorConfig } from '@openlore/contracts';
 import { ExecutorAdapter } from './executor_adapter.js';
 import { getDb } from '../persistence/sqlite/db.js';
 import {
@@ -45,6 +45,7 @@ export class FallbackAIAdapter implements AIAdapter {
     options.onStart?.(traceId);
     const attempts: AIExecutionAttempt[] = [];
     let corrected = false;
+    let repository: AIResult["repository"];
     let repairData:
       { result: unknown; issues: AIValidationIssue[] } | undefined;
     const finish = (result: AIResult): AIResult => {
@@ -145,6 +146,7 @@ export class FallbackAIAdapter implements AIAdapter {
         entry,
         {
           ...input,
+          repository: repository || input.repository,
           session: index === 0 ? input.session : undefined,
           prompt: repairData
             ? `${input.prompt}\n\n${correctionPrompt(repairData)}`
@@ -153,7 +155,15 @@ export class FallbackAIAdapter implements AIAdapter {
         repairData ? 'correction' : 'execute',
         repairData ? attempts.length : undefined,
       );
-      while (result.status === 'success' && options.validateResult) {
+      if (result.repository) {
+        const checked = RepositoryCheckoutSchema.safeParse(result.repository);
+        if (!checked.success || checked.data.url !== input.repository?.url ||
+          ((repository?.commit || input.repository?.commit) && checked.data.commit !== (repository?.commit || input.repository?.commit))) {
+          return finish({ ...result, status: 'failed', error: { code: 'repository_mismatch', message: '执行器返回的源码版本与任务不匹配' } });
+        }
+        repository = checked.data;
+      }
+      while (result.status === 'success'  && options.validateResult) {
         const issues = options.validateResult(result.result);
         if (!issues.length) break;
         const attempt = attempts.at(-1)!;
@@ -201,6 +211,7 @@ export class FallbackAIAdapter implements AIAdapter {
     }
     return finish({
       status: 'failed',
+      repository,
       provider: this.targets[0]?.target.provider || 'none',
       model: input.model || 'unknown',
       durationMs: Date.now() - started,

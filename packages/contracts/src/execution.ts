@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ReasoningEffortSchema } from './model-spec.js';
-import { RepositoryResearchContextSchema, RepositoryCheckoutSchema } from './github-source.js';
+import { RepositoryResearchContextSchema, RepositoryCheckoutSchema, RepositoryTargetSchema } from './github-source.js';
 
 export const ExecutorConfigSchema = z.object({
   reasoning_effort: ReasoningEffortSchema.optional(),
@@ -62,7 +62,7 @@ export const ExecutionInputSchema = z.object({
   skillBundle: SkillBundleSchema.optional(),
   prompt: z.string(),
   material: z.string(),
-  repository: RepositoryCheckoutSchema.optional(),
+  repository: RepositoryTargetSchema.optional(),
   repository_context: RepositoryResearchContextSchema.optional(),
   outputSchema: z.record(z.unknown()).optional(),
   model: z.string().optional(),
@@ -71,6 +71,7 @@ export const ExecutionInputSchema = z.object({
 });
 export type ExecutionInput = z.infer<typeof ExecutionInputSchema>;
 export const ExecutionResultSchema = z.object({
+  repository: RepositoryCheckoutSchema.optional(),
   status: z.enum([
     'success',
     'invalid_output',

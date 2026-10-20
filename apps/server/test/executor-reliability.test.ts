@@ -363,3 +363,16 @@ it('allows Gemini to recover from a transient model rate-limit warning within th
   expect(result.result).toBe('Recovered answer');
   expect(result.diagnostics?.stderr).toContain('429');
 });
+
+it('pins the executor-resolved source version across fallback machines, including a final failure', async () => {
+  const repository = { url: 'https://github.com/example/source', commit: 'a'.repeat(40), branch: 'main' };
+  const backup = vi.fn(async (task) => ({ status: 'failed' as const, provider: 'test', model: 'test', durationMs: 1, error: { code: 'offline', message: 'backup offline' } }));
+  const adapter = new FallbackAIAdapter([
+    { target: target('primary'), adapter: { execute: async () => ({ status: 'failed', repository, provider: 'test', model: 'test', durationMs: 1, error: { code: 'cli_failed', message: 'CLI unavailable after checkout' } }), testConnection: async () => ({ ok: true, message: '' }) } },
+    { target: target('backup'), adapter: { execute: backup, testConnection: async () => ({ ok: true, message: '' }) } },
+  ]);
+  const result = await adapter.execute({ ...input, repository: { url: repository.url } });
+  expect(backup.mock.calls[0][0].repository).toEqual(repository);
+  expect(result.repository).toEqual(repository);
+  expect(result.status).toBe('failed');
+});

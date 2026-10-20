@@ -10,9 +10,10 @@ import {
   type SkillBundle,
   type ExecutionProgress,
   GITHUB_CODE_RESEARCH_SKILL,
+  type RepositoryCheckout,
 } from '@openlore/contracts';
 import { validateRepositoryEvidence } from './repository_evidence.js';
-import { prepareRepositoryWorkspace } from './repository_workspace.js';
+import { prepareRepositoryWorkspace, repositoryMaterial } from './repository_workspace.js';
 import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
   sessionBinding,
@@ -222,6 +223,8 @@ export async function executeInWorkspace(
   let execution: ExecutionResult['execution'];
   let usage: ExecutionResult['usage'];
   let session: ExecutionResult['session'];
+  let repository: RepositoryCheckout | undefined;
+  let material = input.material;
   const root = expand(
     config.workspace_root ||
       path.join(os.homedir(), '.openlore', 'executor-workspace'),
@@ -302,12 +305,12 @@ export async function executeInWorkspace(
       }
     }
     const binding = sessionBinding(request, bundle);
-    if (input.session)
-      verifySession(workspace, input.session, binding, input.material);
     if (input.repository || input.skillId === GITHUB_CODE_RESEARCH_SKILL) {
       if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
-      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(600000, config.timeout_seconds * 1000), signal, Boolean(input.session));
+      repository = await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(600000, config.timeout_seconds * 1000), signal, Boolean(input.session));
+      material = repositoryMaterial(workspace, repository, input.material);
     }
+    if (input.session) verifySession(workspace, input.session, binding, material);
     if (input.repository_context) {
       if (!input.repository) throw new Error('仓库研究上下文缺少源码快照');
       const file = path.join(workspace, 'input', 'research-context.json');
@@ -317,11 +320,11 @@ export async function executeInWorkspace(
       } else fs.writeFileSync(file, text, { mode: 0o600 });
     }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
-    const prompt = input.prompt;
+    const prompt = repository ? input.prompt.replace("本次 Commit：执行时更新默认分支并绑定实际 Commit", `本次 Commit：${repository.commit}`) + `\n执行器已准备源码：input/repository/；实际 Commit：${repository.commit}。以 input/repository.json 为准。` : input.prompt;
     if (!input.session)
       fs.writeFileSync(
         path.join(workspace, 'input', 'article.md'),
-        input.material,
+        material,
       );
     fs.writeFileSync(
       path.join(
@@ -515,6 +518,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
       };
@@ -525,6 +529,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
         error: {
@@ -539,6 +544,7 @@ export async function executeInWorkspace(
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
         error: {
@@ -622,8 +628,8 @@ export async function executeInWorkspace(
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
       throw new Error('代码深研未生成有效的 output/research.md');
-    if (input.repository)
-      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
+    if (repository)
+      await prepareRepositoryWorkspace(repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
       !input.outputSchema &&
       document &&
@@ -631,7 +637,7 @@ export async function executeInWorkspace(
       !fs.lstatSync(document).isSymbolicLink()
     )
       result = fs.readFileSync(document, 'utf8');
-    if (input.repository) validateRepositoryEvidence(input.repository, workspace, String(result));
+    if (repository) validateRepositoryEvidence(repository, workspace, String(result));
     if (!result) throw new Error('AI 返回空结果');
     return {
       status: 'success',
@@ -640,6 +646,7 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      repository,
       session,
       diagnostics,
       usage,
@@ -652,6 +659,7 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      repository,
       session,
       diagnostics,
       error: { code: 'execution_failed', message: error.message },

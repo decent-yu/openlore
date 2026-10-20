@@ -44,15 +44,20 @@ export const RepositoryStudySchema = z.object({
   study_id: z.string().optional(),
   questions: z.array(z.string()).default([]),
 });
-export const RepositoryCheckoutSchema = z.object({
+export const RepositoryTargetSchema = z.object({
   url: z
     .string()
     .refine(
       (value) => Boolean(parseGitHubRepository(value)),
       "请输入 GitHub 仓库根地址",
     ),
-  commit: z.string().regex(/^[a-f0-9]{40}$/, "仓库调研必须固定完整 Commit SHA"),
+  commit: z.string().regex(/^[a-f0-9]{40}$/, "仓库调研必须固定完整 Commit SHA").optional(),
 });
+export const RepositoryCheckoutSchema = RepositoryTargetSchema.extend({
+  commit: z.string().regex(/^[a-f0-9]{40}$/),
+  branch: z.string().optional(),
+});
+export type RepositoryTarget = z.infer<typeof RepositoryTargetSchema>;
 export type RepositoryCheckout = z.infer<typeof RepositoryCheckoutSchema>;
 export type RepositoryStudy = z.infer<typeof RepositoryStudySchema>;
 

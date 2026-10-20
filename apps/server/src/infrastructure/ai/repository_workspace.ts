@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   RepositoryCheckoutSchema,
+  RepositoryTargetSchema,
   parseGitHubRepository,
   type RepositoryCheckout,
+  type RepositoryTarget,
 } from "@openlore/contracts";
 import { repositoryCache } from "./repository_cache.js";
 import { getAppPaths } from "../config/paths.js";
@@ -11,14 +13,15 @@ import type { runProcess } from "./workspace_runner.js";
 
 /** Fetch the complete tracked source tree at a pinned commit before the AI starts. */
 export async function prepareRepositoryWorkspace(
-  repository: RepositoryCheckout,
+  repository: RepositoryTarget,
   workspace: string,
   run: typeof runProcess,
   timeoutMs: number,
   signal?: AbortSignal,
   resume = false,
-): Promise<void> {
-  const checked = RepositoryCheckoutSchema.parse(repository);
+): Promise<RepositoryCheckout> {
+  const checked = RepositoryTargetSchema.parse(repository);
+  let prepared: RepositoryCheckout;
   const url = parseGitHubRepository(checked.url)!.url;
   const target = path.join(workspace, "input", "repository");
   const metadataPath = path.join(workspace, "input", "repository.json");
@@ -59,8 +62,9 @@ export async function prepareRepositoryWorkspace(
     )
       throw new Error("会话源码目录缺失或无效");
     const saved = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-    if (saved.url !== url || saved.commit !== checked.commit)
+    if (saved.url !== url || (checked.commit && saved.commit !== checked.commit))
       throw new Error("会话仓库或 Commit 已变化");
+    prepared = RepositoryCheckoutSchema.parse(saved);
   } else {
     const cached = await repositoryCache(
       url,
@@ -70,6 +74,7 @@ export async function prepareRepositoryWorkspace(
       checked.commit,
       signal,
     );
+    prepared = RepositoryCheckoutSchema.parse({ url, commit: cached.commit, branch: cached.branch });
     const cloned = await run(
       "git",
       [
@@ -97,10 +102,10 @@ export async function prepareRepositoryWorkspace(
       "checkout",
       "--quiet",
       "--detach",
-      checked.commit,
+      prepared.commit,
     ]);
   }
-  if ((await git(["rev-parse", "HEAD"])) !== checked.commit)
+  if ((await git(["rev-parse", "HEAD"])) !== prepared.commit)
     throw new Error("源码 Commit 与调研任务不匹配");
   if (await git(["status", "--porcelain", "--untracked-files=no"]))
     throw new Error("源码工作区已修改，拒绝使用非固定版本的代码");
@@ -109,7 +114,8 @@ export async function prepareRepositoryWorkspace(
     JSON.stringify(
       {
         url,
-        commit: checked.commit,
+        commit: prepared.commit,
+        branch: prepared.branch,
         directory: "input/repository",
         submodules_fetched: false,
         lfs_fetched: false,
@@ -119,4 +125,13 @@ export async function prepareRepositoryWorkspace(
     ),
     { mode: 0o600 },
   );
+  return prepared;
+}
+
+/** Build source context on the execution machine, never on the control service. */
+export function repositoryMaterial(workspace: string, repository: RepositoryCheckout, material: string): string {
+  const root = path.join(workspace, "input/repository");
+  const readme = fs.readdirSync(root).find(file => /^readme(?:\.md|\.rst|\.txt)?$/i.test(file) && fs.lstatSync(path.join(root, file)).isFile());
+  const contents = readme && fs.statSync(path.join(root, readme)).size <= 1024 * 1024 ? fs.readFileSync(path.join(root, readme), "utf8") : "请在源码目录中查阅项目文档。";
+  return `${material}\n\n默认分支：${repository.branch || "固定版本"}\nCommit：${repository.commit}\n完整源码：input/repository/\n\n## README\n${contents}`;
 }

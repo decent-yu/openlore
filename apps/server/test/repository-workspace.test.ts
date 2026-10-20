@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
   ExecutorConfigSchema,
   RepositoryCheckoutSchema,
+  RepositoryTargetSchema,
   GITHUB_CODE_RESEARCH_SKILL,
 } from "@openlore/contracts";
 import {
@@ -257,7 +258,7 @@ it("does not invoke the AI when full source preparation fails or the article Ski
 });
 
 it('requires a written research document instead of accepting a conversational response as a code report', async () => {
-  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockResolvedValue();
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
   const cli = path.join(root, 'no-report-cli');
   fs.writeFileSync(cli, `#!${process.execPath}\nconsole.log(JSON.stringify({response:'I could not research the source.'}));`, {mode: 0o700});
   const result = await executeInWorkspace({...request(), cli_path: cli});
@@ -364,4 +365,21 @@ it('audits valid SVG variants without enforcing dimensions, layout or path synta
   }
   fs.writeFileSync(path.join(folder, 'broken.svg'), '<svg><g></svg>');
   expect((await runProcess('bash', [path.resolve('../../skills/github-code-research/scripts/audit-svg.sh'), folder], root, '', 10000)).code).toBe(1);
+});
+
+
+it('resolves the default branch on the executor, returns its actual Commit and pins a resumed workspace', async () => {
+  const base = request();
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  expect(RepositoryTargetSchema.safeParse({ url: repositoryUrl }).success).toBe(true);
+  const result = await executeInWorkspace({ ...base, input: { ...base.input, repository: { url: repositoryUrl } } });
+  expect(result.status).toBe('success');
+  expect(result.repository?.url).toBe(repositoryUrl);
+  expect(result.repository?.commit).toMatch(/^[a-f0-9]{40}$/);
+  expect(result.repository?.commit).not.toBe(commit);
+  expect(result.execution?.prompt).toContain(result.repository!.commit);
+  const folder = result.execution!.workspace;
+  expect(fs.readFileSync(path.join(folder, 'input/article.md'), 'utf8')).toContain(result.repository!.commit);
+  const resumed = await actualPrepare({ url: repositoryUrl }, folder, mappedRun, 10000, undefined, true);
+  expect(resumed).toEqual(result.repository);
 });
