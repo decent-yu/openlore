@@ -302,7 +302,7 @@ export class ReportService {
     this.sending.add(planId);
     try {
       const preview = await this.preview(planId);
-      if (preview.state !== "ready")
+      if (preview.state === "invalid_config" || (!options.force && preview.state !== "ready"))
         return { ok: false, state: preview.state, message: preview.message };
       const db = getDb();
       const connection = config.notification_connection_id

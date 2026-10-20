@@ -17,6 +17,7 @@ const statuses: Record<string, string> = {
   partial: '部分失败',
   not_run: '今天尚未运行',
   missing: '任务已删除',
+  cancelled: '已取消',
 };
 type Draft = Omit<ReportPlan, 'id'> & { id?: string };
 const empty: Draft = {
@@ -249,7 +250,11 @@ export function ReportsPage() {
             <div>
               <h3 className="font-semibold">{selectedPlan.name} · 汇报预览</h3>
               <p className="mt-1 text-xs text-neutral-500">
-                {preview?.message || '正在加载任务结果…'}
+                {preview
+                  ? preview.state === 'invalid_config'
+                    ? preview.message
+                    : '手动推送当前预览，无需等待全部任务完成，允许重复发送。'
+                  : '正在加载任务结果…'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -257,7 +262,7 @@ export function ReportsPage() {
                 刷新
               </Button>
               <Button
-                disabled={preview?.state !== 'ready' || send.isPending}
+                disabled={!preview || preview.state === 'invalid_config' || send.isPending}
                 onClick={() => send.mutate(selectedPlan.id)}
               >
                 <Send className="mr-1 h-4 w-4" />
