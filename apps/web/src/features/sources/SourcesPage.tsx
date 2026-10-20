@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, ExternalLink, Github, Globe, Pencil, Plus, RefreshCw, Rss, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { parseGitHubRepository } from '@openlore/contracts';
+import { parseGitHubRepository, sourceSupportsTask } from '@openlore/contracts';
 import type { Source } from '@openlore/contracts';
 import { Badge } from '../../components/ui/badge.js';
 import { Button, cn } from '../../components/ui/button.js';
@@ -373,8 +373,8 @@ export function SourcesPage() {
               <div className="px-4 pb-3 text-xs text-neutral-600 space-y-2">
                 {s.capability_id === 'github_repository' ? <>
                   <p>每日一个研读主题 · 不要求仓库有新提交</p>
-                  {(groups || []).filter(group => !group.source_ids.length || group.source_ids.includes(s.id)).map(group => <p key={group.id} className="break-all">{group.name} · {group.schedule_cron}（{group.timezone}）<br />归档：{group.route.base_path}/{parseGitHubRepository(s.url)?.directory}/01-主题.md</p>)}
-                  {!groups?.some(group => !group.source_ids.length || group.source_ids.includes(s.id)) && <Link to="/pipelines" className="underline">关联流水线并设置归档目录</Link>}
+                  {(groups || []).filter(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))).map(group => <p key={group.id} className="break-all">{group.name} · {group.schedule_cron}（{group.timezone}）<br />归档：{group.route.base_path}/{parseGitHubRepository(s.url)?.directory}/01-主题.md</p>)}
+                  {!groups?.some(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))) && <Link to="/pipelines" className="underline">关联流水线并设置归档目录</Link>}
                 </> : <>
                 <p>最近 {s.options.max_age_days} 天{s.options.current_year_only ? ' · 仅今年' : ''} · {s.options.verify_publication_date ? '核验原文日期' : '采用来源日期'} · {s.options.keyword_policy==='assist' ? '关键词辅助' : '关键词严格'}</p>
                 <p>准入通过 {s.quality_stats?.ready || 0} · 待补全文 {s.quality_stats?.pending || 0} · 待复核 {s.quality_stats?.review || 0} · 超期拒收 {s.quality_stats?.history || 0} · 规则拒收 {s.quality_stats?.excluded || 0} · 失败丢弃 {s.quality_stats?.failed || 0}</p>

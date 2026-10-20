@@ -30,7 +30,7 @@ describe('OpenLore Server Core Tests', () => {
       const deepResearch = skills.find((s) => s.id === 'deep-research-expert');
       expect(deepResearch).toBeDefined();
       expect(deepResearch?.type).toBe('research');
-      expect(deepResearch?.system_prompt).toContain('不重新挑选文章');
+      expect(deepResearch?.system_prompt).toContain('input/article.md');
     });
 
     it('retrieves specific skill by ID and falls back safely', async () => {
@@ -69,7 +69,7 @@ describe('OpenLore Server Core Tests', () => {
 
   describe('Groups Routing and Path Normalization', () => {
     it('normalizes leading and trailing slashes', () => {
-      expect(normalizeRoutePath('/docs/agent-leaning/')).toBe('docs/agent-leaning');
+      expect(normalizeRoutePath('/docs/agent-learning/')).toBe('docs/agent-learning');
       expect(normalizeRoutePath('docs/backend-perf')).toBe('docs/backend-perf');
     });
 

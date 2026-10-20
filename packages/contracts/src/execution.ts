@@ -51,6 +51,7 @@ export const ExecutionInputSchema = z.object({
     'assess',
     'select',
     'organize',
+    'translate',
     'research_plan',
     'research_report',
     'digest',

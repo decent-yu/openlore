@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, afterEach, expect, it, vi } from "vitest";
+import * as prompts from "@openlore/contracts";
 import {
   initDatabase,
   getSqliteDatabase,
@@ -36,6 +37,10 @@ const execute = vi.fn(async (input: any) =>
           summary: "Assessment summary",
           evidence_refs: [body],
         },
+      }
+    : input.taskType === 'translate' ? {
+        status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
+        result: {markdown: input.material.replaceAll(body, '具备详细执行轨迹和基准证据、可复现的智能体架构。')},
       }
     : input.taskType === 'select' ? {
         status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
@@ -101,6 +106,11 @@ beforeEach(async () => {
       issues: [],
     }),
   );
+  // The mock selects the first candidate; avoid random UUID ordering for same-ms inserts.
+  ids.forEach((id, index) =>
+    db.prepare("UPDATE articles SET created_at=? WHERE id=?")
+      .run(new Date(Date.UTC(2026, 9, 20, 0, 0, index)).toISOString(), id),
+  );
   await articleReviewsService.processPending();
 });
 afterEach(() => vi.restoreAllMocks());
@@ -110,6 +120,15 @@ async function finish(scheduler: AppScheduler, id: string) {
   );
   return (await scheduler.getRun(id))!;
 }
+
+it("uses the same Unicode slug for research and article processing", async () => {
+  getSqliteDatabase()
+    .prepare("UPDATE articles SET title=? WHERE id=?")
+    .run("智能体评测：方法与实践", ids[0]);
+  const task = await researchService.runResearchOnArticle("task", ids[0]);
+  expect(task.status).toBe("succeeded");
+  expect(task.article_slug).toBe("智能体评测-方法与实践");
+});
 
 it("selects from shared reviews across all old and new content and only excludes archived research", async () => {
   const scheduler = new AppScheduler();
@@ -122,6 +141,24 @@ it("selects from shared reviews across all old and new content and only excludes
   expect(articleResearch.skillId).toBe('deep-research-expert');
   expect(articleResearch.repository).toBeUndefined();
   expect(first.output.entries.map((e) => e.article_id)).toEqual([ids[0]]);
+  const firstUpload = vi.mocked(GitHubClient.syncFiles).mock.calls[0][0];
+  const researchPath = firstUpload.files.find((file) =>
+    /^docs\/agent\/articles\/\d{8}-old-best\/research\.md$/.test(file.path),
+  )!.path;
+  const directory = researchPath.replace(/\/research\.md$/, "");
+  expect(firstUpload.files.map((file) => file.path)).toEqual(
+    expect.arrayContaining([
+      `${directory}/README.md`,
+      `${directory}/article.md`,
+      `${directory}/article-zh-CN.md`,
+    ]),
+  );
+  expect(firstUpload.files.some((file) =>
+    /^docs\/agent\/batches\/\d{8}-01\.md$/.test(file.path),
+  )).toBe(true);
+  expect(first.output.entries[0].document_url).toBe(
+    `https://github.com/example/repo/blob/main/${researchPath}`,
+  );
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "assess"),
   ).toHaveLength(2);
@@ -136,6 +173,16 @@ it("selects from shared reviews across all old and new content and only excludes
     (await scheduler.triggerGroupRun("task")).id,
   );
   expect(second.output.entries.map((e) => e.article_id)).toEqual([ids[1]]);
+  const secondUpload = vi.mocked(GitHubClient.syncFiles).mock.calls[1][0];
+  const index = Buffer.from(
+    secondUpload.files.find((file) => file.path === "docs/agent/README.md")!.content,
+    "base64",
+  ).toString("utf8");
+  expect(index).toContain("最近收录（2 篇）");
+  expect(index).toContain("最近更新");
+  expect(index).toContain(`${directory.slice("docs/agent/".length)}/article-zh-CN.md`);
+  expect(index).toContain("Old best");
+  expect(index).toContain("New article");
   expect(
     execute.mock.calls.filter(([input]) => input.taskType === "assess"),
   ).toHaveLength(2);
@@ -183,6 +230,39 @@ it("releases claims on failed publication, keeps the generated report and retrie
   );
 });
 
+it("reuses an unarchived report only while its complete prompt and skill revision still match", async () => {
+  const first = await researchService.runResearchOnArticle("task", ids[0]);
+  const retry = await researchService.runResearchOnArticle("task", ids[0]);
+  expect(first.status).toBe("succeeded");
+  expect(retry.id).toBe(first.id);
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "research_report"),
+  ).toHaveLength(1);
+
+  // Simulate updated shared writing rules with the same executor-local Skill.
+  const buildPrompt = prompts.buildResearchPrompt;
+  vi.spyOn(prompts, "buildResearchPrompt").mockImplementation(
+    (...args) => `${buildPrompt(...args)}\n补充要求：先解释读者必需的背景。`,
+  );
+  const updated = await researchService.runResearchOnArticle("task", ids[0]);
+  expect(updated.status).toBe("succeeded");
+  expect(updated.id).not.toBe(first.id);
+  const researchCalls = execute.mock.calls.filter(
+    ([input]) => input.taskType === "research_report",
+  );
+  expect(researchCalls).toHaveLength(2);
+  expect(researchCalls[1][0].skillRevision).toBe(
+    researchCalls[0][0].skillRevision,
+  );
+  expect(researchCalls[1][0].prompt).not.toBe(researchCalls[0][0].prompt);
+  expect(
+    (await researchService.runResearchOnArticle("task", ids[0])).id,
+  ).toBe(updated.id);
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "research_report"),
+  ).toHaveLength(2);
+});
+
 it("holds a global article claim across pipelines until publication has finished", async () => {
   const first = await processingService.runProcessingForGroup(
     (await groupsService.getGroup("task"))!,
@@ -220,5 +300,10 @@ it("supports direct research from an unarchived pool article and publishes befor
     vi
       .mocked(GitHubClient.syncFiles)
       .mock.calls[0][0].files.some((f) => f.path.endsWith("/research.md")),
+  ).toBe(true);
+  expect(
+    vi.mocked(GitHubClient.syncFiles).mock.calls[0][0].files.some((f) =>
+      f.path.endsWith("/article-zh-CN.md"),
+    ),
   ).toBe(true);
 });

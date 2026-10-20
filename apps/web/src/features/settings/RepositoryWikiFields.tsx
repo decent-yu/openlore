@@ -18,7 +18,7 @@ export function RepositoryWikiFields({
     wiki_root_path: value.wikiRootPath,
   });
   const wikiExamplePath =
-    `${value.wikiRootPath.trim().replace(/^\/+|\/+$/g, "")}/agent-leaning/20261015-02/01-deno-is-joining-cloudflare/research.md`.replace(
+    `${value.wikiRootPath.trim().replace(/^\/+|\/+$/g, "")}/agent-learning/articles/20261015-deno-is-joining-cloudflare/research.md`.replace(
       /^\//,
       "",
     );

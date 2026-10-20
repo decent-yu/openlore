@@ -88,7 +88,7 @@ export class FeedService {
           error_message: current.errorMessage,
         }
       : undefined;
-    const pool = listPoolCandidates(group.source_ids);
+    const pool = listPoolCandidates(group.source_ids, group.task_type);
     response.stats.pool_count = pool.length;
     response.stats.pending_count = pool.filter(
       (item) => !item.processed && !item.busy,
@@ -119,6 +119,15 @@ export class FeedService {
       dated.map((task) => task.article_id),
       group.id,
     );
+    const summaries = new Map<string, string>();
+    for (const run of runs.filter((run) => run.status === "succeeded")) {
+      const output = JSON.parse(run.outputJson || "{}") as {
+        entries?: Array<{ article_id: string; summary: string }>;
+      };
+      for (const entry of output.entries || [])
+        if (!summaries.has(entry.article_id))
+          summaries.set(entry.article_id, entry.summary);
+    }
     for (const task of dated) {
       const article = getDb()
         .select()
@@ -143,7 +152,7 @@ export class FeedService {
           "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
         )
         .get(article.id) as { result_json: string } | undefined;
-      let summary = "";
+      let summary = summaries.get(article.id) || "";
       if (assessment) {
         try {
           summary = JSON.parse(assessment.result_json).summary || "";
@@ -151,6 +160,7 @@ export class FeedService {
       }
       response.deep_articles.push({
         id: article.id,
+        task_type: group.task_type,
         title: article.title || "Untitled",
         slug: task.article_slug,
         author: article.author,

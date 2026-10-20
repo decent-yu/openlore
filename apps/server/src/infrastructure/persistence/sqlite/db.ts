@@ -126,6 +126,7 @@ export function initDatabase(dbPath?: string): void {
     );
 
     CREATE TABLE IF NOT EXISTS groups (
+      task_type TEXT NOT NULL DEFAULT 'article_research',
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
@@ -358,6 +359,7 @@ export function initDatabase(dbPath?: string): void {
   migrateStageSkillsAndReports(sqlite);
   migrateCollectionQuality(sqlite);
   const pipelineColumns = sqlite.pragma('table_info(groups)') as Array<{name: string}>;
+  if (!pipelineColumns.some(column => column.name === 'task_type')) sqlite.exec("ALTER TABLE groups ADD COLUMN task_type TEXT NOT NULL DEFAULT 'article_research'");
   for (const column of ['max_selected', 'enable_research']) {
     if (pipelineColumns.some(item => item.name === column)) sqlite.exec(`ALTER TABLE groups DROP COLUMN ${column}`);
   }

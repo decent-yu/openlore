@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ArticleReviewSchema } from './article-review.js';
 import { ExecutionResultSchema } from './execution.js';
 import { GroupRouteSchema } from './delivery.js';
+import { PipelineTaskTypeSchema } from './pipelines.js';
 
 export const SourceCapabilitySchema = z.enum([
   'web_feed',
@@ -44,6 +45,7 @@ export const SourceSchema = z.object({
 export type Source = z.infer<typeof SourceSchema>;
 
 export const GroupSchema = z.object({
+  task_type: PipelineTaskTypeSchema.default('article_research'),
   id: z.string(),
   name: z.string(),
   description: z.string().default(''),
@@ -77,6 +79,7 @@ export const SkillSchema = z.object({
 export type Skill = z.infer<typeof SkillSchema>;
 
 export const DailyFeedArticleSchema = z.object({
+  task_type: PipelineTaskTypeSchema.default('article_research'),
   wiki_url: z.string().optional(),
   id: z.string(),
   title: z.string(),
@@ -149,6 +152,7 @@ export const RunOutputSchema = z.object({
 export type RunOutput = z.infer<typeof RunOutputSchema>;
 
 export const RunSchema = z.object({
+  task_type: PipelineTaskTypeSchema.default('article_research'),
   id: z.string(),
   group_id: z.string(),
   group_name: z.string(),
@@ -229,6 +233,7 @@ export type ResearchTask = z.infer<typeof ResearchTaskSchema>;
 export const PoolStatusSchema = z.enum(['ready', 'pending', 'review', 'history', 'excluded', 'failed']);
 export type PoolStatus = z.infer<typeof PoolStatusSchema>;
 export const LibraryArticleSchema = z.object({
+  task_type: PipelineTaskTypeSchema.default('article_research'),
   review: ArticleReviewSchema.nullable().default(null),
   wiki_url: z.string().optional(),
   date_evidence: z.record(z.unknown()).default({}),

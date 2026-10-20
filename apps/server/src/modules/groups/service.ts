@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import { validateCron } from '../../infrastructure/time/cron.js';
 import { eq } from 'drizzle-orm';
 import type { Group } from '@openlore/contracts';
-import { GITHUB_CODE_RESEARCH_SKILL } from '@openlore/contracts';
-import { getDb } from '../../infrastructure/persistence/sqlite/db.js';
+import { GITHUB_CODE_RESEARCH_SKILL, PipelineTaskTypeSchema, sourceSupportsTask, type PipelineTaskType } from '@openlore/contracts';
+import { getDb, getSqliteDatabase } from '../../infrastructure/persistence/sqlite/db.js';
 import {
   groupsTable,
   groupSourcesTable,
@@ -31,6 +31,7 @@ export class GroupsService {
         .all();
 
       groups.push({
+        task_type: PipelineTaskTypeSchema.parse(r.taskType),
         id: r.id,
         name: r.name,
         description: r.description,
@@ -68,6 +69,7 @@ export class GroupsService {
       .all();
 
     return {
+      task_type: PipelineTaskTypeSchema.parse(r.taskType),
       id: r.id,
       name: r.name,
       description: r.description,
@@ -119,6 +121,7 @@ export class GroupsService {
   }
 
   async saveGroup(data: {
+    task_type?: PipelineTaskType;
     id?: string;
     name: string;
     description?: string;
@@ -135,7 +138,14 @@ export class GroupsService {
     research_skill_id?: string;
     ai_profile_id?: string | null;
   }): Promise<Group> {
-    if (data.research_skill_id === GITHUB_CODE_RESEARCH_SKILL) throw new Error('文章调研 Skill 不能使用 github-code-research；GitHub 来源自动使用独立代码调研 Skill');
+    const previous = data.id ? await this.getGroup(data.id) : null;
+    const taskType = PipelineTaskTypeSchema.parse(data.task_type ?? previous?.task_type ?? 'article_research');
+    if (previous && previous.task_type !== taskType) throw Object.assign(new Error('任务类型不能修改，请新建流水线'), {statusCode:400});
+    if (taskType === 'article_research' && data.research_skill_id === GITHUB_CODE_RESEARCH_SKILL) throw new Error('文章调研 Skill 不能使用 github-code-research；请使用仓库研读任务');
+    for (const sourceId of data.source_ids ?? previous?.source_ids ?? []) {
+      const source = getSqliteDatabase().prepare('SELECT capability_id,name FROM sources WHERE id=?').get(sourceId) as {capability_id:string;name:string}|undefined;
+      if (!source || !sourceSupportsTask(source.capability_id, taskType)) throw Object.assign(new Error(`来源「${source?.name || sourceId}」不适用于该任务类型`), {statusCode:400});
+    }
     validateCron(data.schedule_cron || '0 8 * * *');
     new Intl.DateTimeFormat('en', { timeZone: data.timezone || 'Asia/Shanghai' });
     const id = data.id || `group_${crypto.randomUUID().slice(0, 8)}`;
@@ -147,6 +157,7 @@ export class GroupsService {
     const now = new Date().toISOString();
 
     const record = {
+      taskType,
       id,
       name: data.name,
       description: data.description || '',
@@ -159,7 +170,7 @@ export class GroupsService {
       deepAnalysisCount: data.deep_analysis_count !== undefined ? data.deep_analysis_count : 3,
       researchInstructions: data.research_instructions || '',
       selectionSkillId: data.selection_skill_id || 'article-selector',
-      researchSkillId: data.research_skill_id || 'deep-research-expert',
+      researchSkillId: taskType === 'repository_research' ? GITHUB_CODE_RESEARCH_SKILL : data.research_skill_id || 'deep-research-expert',
       aiProfileId: data.ai_profile_id || null,
       updatedAt: now,
     };

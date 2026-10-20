@@ -4,7 +4,10 @@
 
 示例仓库目录使用 `docs/agent-learning`，真实路径由流水线 `base_path` 配置。
 
-- [2026-10-15 · 第 01 批文章与调研](20261015-01/README.md)
+- [Agent 工具调用的可恢复执行](articles/20261015-agent-recovery/README.md)
+- [上下文证据的结构化整理](articles/20261015-context-evidence/README.md)
+- [2026-10-15 · 第 01 批文章与调研](batches/20261015-01.md)
 - [独立汇报阅读样例](report-example.md)：实际汇报由汇报方案生成，不是流水线的批次归档文件。
+- [通俗表达对照](plain-language.md)：同一份虚拟材料的改写前后，以及阅读验收要点。
 
 安装配置请按[用户指引](../../../guides/README.md)，实际交付结构见[GitHub 归档](../05-git-delivery-and-archive.md)。旧版整工作区 JSON 与伪运行 manifest 已移除，避免误认为可导入或可恢复的真实数据。

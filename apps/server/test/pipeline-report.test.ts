@@ -465,6 +465,13 @@ describe('Task execution and independent multi-task reports', () => {
   });
 
   it('archives research with the articles in one GitHub batch and never sends task notifications', async () => {
+    vi.spyOn(aiAdapters, 'getAIAdapterWithFallback').mockReturnValue({
+      execute: async (input) => ({
+        status: 'success', provider: 'mock', model: 'mock', durationMs: 1,
+        result: {markdown: input.material.replaceAll('Article body', '文章正文')},
+      }),
+      testConnection: async () => ({ok: true, message: 'mock'}),
+    });
     const db = getSqliteDatabase();
     db.prepare(
       "INSERT INTO repository_connections (id, name, revision, owner, repo, default_branch, credential_ref, state) VALUES ('repo', 'Repo', 'v1', 'owner', 'knowledge', 'main', 'secret', 'ready')",
@@ -500,16 +507,16 @@ describe('Task execution and independent multi-task reports', () => {
     expect(sync).toHaveBeenCalledTimes(1);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/01-article-1/research.md'),
+        /\/articles\/\d{8}-article-1\/research\.md$/.test(file.path),
       ),
     ).toBe(true);
     expect(
       delivery.bundle.files.some((file) =>
-        file.path.endsWith('/02-article-2/research.md'),
+        /\/articles\/\d{8}-article-2\/research\.md$/.test(file.path),
       ),
     ).toBe(false);
     const secondArticle = delivery.bundle.files.find((file) =>
-      file.path.endsWith('/02-article-2/article.md'),
+      /\/articles\/\d{8}-article-2\/article\.md$/.test(file.path),
     )!;
     expect(
       Buffer.from(secondArticle.content_bytes!, 'base64').toString(),

@@ -1,5 +1,14 @@
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { parseGitHubRepository } from "@openlore/contracts";
+import * as prompts from "@openlore/contracts";
+import { processingService } from "../src/modules/processing/service.js";
+import { createServer } from "../src/http/server.js";
+import { reportService } from "../src/modules/reports/service.js";
+import { GenericWebhookSender } from "../src/infrastructure/notifications/generic_webhook/sender.js";
+import {
+  parseGitHubRepository,
+  RunOutputSchema,
+  DailyFeedArticleSchema,
+} from "@openlore/contracts";
 import {
   initDatabase,
   getSqliteDatabase,
@@ -32,6 +41,7 @@ beforeEach(async () => {
     "source_items",
     "article_revisions",
     "articles",
+    "group_sources",
     "group_sources",
     "groups",
     "deliveries",
@@ -77,7 +87,10 @@ beforeEach(async () => {
   vi.spyOn(SafeHttpClient, "fetch").mockImplementation(async (url) => {
     let body: any;
     if (/\/commits\//.test(url))
-      body = { sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", commit: { tree: { sha: "tree" } } };
+      body = {
+        sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        commit: { tree: { sha: "tree" } },
+      };
     else if (/\/git\/trees\//.test(url))
       body = {
         tree: [
@@ -124,6 +137,7 @@ beforeEach(async () => {
   });
   await groupsService.saveGroup({
     id: "study",
+    task_type: "repository_research",
     name: "仓库研读",
     repository_connection_id: "vault",
     base_path: "docs/xxx",
@@ -188,7 +202,9 @@ it("collects pinned code once per local day, rotates files without a new commit,
   ).toEqual({ n: 0 });
   const first = await collectionService.discoverSource("orca");
   expect(first.stats.items_new).toBe(1);
-  expect(first.items[0].body.value).toContain("/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/");
+  expect(first.items[0].body.value).toContain(
+    "/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/",
+  );
   expect(first.items[0].date_evidence).toHaveProperty(
     "repository_study.commit",
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -218,10 +234,15 @@ it("runs directly through research and archives numbered topics, source material
     "research_report",
   ]);
   expect(execute.mock.calls[0][0].prompt).toContain("执行器与工作区隔离");
-  expect(execute.mock.calls[0][0].skillId).toBe('github-code-research');
-  expect(execute.mock.calls[0][0].repository).toEqual({url: 'https://github.com/stablyai/orca', commit: 'a'.repeat(40)});
-  expect(execute.mock.calls[0][0].prompt).not.toContain('deep-research-expert');
-  expect(first.ai_logs.find(log => log.task_type === 'research')?.skill_id).toBe('github-code-research');
+  expect(execute.mock.calls[0][0].skillId).toBe("github-code-research");
+  expect(execute.mock.calls[0][0].repository).toEqual({
+    url: "https://github.com/stablyai/orca",
+    commit: "a".repeat(40),
+  });
+  expect(execute.mock.calls[0][0].prompt).not.toContain("deep-research-expert");
+  expect(
+    first.ai_logs.find((log) => log.task_type === "research")?.skill_id,
+  ).toBe("github-code-research");
   const files = vi.mocked(GitHubClient.syncFiles).mock.calls[0][0].files;
   const research = files.find(
     (file) => file.path === "docs/xxx/stablyai@orca/01-核心执行架构.md",
@@ -273,8 +294,8 @@ it("runs directly through research and archives numbered topics, source material
       .content,
     "base64",
   ).toString();
-  expect(index).toContain("01-核心执行架构.md");
-  expect(index).toContain("02-工作区隔离机制.md");
+  expect(decodeURIComponent(index)).toContain("01-核心执行架构.md");
+  expect(decodeURIComponent(index)).toContain("02-工作区隔离机制.md");
   const manifest = JSON.parse(
     Buffer.from(
       nextFiles.find(
@@ -332,6 +353,7 @@ it("keeps each repository on an independent archive sequence", async () => {
   });
   await groupsService.saveGroup({
     id: "study",
+    task_type: "repository_research",
     name: "仓库研读",
     repository_connection_id: "vault",
     base_path: "docs/xxx",
@@ -398,22 +420,328 @@ it("leaves the day retryable when GitHub fails and does not generate placeholder
   expect((await run()).status).toBe("succeeded");
 });
 
-it('does not fall back to the article Skill when the code research Skill is missing', async () => {
-  vi.mocked(skillsService.getSkill).mockImplementation(async id => id === 'github-code-research' ? null : ({id,name:id,type:'selection',description:'',tags:[],file_path:'',system_prompt:''}));
+it("does not fall back to the article Skill when the code research Skill is missing", async () => {
+  vi.mocked(skillsService.getSkill).mockImplementation(async (id) =>
+    id === "github-code-research"
+      ? null
+      : {
+          id,
+          name: id,
+          type: "selection",
+          description: "",
+          tags: [],
+          file_path: "",
+          system_prompt: "",
+        },
+  );
   const result = await run();
-  expect(result.status).toBe('failed');
+  expect(result.status).toBe("failed");
   expect(execute).not.toHaveBeenCalled();
-  expect(skillsService.getSkill).not.toHaveBeenCalledWith('deep-research-expert', expect.anything());
+  expect(skillsService.getSkill).not.toHaveBeenCalledWith(
+    "deep-research-expert",
+    expect.anything(),
+  );
 });
 
-it('keeps code research reuse independent of article Skill changes', async () => {
-  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({status:'failed',changedPaths:[],errorMessage:'offline'});
-  expect((await run()).status).toBe('failed');
-  getSqliteDatabase().prepare("UPDATE groups SET research_skill_id='another-article-skill' WHERE id='study'").run();
-  expect((await run()).status).toBe('succeeded');
+it("keeps code research reuse independent of article Skill changes", async () => {
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({
+    status: "failed",
+    changedPaths: [],
+    errorMessage: "offline",
+  });
+  expect((await run()).status).toBe("failed");
+  getSqliteDatabase()
+    .prepare(
+      "UPDATE groups SET research_skill_id='another-article-skill' WHERE id='study'",
+    )
+    .run();
+  expect((await run()).status).toBe("succeeded");
   expect(execute).toHaveBeenCalledTimes(1);
 });
 
-it('rejects assigning the code Skill to the article research setting', async () => {
-  await expect(groupsService.saveGroup({id:'study',name:'Invalid mix',repository_connection_id:'vault',base_path:'docs/xxx',research_skill_id:'github-code-research'})).rejects.toThrow('文章调研 Skill 不能使用');
+it("rejects assigning the code Skill to the article research setting", async () => {
+  await expect(
+    groupsService.saveGroup({
+      id: "invalid",
+      name: "Invalid mix",
+      repository_connection_id: "vault",
+      base_path: "docs/invalid",
+      task_type: "article_research",
+      research_skill_id: "github-code-research",
+    }),
+  ).rejects.toThrow("文章调研 Skill 不能使用");
+});
+
+it("validates task types and prevents cross-type sources and manual research", async () => {
+  await sourcesService.saveSource({
+    id: "rss",
+    name: "RSS",
+    url: "https://example.com/rss",
+  });
+  await expect(
+    groupsService.saveGroup({
+      name: "Mixed",
+      repository_connection_id: "vault",
+      base_path: "docs/mixed",
+      task_type: "repository_research",
+      source_ids: ["orca", "rss"],
+    }),
+  ).rejects.toThrow("不适用于");
+  await expect(
+    groupsService.saveGroup({
+      name: "Wrong",
+      repository_connection_id: "vault",
+      base_path: "docs/wrong",
+      task_type: "article_research",
+      source_ids: ["orca"],
+    }),
+  ).rejects.toThrow("不适用于");
+  await expect(
+    groupsService.saveGroup({
+      id: "study",
+      name: "Changed",
+      repository_connection_id: "vault",
+      base_path: "docs/xxx",
+      task_type: "article_research",
+    }),
+  ).rejects.toThrow("任务类型不能修改");
+  await expect(
+    groupsService.saveGroup({
+      name: "Unknown",
+      repository_connection_id: "vault",
+      base_path: "docs/unknown",
+      task_type: "unknown" as any,
+    }),
+  ).rejects.toThrow();
+  const articlePipeline = await groupsService.saveGroup({
+    id: "articles",
+    name: "文章调研",
+    repository_connection_id: "vault",
+    base_path: "docs/articles",
+    source_ids: ["rss"],
+  });
+  await collectionService.discoverSource("orca");
+  const repositoryItem = getSqliteDatabase()
+    .prepare("SELECT id FROM articles")
+    .get() as { id: string };
+  await expect(
+    feedService.researchArticle(articlePipeline.id, repositoryItem.id),
+  ).rejects.toThrow("不属于当前任务类型");
+  const saved = await groupsService.saveGroup({
+    id: "study",
+    name: "Renamed",
+    repository_connection_id: "vault",
+    base_path: "docs/xxx",
+  });
+  expect(saved.task_type).toBe("repository_research");
+  expect(saved.research_skill_id).toBe("github-code-research");
+});
+
+it("invalidates code reports when the actual code prompt changes while keeping the Skill revision fixed", async () => {
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValue({
+    status: "failed",
+    changedPaths: [],
+    errorMessage: "offline",
+  });
+  expect((await run()).status).toBe("failed");
+  const previous = prompts.buildCodeResearchPrompt;
+  vi.spyOn(prompts, "buildCodeResearchPrompt").mockImplementation(
+    (instructions) => previous(instructions) + "\n用具体例子解释状态恢复。",
+  );
+  expect((await run()).status).toBe("failed");
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute.mock.calls[1][0].prompt).not.toBe(
+    execute.mock.calls[0][0].prompt,
+  );
+});
+
+it("feeds both task types into the same daily feed, report preview and webhook payload", async () => {
+  const db = getSqliteDatabase();
+  await sourcesService.saveSource({
+    id: "rss",
+    name: "RSS",
+    url: "https://example.com/rss",
+  });
+  await groupsService.saveGroup({
+    id: "articles",
+    name: "文章调研",
+    repository_connection_id: "vault",
+    base_path: "docs/articles",
+    source_ids: ["rss"],
+    deep_analysis_count: 1,
+  });
+  const articleId = collectionService.persistContentItem({
+    source_id: "rss",
+    source_item_id: "rss:post",
+    title: "Readable article",
+    canonical_url: "https://example.com/post",
+    body: {
+      value:
+        "An implementation with a concrete queue and recovery mechanism, supported by source code and detailed tests.",
+      format: "markdown",
+      completeness: "full",
+    },
+    attachments: [],
+    fetched_at: new Date().toISOString(),
+    fetch_method: "test",
+    issues: [],
+  });
+  db.prepare(
+    "UPDATE article_reviews SET status='succeeded',result_json=? WHERE article_id=?",
+  ).run(
+    JSON.stringify({
+      quality: 90,
+      positioning: "Engineering",
+      summary: "Explains a queue",
+      reason: "Source evidence",
+      tags: ["systems"],
+      evidence_refs: ["concrete queue and recovery mechanism"],
+    }),
+    articleId,
+  );
+  execute.mockImplementation(async (input) => ({
+    status: "success",
+    provider: "mock",
+    model: "mock",
+    result:
+      input.taskType === "select"
+        ? {
+            selected: [{ article_id: articleId, reason: "Concrete mechanism" }],
+          }
+        : input.taskType === "translate"
+          ? { markdown: input.material }
+          : "# 中文研报\n\n解释源码实现与适用条件。",
+  }));
+  const repositoryRun = await run();
+  const scheduler = new AppScheduler();
+  const started = await scheduler.triggerGroupRun("articles");
+  await vi.waitFor(async () =>
+    expect((await scheduler.getRun(started.id))?.status).not.toBe("running"),
+  );
+  const articleRun = (await scheduler.getRun(started.id))!;
+  expect(repositoryRun.status).toBe("succeeded");
+  expect(articleRun.status).toBe("succeeded");
+  for (const output of [repositoryRun.output, articleRun.output]) {
+    expect(RunOutputSchema.parse(output).entries).toHaveLength(1);
+    expect(output.entries[0].document_url).toBeTruthy();
+  }
+  for (const id of ["study", "articles"]) {
+    const feed = await feedService.getDailyFeed(id);
+    expect(feed.deep_articles).toHaveLength(1);
+    expect(feed.deep_articles[0].summary).toBeTruthy();
+    expect(
+      DailyFeedArticleSchema.parse(feed.deep_articles[0]).research?.wiki_url,
+    ).toBeTruthy();
+  }
+  expect(
+    execute.mock.calls.filter(([input]) => input.taskType === "translate"),
+  ).toHaveLength(1);
+  const uploads = vi
+    .mocked(GitHubClient.syncFiles)
+    .mock.calls.map(([input]) => input.files.map((file) => file.path));
+  expect(uploads[0].some((file) => file.endsWith("article-zh-CN.md"))).toBe(
+    false,
+  );
+  expect(uploads[1].some((file) => file.endsWith("article-zh-CN.md"))).toBe(
+    true,
+  );
+  db.prepare(
+    "INSERT INTO notification_connections(id,name,revision,url_secret_ref) VALUES ('notify','Combined','v1','webhook')",
+  ).run();
+  const plan = await reportService.savePlan({
+    id: "combined",
+    name: "统一日报",
+    enabled: true,
+    pipeline_ids: ["study", "articles"],
+    notification_connection_id: "notify",
+  });
+  const preview = await reportService.preview(plan.id);
+  expect(preview.state).toBe("ready");
+  expect(preview.articles).toHaveLength(2);
+  expect(
+    preview.articles.every((article) =>
+      article.url?.startsWith("https://wiki.example/vault/"),
+    ),
+  ).toBe(true);
+  const send = vi
+    .spyOn(GenericWebhookSender, "send")
+    .mockResolvedValue({ status: "sent" });
+  await reportService.send(plan.id);
+  expect(send).toHaveBeenCalledOnce();
+  expect(send.mock.calls[0][1].articles).toHaveLength(2);
+});
+
+it("keeps empty source selections scoped to the declared task type", async () => {
+  await collectionService.discoverSource("orca");
+  collectionService.persistContentItem({
+    source_id: "article-source",
+    source_item_id: "article-scope",
+    title: "Article",
+    canonical_url: "https://example.com/scope",
+    body: {
+      value:
+        "A concrete article about queue processing and recovery, with readable implementation details and test evidence.",
+      format: "markdown",
+      completeness: "full",
+    },
+    attachments: [],
+    fetched_at: new Date().toISOString(),
+    fetch_method: "test",
+    issues: [],
+  });
+  const article = await groupsService.saveGroup({
+    name: "All articles",
+    repository_connection_id: "vault",
+    base_path: "docs/all-articles",
+    deep_analysis_count: 0,
+  });
+  const repository = await groupsService.saveGroup({
+    name: "All repositories",
+    task_type: "repository_research",
+    repository_connection_id: "vault",
+    base_path: "docs/all-repositories",
+    deep_analysis_count: 0,
+  });
+  expect(
+    (await processingService.runProcessingForGroup(article, "article-scope"))
+      .counts.observed,
+  ).toBe(1);
+  expect(
+    (
+      await processingService.runProcessingForGroup(
+        repository,
+        "repository-scope",
+      )
+    ).counts.observed,
+  ).toBe(1);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it("exposes task types consistently through the API and rejects incompatible source bindings", async () => {
+  const app = await createServer();
+  try {
+    const group = (
+      await app.inject({ method: "GET", url: "/api/v1/pipelines/study" })
+    ).json();
+    expect(group.task_type).toBe("repository_research");
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/pipelines",
+      payload: {
+        name: "Mixed",
+        repository_connection_id: "vault",
+        base_path: "docs/api-invalid",
+        task_type: "article_research",
+        source_ids: ["orca"],
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    await collectionService.discoverSource("orca");
+    const library = (
+      await app.inject({ method: "GET", url: "/api/v1/library" })
+    ).json();
+    expect(library.items[0].task_type).toBe("repository_research");
+  } finally {
+    await app.close();
+  }
 });

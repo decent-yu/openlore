@@ -1,6 +1,6 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, repositoryStudy } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
@@ -18,6 +18,9 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { groupsService } from "../groups/service.js";
+import { listPoolCandidates } from "../processing/candidates.js";
+import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
   async listResearchTasks(groupId?: string): Promise<ResearchTask[]> {
@@ -43,12 +46,7 @@ export class ResearchService {
         group_id: r.groupId,
         article_id: r.articleId,
         article_title: art?.title || "Untitled Article",
-        article_slug: (art?.title || "article")
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .slice(0, 40),
+        article_slug: articleSlug(art?.title || "article"),
         status: r.status as any,
         questions: JSON.parse(r.questionsJson || "[]"),
         evidence: JSON.parse(r.evidenceJson || "[]"),
@@ -75,6 +73,9 @@ export class ResearchService {
     runId?: string,
     claimOwner?: string,
   ): Promise<ResearchTask> {
+    const pipeline = await groupsService.getGroup(groupId);
+    if (!pipeline || !listPoolCandidates(pipeline.source_ids, pipeline.task_type).some(item=>item.id===articleId))
+      throw Object.assign(new Error('研究材料不属于当前任务类型或来源范围'), {statusCode:400});
     const owner = claimOwner || runId || `manual_${crypto.randomUUID()}`;
     if (!claimResearchArticle(articleId, groupId, owner, !runId)) {
       throw Object.assign(new Error("文章正在其他任务中调研，或已完成归档"), {
@@ -136,8 +137,9 @@ export class ResearchService {
     let instructions =
       customInstructions ||
       group?.researchInstructions ||
-      "深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。";
-    const study = repositoryStudy(JSON.parse(art.dateEvidenceJson));
+      DEFAULT_RESEARCH_INSTRUCTIONS;
+    const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
+    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
     if (study) {
       const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown FROM research_tasks t JOIN articles a ON a.id=t.article_id
         WHERE t.status='succeeded' AND t.archived_at IS NOT NULL AND t.article_id<>?
@@ -161,12 +163,16 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
       skillId,
       group?.aiProfileId || "default",
     );
+    const prompt = researchSkill
+      ? (study ? buildCodeResearchPrompt(instructions) : buildResearchPrompt(researchSkill.id, instructions))
+      : "";
     const requestHash = crypto
       .createHash("sha256")
       .update(
         JSON.stringify([
           art.latestRevision,
           instructions,
+          prompt,
           researchSkill?.revision,
           skillId,
           group?.aiProfileId,
@@ -228,8 +234,6 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
 
     if (aiAdapter && researchSkill?.type === "research") {
       try {
-        const prompt = study ? buildCodeResearchPrompt(instructions) : buildResearchPrompt(researchSkill.id, instructions);
-
         const aiRes = await aiAdapter.execute({
           jobId: taskId,
           runId,

@@ -474,6 +474,7 @@ export class AppScheduler {
       id: r.id,
       group_id: r.groupId,
       group_name: groupName,
+      task_type: JSON.parse(r.snapshotJson || "{}").group?.task_type || "article_research",
       status: r.status,
       stage: r.stage,
       counts: JSON.parse(r.countsJson || "{}"),

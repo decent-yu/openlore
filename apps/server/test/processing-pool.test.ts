@@ -88,6 +88,7 @@ function add(
   return id;
 }
 async function group(m = 3) {
+  getSqliteDatabase().prepare("INSERT OR IGNORE INTO sources(id,name,url) VALUES ('source','Source','https://example.com/feed')").run();
   return groupsService.saveGroup({
     id: "task",
     name: "Engineering",

@@ -9,6 +9,7 @@ let db: ReturnType<typeof getSqliteDatabase>;
 beforeAll(async () => {
   initDatabase();
   db = getSqliteDatabase();
+  db.prepare("INSERT OR IGNORE INTO sources(id,name,url) VALUES ('source','Source','https://example.com/feed')").run();
   await groupsService.saveGroup({
     id: "task",
     name: "Task",

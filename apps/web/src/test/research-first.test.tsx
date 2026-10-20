@@ -75,12 +75,12 @@ it("describes a single M research quota rather than an N-then-M selection pipeli
   expect(html).not.toContain("精选篇数");
 });
 
-it('shows the dedicated code Skill for repository-only pipelines and keeps mixed-source Skill routes distinct', () => {
+it('shows the dedicated code Skill for repository pipelines and keeps article pipelines separate', () => {
   const client = new QueryClient();
   const code = SourceSchema.parse({id:'code',name:'Code',url:'https://github.com/stablyai/orca',capability_id:'github_repository'});
   const article = SourceSchema.parse({id:'article',name:'Articles',url:'https://example.com/rss'});
   client.setQueryData(['sources'], [code,article]);
-  client.setQueryData(['groups'], [{...task,source_ids:['code']}]);
+  client.setQueryData(['groups'], [{...task,task_type:'repository_research',source_ids:['code']}]);
   client.setQueryData(['runs'], []);
   const html = render(<PipelinesPage />, client);
   expect(html).toContain('每日仓库研读');
@@ -88,7 +88,7 @@ it('shows the dedicated code Skill for repository-only pipelines and keeps mixed
   expect(html).not.toContain('deep-research-expert');
   const mixedClient = new QueryClient();
   mixedClient.setQueryData(['sources'], [code,article]);
-  mixedClient.setQueryData(['groups'], [task]);
+  mixedClient.setQueryData(['groups'], [task,{...task,id:'repository',name:'仓库研读',task_type:'repository_research',source_ids:['code']}]);
   mixedClient.setQueryData(['runs'], []);
   const mixed = render(<PipelinesPage />, mixedClient);
   expect(mixed).toContain('代码调研：github-code-research');
