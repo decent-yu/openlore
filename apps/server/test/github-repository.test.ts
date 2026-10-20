@@ -24,6 +24,7 @@ import { groupsService } from "../src/modules/groups/service.js";
 import { skillsService } from "../src/modules/skills/service.js";
 import { AppScheduler } from "../src/modules/scheduler/scheduler.js";
 import { getPublishedWikiLinks } from "../src/modules/delivery/wiki-links.js";
+import { researchService } from "../src/modules/research/service.js";
 import { feedService } from "../src/modules/feed/service.js";
 import { settingsService } from "../src/modules/settings/service.js";
 
@@ -805,4 +806,64 @@ it('uses the same source context builder for prompt preview and runtime, with fi
   expect(input.prompt).toContain('首次系统研读');
   expect(input.prompt).toContain('历史研读：0 篇已归档');
   expect(input.prompt).toContain(source.options.research_focus);
+});
+
+it('refreshes Git for manual repository research and replaces the report at the original archive path', async () => {
+  const first = await run();
+  const original = first.output.entries[0].article_id;
+  const oldTask = (await researchService.listResearchTasks('study'))[0];
+  vi.mocked(repository.refreshRepository).mockResolvedValue({ commit: 'b'.repeat(40), branch: 'next-default', files: ['src/core.ts'], readme: '# New source' });
+  execute.mockImplementationOnce(async input => reportResult(input, '核心执行架构'));
+  const next = await feedService.researchArticle('study', original);
+  expect(next.status).toBe('succeeded');
+  expect(next.article_id).toBe(original);
+  expect(execute.mock.calls[1][0].repository.commit).toBe('b'.repeat(40));
+  expect(execute.mock.calls[1][0].prompt).toContain('用户明确重新调研已有主题');
+  expect(execute.mock.calls[1][0].repository_context.history[0].article_id).toBe(original);
+  const history = (await sourcesService.getSource('orca'))!.repository_history!;
+  expect(history).toHaveLength(1);
+  expect(history[0].commit).toBe('b'.repeat(40));
+  expect(history[0].reports).toHaveLength(1);
+  expect(next.repository_study?.commit).toBe('b'.repeat(40));
+  expect((await researchService.listResearchTasks('study')).find(task => task.id === oldTask.id)).toEqual(oldTask);
+  const files = vi.mocked(GitHubClient.syncFiles).mock.calls[1][0].files;
+  expect(files.some(file => file.path === 'docs/xxx/stablyai@orca/01-核心执行架构.md')).toBe(true);
+  expect(files.some(file => file.path.includes('/02-'))).toBe(false);
+  expect(getSqliteDatabase().prepare('SELECT count(*) n FROM article_locations').get()).toEqual({ n: 1 });
+  const feed = await feedService.getDailyFeed('study');
+  const delivered = feed.deep_articles.find(item => item.id === next.article_id)!;
+  expect(delivered.summary).toBeTruthy();
+  expect(delivered.sources[0].id).toBe('orca');
+  expect(delivered.research?.wiki_url).toBeTruthy();
+  expect(delivered.research?.report_markdown).toContain('b'.repeat(40));
+});
+
+it('reuses a manual revisit awaiting archive even when retried from the original card and Git is now offline', async () => {
+  const first = await run();
+  const original = first.output.entries[0].article_id;
+  vi.mocked(repository.refreshRepository).mockResolvedValue({ commit: 'b'.repeat(40), branch: 'development', files: ['src/core.ts'], readme: '# New source' });
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({ status: 'failed', changedPaths: [], errorMessage: 'archive offline' });
+  await expect(feedService.researchArticle('study', original)).rejects.toThrow('归档失败');
+  const pending = (await sourcesService.getSource('orca'))!.repository_history!.find(item => item.status === 'awaiting_archive')!;
+  expect(pending).toBeTruthy();
+  vi.mocked(repository.refreshRepository).mockRejectedValue(new Error('Git now offline'));
+  const retry = await feedService.researchArticle('study', original);
+  expect(retry.article_id).toBe(pending.article_id);
+  expect(retry.status).toBe('succeeded');
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(2);
+  const attempts = vi.mocked(GitHubClient.syncFiles).mock.calls.slice(1).map(([input]) => input.files.filter(file => file.path.includes('/01-')).map(file => file.path));
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((await sourcesService.getSource('orca'))!.repository_history).toHaveLength(1);
+});
+
+it('does not substitute an old snapshot or create a replacement report if manual Git refresh fails', async () => {
+  const first = await run();
+  const original = first.output.entries[0].article_id;
+  const before = (await sourcesService.getSource('orca'))!.repository_history;
+  vi.mocked(repository.refreshRepository).mockRejectedValue(new Error('Git unavailable'));
+  await expect(feedService.researchArticle('study', original)).rejects.toThrow('Git unavailable');
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect((await sourcesService.getSource('orca'))!.repository_history).toEqual(before);
+  expect(getSqliteDatabase().prepare('SELECT count(*) n FROM research_claims').get()).toEqual({ n: 0 });
 });

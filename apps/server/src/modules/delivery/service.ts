@@ -10,7 +10,7 @@ import type {
   ResearchTask,
   StructuredEntry,
 } from "@openlore/contracts";
-import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
+import { getDb, getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import {
   loadManifest,
   publishArchive,
@@ -354,6 +354,7 @@ export class DeliveryService {
       .get();
     if (group.task_type === "repository_research" || !loc) {
       if (!article) throw new Error("归档失败：研究材料不存在");
+      const researchRevision = (getSqliteDatabase().prepare('SELECT revision_hash FROM research_tasks WHERE id=?').get(task.id) as { revision_hash: string } | undefined)?.revision_hash || article.latestRevision || '';
       const revision = db
         .select()
         .from(articleRevisionsTable)
@@ -362,7 +363,7 @@ export class DeliveryService {
             eq(articleRevisionsTable.articleId, article.id),
             eq(
               articleRevisionsTable.revisionHash,
-              article.latestRevision || "",
+              researchRevision,
             ),
           ),
         )
@@ -377,9 +378,9 @@ export class DeliveryService {
           entries: [
             {
               article_id: article.id,
-              revision: article.latestRevision || "",
+              revision: researchRevision,
               slug: task.article_slug,
-              title: article.title || task.article_title,
+              title: task.article_title,
               original_url: article.canonicalUrl,
               author: article.author,
               published_at: article.publishedAt,

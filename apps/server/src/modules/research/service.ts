@@ -42,13 +42,16 @@ export class ResearchService {
         .from(articlesTable)
         .where(eq(articlesTable.id, r.articleId))
         .get();
+      const snapshot = repositoryStudy({ repository_study: JSON.parse(r.repositoryStudyJson || '{}') });
+      const title = snapshot && r.reportMarkdown.trim() ? /^#\s+(.+)$/m.exec(r.reportMarkdown)?.[1]?.trim() || art?.title || '仓库研读' : art?.title || 'Untitled Article';
       tasks.push({
         id: r.id,
+        repository_study: snapshot,
         skill_id: JSON.parse(r.executionJson || '{}').skill_id || (repositoryStudy(JSON.parse(art?.dateEvidenceJson || '{}')) ? GITHUB_CODE_RESEARCH_SKILL : undefined),
         group_id: r.groupId,
         article_id: r.articleId,
-        article_title: art?.title || "Untitled Article",
-        article_slug: articleSlug(art?.title || "article"),
+        article_title: title,
+        article_slug: articleSlug(title),
         status: r.status as any,
         questions: JSON.parse(r.questionsJson || "[]"),
         evidence: JSON.parse(r.evidenceJson || "[]"),
@@ -161,8 +164,10 @@ export class ResearchService {
       const sourceId = study.source_id || (getSqliteDatabase().prepare('SELECT source_id FROM source_items WHERE article_id=? LIMIT 1').get(articleId) as { source_id: string } | undefined)?.source_id;
       const source = sourceId ? await sourcesService.getSource(sourceId) : null;
       if (!source) throw new Error('仓库来源配置不存在，无法准备目标和研究历史');
-      repositoryContext = repositoryResearchContext({ ...source, options: { ...source.options, research_focus: study.focus } }, articleId);
+      const prior = getSqliteDatabase().prepare("SELECT questions_json FROM research_tasks WHERE article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(articleId) as { questions_json: string } | undefined;
+      repositoryContext = repositoryResearchContext({ ...source, options: { ...source.options, research_focus: study.focus } }, prior ? undefined : articleId);
       instructions = buildRepositoryResearchInstructions(repositoryContext, customInstructions || group?.researchInstructions, { commit: study.commit, study_id: study.study_id || articleId });
+      if (prior) instructions += `\n用户明确重新调研已有主题：${art.title}。原研究问题：${prior.questions_json}。围绕原问题追踪本次最新源码、复核和深化，可修正旧认识，不另换无关主题。新研报覆盖原归档路径，旧内容由 Git 历史保留，允许有依据地再次回答相同问题。`;
 
     }
 
@@ -219,6 +224,7 @@ export class ResearchService {
         groupId,
         articleId,
         revisionHash: art.latestRevision,
+        repositoryStudyJson: JSON.stringify(study ? { ...study, files: [] } : {}),
         status: "running",
         requestHash,
         questionsJson: JSON.stringify([

@@ -258,6 +258,7 @@ export function initDatabase(dbPath?: string): void {
       status TEXT NOT NULL DEFAULT 'queued',
       questions_json TEXT NOT NULL DEFAULT '[]',
       evidence_json TEXT NOT NULL DEFAULT '[]',
+      repository_study_json TEXT NOT NULL DEFAULT '{}',
       archived_at TEXT,
       request_hash TEXT NOT NULL DEFAULT '',
       report_markdown TEXT NOT NULL DEFAULT '',
@@ -335,6 +336,10 @@ export function initDatabase(dbPath?: string): void {
     sqlite.exec("ALTER TABLE runs ADD COLUMN output_json TEXT NOT NULL DEFAULT '{}'");
   }
   const researchColumns = sqlite.pragma('table_info(research_tasks)') as Array<{name:string}>;
+  if (!researchColumns.some(column => column.name === 'repository_study_json')) {
+    sqlite.exec("ALTER TABLE research_tasks ADD COLUMN repository_study_json TEXT NOT NULL DEFAULT '{}'");
+    sqlite.exec(`UPDATE research_tasks SET repository_study_json=COALESCE((SELECT json_extract(a.date_evidence_json,'$.repository_study') FROM articles a WHERE a.id=research_tasks.article_id AND json_valid(a.date_evidence_json)), '{}')`);
+  }
   if (!researchColumns.some((column)=>column.name==='execution_json')) sqlite.exec("ALTER TABLE research_tasks ADD COLUMN execution_json TEXT NOT NULL DEFAULT '{}'");
   if (!researchColumns.some((column)=>column.name==='model')) sqlite.exec('ALTER TABLE research_tasks ADD COLUMN model TEXT');
   const aiColumns = sqlite.pragma('table_info(ai_profiles)') as Array<{name: string}>;

@@ -128,6 +128,7 @@ export function useArticleActions() {
                 将对 《{selectedArticleForResearch.title}》
                 展开机制分析、取舍分析与证据核验。
               </CardDescription>
+              {selectedArticleForResearch.task_type === 'repository_research' && <p className="text-xs leading-relaxed text-neutral-500">重新调研会先更新源码并替换原路径的研报，旧版本可查 Git 历史；重试归档复用已有结果。</p>}
             </CardHeader>
             <CardContent className="space-y-3">
               <div>

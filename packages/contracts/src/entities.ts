@@ -3,7 +3,7 @@ import { ArticleReviewSchema } from './article-review.js';
 import { ExecutionResultSchema } from './execution.js';
 import { GroupRouteSchema } from './delivery.js';
 import { PipelineTaskTypeSchema } from './pipelines.js';
-import type { RepositoryHistory } from './github-source.js';
+import { RepositoryStudySchema, type RepositoryHistory } from './github-source.js';
 
 export const SourceCapabilitySchema = z.enum([
   'web_feed',
@@ -205,6 +205,7 @@ export const ResearchTaskSchema = z.object({
   execution: ExecutionResultSchema.shape.execution,
   model: z.string().optional(),
   id: z.string(),
+  repository_study: RepositoryStudySchema.optional(),
   group_id: z.string(),
   article_id: z.string(),
   article_title: z.string(),

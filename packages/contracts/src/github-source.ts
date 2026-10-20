@@ -69,6 +69,7 @@ export interface RepositoryHistory {
     archived_at?: string;
     report_markdown: string;
     questions?: string[];
+    commit?: string;
     wiki_url?: string;
   }>;
 }
@@ -123,7 +124,7 @@ export function repositoryResearchContext(
           id: report.id,
           article_id: item.article_id,
           title: item.title,
-          commit: item.commit,
+          commit: report.commit || item.commit,
           questions: report.questions || [],
           report_markdown: report.report_markdown,
           archived_at: report.archived_at,

@@ -85,9 +85,10 @@ export class RepositoryProcessingService {
           if (!articleId) continue;
           created = true;
         }
-        if (!claimResearchArticle(articleId, group.id, runId)) continue;
+        if (!claimResearchArticle(articleId, group.id, runId, Boolean(retry)))
+          continue;
         // Failed generation uses fresh default-branch code; successful reports awaiting upload stay unchanged.
-        if (!created && !retry?.reports.length) {
+        if (!created && !retry?.reports.some((report) => !report.archived_at)) {
           let snapshot = snapshots.get(source.id);
           if (!snapshot) {
             snapshot = await this.snapshot(source);
@@ -150,6 +151,40 @@ export class RepositoryProcessingService {
     return result;
   }
 
+  /** New manual research refreshes source; an approved report only retries publication. */
+  async prepareManualResearch(
+    group: Group,
+    articleId: string,
+  ): Promise<string> {
+    const db = getSqliteDatabase();
+    const row = db
+      .prepare("SELECT date_evidence_json FROM articles WHERE id=?")
+      .get(articleId) as { date_evidence_json: string } | undefined;
+    const study = repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
+    if (!study) throw new Error("仓库研读缺少源码版本信息");
+    const ready = db
+      .prepare(
+        "SELECT 1 FROM research_tasks WHERE group_id=? AND article_id=? AND status='succeeded' AND archived_at IS NULL AND trim(report_markdown)<>''",
+      )
+      .get(group.id, articleId);
+    if (ready) return articleId;
+    const sourceId =
+      study.source_id ||
+      (
+        db
+          .prepare(
+            "SELECT source_id FROM source_items WHERE article_id=? LIMIT 1",
+          )
+          .get(articleId) as { source_id: string } | undefined
+      )?.source_id;
+    const source = sourceId ? await sourcesService.getSource(sourceId) : null;
+    if (!source || source.capability_id !== "github_repository")
+      throw new Error("仓库来源不存在");
+    const snapshot = await this.snapshot(source);
+    this.materialize(source, snapshot, articleId);
+    return articleId;
+  }
+
   private async snapshot(source: Source): Promise<RepositorySnapshot> {
     try {
       const snapshot = await refreshRepository(source);
@@ -190,6 +225,12 @@ export class RepositoryProcessingService {
   ): void {
     const repository = parseGitHubRepository(source.url)!;
     const now = new Date().toISOString();
+    const old = getSqliteDatabase()
+      .prepare("SELECT date_evidence_json FROM articles WHERE id=?")
+      .get(articleId) as { date_evidence_json: string } | undefined;
+    const previous = repositoryStudy(
+      JSON.parse(old?.date_evidence_json || "{}"),
+    );
     const study = {
       repository_url: source.url,
       directory: repository.directory,
@@ -199,7 +240,7 @@ export class RepositoryProcessingService {
       day: now.slice(0, 10),
       focus: source.options.research_focus,
       files: snapshot.files,
-      questions: [],
+      questions: previous?.questions || [],
     };
     const existing = getSqliteDatabase()
       .prepare("SELECT title FROM articles WHERE id=?")

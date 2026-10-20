@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { desc, eq } from "drizzle-orm";
-import type { DailyFeedArticle, Group } from "@openlore/contracts";
+import { repositoryStudy, type DailyFeedArticle, type Group } from "@openlore/contracts";
 import {
   getDb,
   getSqliteDatabase,
@@ -10,6 +10,7 @@ import {
   runsTable,
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { groupsService } from "../groups/service.js";
+import { repositoryProcessingService } from "../processing/repository.js";
 import { researchService } from "../research/service.js";
 import { deliveryService } from "../delivery/service.js";
 import {
@@ -103,6 +104,7 @@ export class FeedService {
       (item) => !item.processed && !item.busy,
     ).length;
     const tasks = (await researchService.listResearchTasks(group?.id))
+      .reverse() // Prefer the most recent version when archive timestamps match.
       .filter(
         (task) =>
           groupsById.has(task.group_id) &&
@@ -172,7 +174,8 @@ export class FeedService {
       const summary =
         review?.status === "succeeded"
           ? review.result?.positioning || ""
-          : summaries.get(wikiLinkKey(group.id, article.id)) || "";
+          : summaries.get(wikiLinkKey(group.id, article.id)) ||
+            (group.task_type === 'repository_research' ? task.repository_study?.focus || repositoryStudy(JSON.parse(article.dateEvidenceJson))?.focus || '研读源码，解释工作原理与设计取舍' : '');
       const sources = db
         .prepare(
           `
@@ -223,15 +226,20 @@ export class FeedService {
   async researchArticle(groupId: string, articleId: string) {
     const group = await groupsService.getGroup(groupId);
     if (!group) throw new Error("流水线任务不存在");
+    if (!listPoolCandidates(group.source_ids, group.task_type).some(item => item.id === articleId))
+      throw Object.assign(new Error('研究材料不属于当前任务类型或来源范围'), { statusCode: 400 });
     const owner = `manual_${crypto.randomUUID()}`;
     if (!claimResearchArticle(articleId, groupId, owner, true))
       throw Object.assign(new Error("文章正在调研，请稍候"), {
         statusCode: 409,
       });
     try {
+      const target = group.task_type === 'repository_research'
+        ? await repositoryProcessingService.prepareManualResearch(group, articleId)
+        : articleId;
       const task = await researchService.runResearchOnArticle(
         groupId,
-        articleId,
+        target,
         group.research_instructions,
         undefined,
         owner,
@@ -251,7 +259,7 @@ export class FeedService {
       getDb()
         .update(articlesTable)
         .set({ userInterested: true, updatedAt: new Date().toISOString() })
-        .where(eq(articlesTable.id, articleId))
+        .where(eq(articlesTable.id, task.article_id))
         .run();
       return (await researchService.listResearchTasks(groupId)).find(
         (item) => item.id === task.id,

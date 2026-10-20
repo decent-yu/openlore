@@ -44,13 +44,13 @@ export async function buildRepositoryArchive(
     const row = db
       .prepare("SELECT date_evidence_json FROM articles WHERE id=?")
       .get(entry.article_id) as { date_evidence_json: string } | undefined;
-    const study = repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
     const task = researchTasks.find(
       (task) =>
         task.article_id === entry.article_id &&
         task.status === "succeeded" &&
         task.report_markdown.trim(),
     );
+    const study = task?.repository_study || repositoryStudy(JSON.parse(row?.date_evidence_json || "{}"));
     if (!study || !task)
       throw new Error("仓库归档需要固定版本材料与已完成的代码研报");
     const existing = manifest.article_locations[entry.article_id];
