@@ -1,3 +1,4 @@
+import { SkillPicker } from "./SkillPicker.js";
 import { RepositoryHistory } from "../sources/RepositoryHistory.js";
 import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,13 +7,15 @@ import { Bot, GitBranch, Pencil, Play, Plus, Workflow, X } from "lucide-react";
 import {
   buildSelectionPrompt,
   buildResearchPrompt,
+  buildCodeResearchPrompt,
+  buildRepositoryResearchInstructions,
+  repositoryResearchContext,
   GITHUB_CODE_RESEARCH_SKILL,
   pipelineTaskLabels,
   sourceSupportsTask,
   type PipelineTaskType,
   DEFAULT_RESEARCH_INSTRUCTIONS,
   type Group,
-  type Skill,
 } from "@openlore/contracts";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
@@ -70,6 +73,7 @@ export function PipelinesPage() {
   const { data: skills = [] } = useQuery({
     queryKey: ["skills", form.ai_profile_id || "default"],
     queryFn: () => api.listSkills(form.ai_profile_id || "default"),
+    refetchInterval: open ? 10000 : false,
   });
   const [message, setMessage] = useState("");
   const update = <K extends keyof typeof initialForm>(
@@ -236,7 +240,7 @@ export function PipelinesPage() {
                 <Bot className="h-4 w-4" />1 · {pipelineTaskLabels[group.task_type]}
               </h4>
               <p className="text-sm">
-                {(group.task_type === "article_research") ? 'AI 批量选文 → 每次最多深度调研' : '每日仓库研读 → 所有仓库每日共'} {group.deep_analysis_count}{" "}
+                {(group.task_type === "article_research") ? 'AI 批量选文 → 每次最多深度调研' : '每日仓库研读 → 每个仓库每日最多'} {group.deep_analysis_count}{" "}
                 篇
               </p>
               <p className="text-xs text-neutral-500">
@@ -452,7 +456,7 @@ export function PipelinesPage() {
                   </div>
                 </fieldset>
                 {form.task_type === 'repository_research' && <div className="space-y-3">
-                  <p className="text-xs text-neutral-500">所有仓库共用每日总篇数，按仓库轮换研读。目标和历史记录由来源统一维护。</p>
+                  <p className="text-xs text-neutral-500">每个仓库独立计算每日配额，按仓库轮换研读。目标和历史记录由来源统一维护。</p>
                   {sources.filter(source => source.capability_id === 'github_repository' && (!form.source_ids.length || form.source_ids.includes(source.id))).map(source => <div key={source.id} className="rounded-md border bg-white p-3">
                     <div className="mb-2 flex justify-between text-xs"><strong>{source.name}</strong><Link className="text-blue-700 underline" to={`/sources?edit=${encodeURIComponent(source.id)}`}>编辑来源配置</Link></div>
                     <RepositoryHistory source={source} compact />
@@ -488,7 +492,7 @@ export function PipelinesPage() {
                   </div>
                 </div>
                 <label className="block text-xs font-medium text-neutral-600">
-                  {form.task_type === "repository_research" ? "每日总调研篇数（M）" : "每次最多调研篇数（M）"}
+                  {form.task_type === "repository_research" ? "每个仓库每日调研篇数（M）" : "每次最多调研篇数（M）"}
                   <Input
                     className="mt-1.5 h-8 w-32 bg-white text-xs"
                     type="number"
@@ -502,7 +506,7 @@ export function PipelinesPage() {
                   />
                 </label>
                 <p className="text-xs text-neutral-500">
-                  {(form.task_type === "repository_research") ? '所有仓库合计每日预算，按仓库轮换进入代码调研；' : 'AI 根据已初审文章的评分和简介选文；'}每轮最多 {form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。
+                  {form.task_type === 'repository_research' ? `每个启用仓库每天最多 ${form.deep_analysis_count} 篇，分别计算配额；同日重跑只补齐剩余篇数。M 为 0 时不调研。` : `AI 根据已初审文章的评分和简介选文；每轮最多 ${form.deep_analysis_count} 篇，不要求凑满。M 为 0 时不选文、不调研。`}
                 </p>
                 {(form.task_type === "article_research") && <SkillPicker
                   label="文章调研 Skill"
@@ -521,11 +525,18 @@ export function PipelinesPage() {
                   }
                   instructionsPlaceholder="深入剖析核心机制、架构设计、技术取舍与适用场景，提供可落地的工程建议。"
                 />}
-                {(form.task_type === "repository_research") && <div className="rounded-md border bg-white p-3 text-xs text-neutral-600">
-                  <p className="font-medium">GitHub 代码调研 Skill：{GITHUB_CODE_RESEARCH_SKILL}（固定）</p>
-                  <p className="mt-1">每次新研读先更新默认分支源码，本次快照保持一致；依据来源目标和历史研报深入调用链、测试与设计取舍。</p>
-                  {!skills.some(skill => skill.id === GITHUB_CODE_RESEARCH_SKILL) && <p className="mt-1 text-amber-700">当前执行器未提供代码调研 Skill，请同步 Skills 或安装到执行机的 Skill 目录。</p>}
-                </div>}
+                {form.task_type === 'repository_research' && <SkillPicker
+                  label="仓库研读 Skill" type="research" value={GITHUB_CODE_RESEARCH_SKILL} skills={skills} locked
+                  instructionsLabel="表达、深度与交付补充要求" instructions={form.research_instructions}
+                  onInstructionsChange={value => update('research_instructions', value)}
+                  instructionsPlaceholder="可补充读者背景、讲解深度或图形表达要求；来源目标在来源配置中维护"
+                  contextHint="目标和历史自动来自来源，与执行共用同一套 Prompt 构建逻辑；执行时会绑定实际 Commit 和记录 ID。完整历史还会写入 AI 工作区 input/research-context.json；本批新生成的研报也会进入后篇上下文。"
+                  previews={sources.filter(source => source.enabled && source.capability_id === 'github_repository' && (!form.source_ids.length || form.source_ids.includes(source.id))).map(source => ({
+                    id: source.id, title: `${source.name} · 实际目标与历史上下文`,
+                    prompt: buildCodeResearchPrompt(buildRepositoryResearchInstructions(repositoryResearchContext(source), form.research_instructions)),
+                  }))}
+                />}
+
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                 <div className="flex items-center gap-2">
@@ -590,96 +601,6 @@ export function PipelinesPage() {
           </form>
         </div>
       )}
-    </div>
-  );
-}
-
-function SkillPicker({
-  label,
-  type,
-  value,
-  skills,
-  onChange,
-  prompt,
-  instructionsLabel,
-  instructions,
-  onInstructionsChange,
-  instructionsPlaceholder,
-}: {
-  label: string;
-  type: string;
-  value: string;
-  skills: Skill[];
-  onChange: (id: string) => void;
-  prompt: string;
-  instructionsLabel: string;
-  instructions: string;
-  onInstructionsChange: (value: string) => void;
-  instructionsPlaceholder: string;
-}) {
-  const skill = skills.find((item) => item.id === value);
-  return (
-    <div className="space-y-2 rounded-md border border-neutral-200/80 bg-white p-3">
-      <label className="block text-xs font-medium text-neutral-700">
-        {label}
-        <select
-          className="mt-1.5 h-9 w-full rounded-md border border-neutral-200 bg-neutral-50 px-2.5 text-xs"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {skills
-            .filter((item) => item.type === type || item.id === value)
-            .map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-        </select>
-      </label>
-      <p className="text-[11px] leading-relaxed text-neutral-500">
-        {skill?.description ||
-          (skills.length === 0
-            ? "该执行器尚未提供可用 Skill，请检查目录或启动 Worker，并测试连接。"
-            : "所选 Skill 不可用，请重新选择。")}
-      </p>
-      <details className="border-t border-neutral-100 pt-2">
-        <summary className="cursor-pointer text-[11px] text-blue-700">
-          本阶段实际 Prompt · 查看与编辑
-        </summary>
-        <label className="mt-3 block text-xs font-medium text-neutral-600">
-          {instructionsLabel}
-          <textarea
-            className="mt-1.5 min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs font-normal leading-relaxed focus:border-blue-400 focus:outline-none"
-            value={instructions}
-            onChange={(event) => onInstructionsChange(event.target.value)}
-            placeholder={instructionsPlaceholder}
-          />
-        </label>
-        <p className="mt-2 text-[11px] text-neutral-500">
-          留空使用默认要求，随任务一起保存。Skill
-          加载、输出格式与交付约束由系统固定。
-        </p>
-        <p className="mt-3 text-[11px] font-medium text-neutral-600">
-          完整指令预览（实时更新）
-        </p>
-        <p className="mt-1 text-[10px] text-neutral-400">
-          Skill 文件在执行工作区加载，不在这里展开。
-        </p>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-50 p-3 text-[11px] leading-relaxed text-neutral-600">
-          {prompt}
-        </pre>
-      </details>
-      <details className="border-t border-neutral-100 pt-2">
-        <summary className="cursor-pointer text-[11px] text-neutral-500">
-          查看 Skill 文件内容
-        </summary>
-        <p className="mt-2 break-all text-[10px] text-neutral-400">
-          {skill?.file_path} · {skill?.version || "未标注版本"}
-        </p>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-50 p-3 text-[11px]">
-          {skill?.system_prompt}
-        </pre>
-      </details>
     </div>
   );
 }
