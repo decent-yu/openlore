@@ -11,6 +11,7 @@ import {
   type ExecutionProgress,
   GITHUB_CODE_RESEARCH_SKILL,
 } from '@openlore/contracts';
+import { validateRepositoryEvidence } from './repository_evidence.js';
 import { prepareRepositoryWorkspace } from './repository_workspace.js';
 import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
 import {
@@ -622,6 +623,7 @@ export async function executeInWorkspace(
       !fs.lstatSync(document).isSymbolicLink()
     )
       result = fs.readFileSync(document, 'utf8');
+    if (input.repository) validateRepositoryEvidence(input.repository, workspace, String(result));
     if (!result) throw new Error('AI 返回空结果');
     return {
       status: 'success',

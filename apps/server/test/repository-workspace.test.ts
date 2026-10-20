@@ -70,7 +70,10 @@ const fs=require('fs');
 const source=fs.readFileSync('input/repository/src/core.ts','utf8');
 const caller=fs.readFileSync('input/repository/src/caller.ts','utf8');
 const test=fs.readFileSync('input/repository/tests/core.test.ts','utf8');
-const report='# Code research\\n'+source+'\\n'+caller+'\\n'+test;
+const metadata=JSON.parse(fs.readFileSync('input/repository.json','utf8'));
+const citation=metadata.url+'/blob/'+metadata.commit+'/src/core.ts#L1';
+const report='# Code research\\n'+source+'\\n'+caller+'\\n'+test+'\\n'+citation;
+fs.writeFileSync('output/evidence.json',JSON.stringify({complete:true,commit:metadata.commit,questions:['How does the core work?'],citations:[{claim:'Core',file:'src/core.ts',start_line:1,end_line:1,quote:source}]}));
 fs.writeFileSync('output/research.md',report);
 console.log(JSON.stringify({response:'The report is saved.'}));
 `,
@@ -269,4 +272,51 @@ it('rejects reports if the AI changes the pinned implementation while researchin
   const result = await executeInWorkspace({...request(), cli_path:cli});
   expect(result.status).toBe('failed');
   expect(result.error?.message).toContain('源码工作区已修改');
+});
+
+it('resolves a changed remote default branch, refreshes cached objects and preserves existing research snapshots', async () => {
+  const { repositoryCache } = await import('../src/infrastructure/ai/repository_cache.js');
+  const cacheRoot = path.join(root, 'cache-default-test');
+  const countedRun = vi.fn(mappedRun);
+  const first = await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000);
+  const folder = workspace();
+  await actualPrepare({ url: repositoryUrl, commit: first.commit }, folder, mappedRun, 10000);
+  await runProcess('git', ['checkout', '-b', 'architecture-next'], source, '', 10000);
+  fs.writeFileSync(path.join(source, 'src/core.ts'), 'export const implementation = "latest-default";');
+  const changed = await runProcess('git', ['commit', '--quiet', '-am', 'Ordinary fix, not a research topic'], source, '', 10000);
+  expect(changed.code).toBe(0);
+  const next = await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000);
+  expect(next.cache).toBe(first.cache);
+  expect(next.branch).toBe('architecture-next');
+  expect(next.commit).not.toBe(first.commit);
+  expect(fs.readFileSync(path.join(folder, 'input/repository/src/core.ts'), 'utf8')).toContain('new-version');
+  const fetches = countedRun.mock.calls.filter(([, args]) => args.includes('fetch')).length;
+  await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000, next.commit);
+  expect(countedRun.mock.calls.filter(([, args]) => args.includes('fetch'))).toHaveLength(fetches);
+});
+
+it('validates evidence against tracked implementation, exact lines and commit; rejects missing or fabricated evidence', async () => {
+  const { validateRepositoryEvidence } = await import('../src/infrastructure/ai/repository_evidence.js');
+  const folder = workspace();
+  await actualPrepare({ url: repositoryUrl, commit }, folder, mappedRun, 10000);
+  fs.mkdirSync(path.join(folder, 'output'));
+  const file = path.join(folder, 'output/evidence.json');
+  const repo = { url: repositoryUrl, commit };
+  const report = `[Core](${repositoryUrl}/blob/${commit}/src/core.ts#L1)`;
+  const evidence = { complete: true, commit, questions: ['How does the implementation work?'], citations: [{ claim: 'Core', file: 'src/core.ts', start_line: 1, end_line: 1, quote: 'export const implementation = "pinned-original";' }] };
+  expect(() => validateRepositoryEvidence(repo, folder, report)).toThrow('缺少源码证据');
+  const write = (value: unknown) => fs.writeFileSync(file, JSON.stringify(value));
+  write(evidence);
+  expect(() => validateRepositoryEvidence(repo, folder, report)).not.toThrow();
+  write({ ...evidence, complete: false });
+  expect(() => validateRepositoryEvidence(repo, folder, report)).toThrow('证据不足');
+  write({ ...evidence, commit: 'f'.repeat(40) });
+  expect(() => validateRepositoryEvidence(repo, folder, report)).toThrow('Commit');
+  write({ ...evidence, citations: [{ ...evidence.citations[0], quote: 'invented code' }] });
+  expect(() => validateRepositoryEvidence(repo, folder, report)).toThrow('原文不匹配');
+  fs.writeFileSync(path.join(folder, 'input/repository/new.ts'), 'invented code');
+  write({ ...evidence, citations: [{ ...evidence.citations[0], file: 'new.ts', quote: 'invented code' }] });
+  expect(() => validateRepositoryEvidence(repo, folder, report)).toThrow('不属于本次跟踪源码');
+  write(evidence);
+  expect(() => validateRepositoryEvidence(repo, folder, '# Report without links')).toThrow('行号链接');
 });

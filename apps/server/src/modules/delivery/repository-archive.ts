@@ -86,7 +86,7 @@ export async function buildRepositoryArchive(
       markdownFile(`${base}/${reportPath}`, report),
       markdownFile(
         `${base}/${sourcePath}`,
-        `# ${entry.title}\n\n[阅读中文研报](../${archiveHref(`${stem}.md`)})\n\n${entry.organized_markdown}`,
+        `# ${entry.title}\n\n[阅读中文研报](../${archiveHref(`${stem}.md`)})\n\n${entry.organized_markdown}\n\n## 本次源码证据\n\nCommit：${study.commit}\n\n${task.evidence.map((evidence: any) => `### ${evidence.claim || '源码依据'}\n\n[${evidence.file}:${evidence.start_line}-${evidence.end_line}](${study.repository_url}/blob/${study.commit}/${String(evidence.file || '').split('/').map(encodeURIComponent).join('/')}#L${evidence.start_line}-L${evidence.end_line})\n\n\`\`\`\n${evidence.quote || ''}\n\`\`\``).join('\n\n')}`,
       ),
     );
     bundle.entries.push({

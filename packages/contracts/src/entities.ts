@@ -3,6 +3,7 @@ import { ArticleReviewSchema } from './article-review.js';
 import { ExecutionResultSchema } from './execution.js';
 import { GroupRouteSchema } from './delivery.js';
 import { PipelineTaskTypeSchema } from './pipelines.js';
+import type { RepositoryHistory } from './github-source.js';
 
 export const SourceCapabilitySchema = z.enum([
   'web_feed',
@@ -15,8 +16,6 @@ export type SourceCapability = z.infer<typeof SourceCapabilitySchema>;
 
 export const SourceOptionsSchema = z.object({
   poll_interval_mins: z.number().int().min(1).max(10080).default(30),
-  github_ref: z.string().trim().max(200).default(''),
-  github_connection_id: z.string().trim().default(''),
   research_focus: z.string().trim().max(4000).default(''),
   keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_keywords: z.array(z.string().trim().min(1)).default([]),
@@ -41,6 +40,7 @@ export const SourceSchema = z.object({
   last_polled_at: z.string().nullable().optional(),
   last_success_at: z.string().nullable().optional(),
   last_error: z.string().nullable().optional(),
+  repository_history: z.array(z.custom<RepositoryHistory>()).optional(),
 });
 export type Source = z.infer<typeof SourceSchema>;
 

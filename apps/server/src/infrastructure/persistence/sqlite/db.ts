@@ -40,6 +40,10 @@ export function initDatabase(dbPath?: string): void {
   const sqlite = getSqliteDatabase(dbPath);
 
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS repository_rotation (
+      source_id TEXT PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE,
+      last_selected_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS ai_execution_logs (
       id TEXT PRIMARY KEY, job_id TEXT NOT NULL, run_id TEXT, group_id TEXT, report_plan_id TEXT,
       article_id TEXT, article_title TEXT, task_type TEXT NOT NULL, skill_id TEXT,

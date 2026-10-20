@@ -40,6 +40,9 @@ export const RepositoryStudySchema = z.object({
   day: z.string(),
   focus: z.string(),
   files: z.array(z.string()),
+  source_id: z.string().optional(),
+  study_id: z.string().optional(),
+  questions: z.array(z.string()).default([]),
 });
 export const RepositoryCheckoutSchema = z.object({
   url: z
@@ -52,6 +55,22 @@ export const RepositoryCheckoutSchema = z.object({
 });
 export type RepositoryCheckout = z.infer<typeof RepositoryCheckoutSchema>;
 export type RepositoryStudy = z.infer<typeof RepositoryStudySchema>;
+
+export interface RepositoryHistory {
+  id: string;
+  article_id: string;
+  title: string;
+  status: "pending" | "running" | "failed" | "awaiting_archive" | "completed";
+  error?: string;
+  commit: string;
+  reports: Array<{
+    id: string;
+    group_id: string;
+    archived_at?: string;
+    report_markdown: string;
+    wiki_url?: string;
+  }>;
+}
 
 export function repositoryStudy(
   evidence: Record<string, unknown>,

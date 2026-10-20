@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import * as prompts from "@openlore/contracts";
+import * as repository from "../src/modules/repository-study/service.js";
 import { processingService } from "../src/modules/processing/service.js";
 import { createServer } from "../src/http/server.js";
 import { reportService } from "../src/modules/reports/service.js";
@@ -26,6 +27,14 @@ import { getPublishedWikiLinks } from "../src/modules/delivery/wiki-links.js";
 import { feedService } from "../src/modules/feed/service.js";
 import { settingsService } from "../src/modules/settings/service.js";
 
+function reportResult(input: any, title = '核心执行架构') {
+  const commit = input.repository?.commit || 'a'.repeat(40);
+  return { status: 'success', provider: 'mock', model: 'mock', durationMs: 1,
+    result: `# ${title}\n\n基于源码分析调用链与技术取舍。[源码](${input.repository?.url}/blob/${commit}/src/core.ts#L1)\n\n![](./assets/architecture.svg)\n\n![](https://example.com/assets/remote.svg)`,
+    artifacts: input.repository ? [{ path: 'evidence.json', content: Buffer.from(JSON.stringify({ complete: true, commit, questions: [`${title}如何实现？`], citations: [{ claim: '核心实现', file: 'src/core.ts', start_line: 1, end_line: 1, quote: 'export const implementation = true;' }] })).toString('base64') }] : [],
+  };
+}
+
 beforeAll(() => initDatabase());
 const execute = vi.fn();
 beforeEach(async () => {
@@ -33,6 +42,7 @@ beforeEach(async () => {
   vi.setSystemTime(new Date("2026-10-20T02:00:00Z"));
   const db = getSqliteDatabase();
   for (const table of [
+    "repository_rotation",
     "research_claims",
     "research_tasks",
     "runs",
@@ -55,14 +65,8 @@ beforeEach(async () => {
     "sources",
   ])
     db.exec(`DELETE FROM ${table}`);
-  execute.mockReset().mockImplementation(async () => ({
-    status: "success",
-    provider: "mock",
-    model: "mock",
-    durationMs: 1,
-    result:
-      "# 核心执行架构\n\n基于源码分析调用链与技术取舍。\n\n![](./assets/architecture.svg)\n\n![](https://example.com/assets/remote.svg)",
-  }));
+  vi.spyOn(repository, 'refreshRepository').mockResolvedValue({ commit: 'a'.repeat(40), branch: 'development', files: ['README.md', 'src/core.ts', 'tests/core.test.ts'], readme: '# Local README' });
+  execute.mockReset().mockImplementation(async input => reportResult(input));
   vi.spyOn(ai, "getAIAdapterWithFallback").mockReturnValue({
     execute,
     testConnection: async () => ({ ok: true, message: "mock" }),
@@ -84,47 +88,7 @@ beforeEach(async () => {
     commitSha: "sha",
     commitUrl: "https://github.com/example/vault/commit/sha",
   }));
-  vi.spyOn(SafeHttpClient, "fetch").mockImplementation(async (url) => {
-    let body: any;
-    if (/\/commits\//.test(url))
-      body = {
-        sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        commit: { tree: { sha: "tree" } },
-      };
-    else if (/\/git\/trees\//.test(url))
-      body = {
-        tree: [
-          { path: "README.md", sha: "readme", type: "blob", size: 100 },
-          ...Array.from({ length: 15 }, (_, i) => ({
-            path: `src/core-${String(i).padStart(2, "0")}.ts`,
-            sha: `blob-${i}`,
-            type: "blob",
-            size: 100,
-          })),
-        ],
-      };
-    else if (/\/git\/blobs\//.test(url))
-      body = {
-        encoding: "base64",
-        content: Buffer.from(
-          `export class AgentRunner { async execute() { return 'real code from ${url}'; } }`,
-        ).toString("base64"),
-      };
-    else
-      body = {
-        default_branch: "development",
-        description: "Agent architecture",
-      };
-    const text = JSON.stringify(body);
-    return {
-      status: 200,
-      text,
-      data: Buffer.from(text),
-      url,
-      headers: {},
-      notModified: false,
-    };
-  });
+  vi.spyOn(SafeHttpClient, 'fetch').mockRejectedValue(new Error('Repository reads must use local Git'));
   db.prepare(
     "INSERT INTO repository_connections(id,name,revision,owner,repo,default_branch,credential_ref,wiki_base_url,wiki_root_path) VALUES ('vault','Vault','v1','example','vault','archive','token','https://wiki.example/vault','docs')",
   ).run();
@@ -195,36 +159,18 @@ it("validates GitHub roots and source capabilities before saving", async () => {
   ).rejects.toThrow("来源类型不能修改");
 });
 
-it("collects pinned code once per local day, rotates files without a new commit, and preview does not consume the day", async () => {
-  await collectionService.previewSource("orca");
-  expect(
-    getSqliteDatabase().prepare("SELECT count(*) n FROM source_states").get(),
-  ).toEqual({ n: 0 });
-  const first = await collectionService.discoverSource("orca");
-  expect(first.stats.items_new).toBe(1);
-  expect(first.items[0].body.value).toContain(
-    "/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/",
-  );
-  expect(first.items[0].date_evidence).toHaveProperty(
-    "repository_study.commit",
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  );
-  const requests = vi.mocked(SafeHttpClient.fetch).mock.calls.length;
-  expect((await collectionService.discoverSource("orca")).status).toBe(
-    "not_modified",
-  );
-  expect(vi.mocked(SafeHttpClient.fetch).mock.calls).toHaveLength(requests);
-  expect(
-    getSqliteDatabase().prepare("SELECT count(*) n FROM article_reviews").get(),
-  ).toEqual({ n: 0 });
-  vi.setSystemTime(new Date("2026-10-20T16:01:00Z")); // Next calendar day in Asia/Shanghai.
-  const next = await collectionService.discoverSource("orca");
-  expect(next.stats.items_new).toBe(1);
-  expect(next.items[0].canonical_url).not.toBe(first.items[0].canonical_url);
-  expect(next.items[0].date_evidence?.repository_study).not.toEqual(
-    first.items[0].date_evidence?.repository_study,
-  );
-  expect(next.items[0].body.value).toContain("core-06.ts");
+it('refreshes local default-branch code without REST sampling, rotating files or creating daily pool entries', async () => {
+  await collectionService.previewSource('orca');
+  expect(getSqliteDatabase().prepare('SELECT count(*) n FROM source_states').get()).toEqual({ n: 0 });
+  const first = await collectionService.discoverSource('orca');
+  expect(first.status).toBe('success');
+  expect(first.items).toEqual([]);
+  expect(first.next_state).toMatchObject({ commit: 'a'.repeat(40), branch: 'development' });
+  await collectionService.discoverSource('orca');
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(3);
+  expect(SafeHttpClient.fetch).not.toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
+  expect(getSqliteDatabase().prepare('SELECT count(*) n FROM articles').get()).toEqual({ n: 0 });
 });
 
 it("runs directly through research and archives numbered topics, source material and valid Wiki links", async () => {
@@ -276,11 +222,7 @@ it("runs directly through research and archives numbered topics, source material
   expect(sameDay.output.entries).toHaveLength(0);
   expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
   vi.setSystemTime(new Date("2026-10-21T02:00:00Z"));
-  execute.mockResolvedValueOnce({
-    status: "success",
-    provider: "mock",
-    result: "# 工作区隔离机制\n\n深入分析。",
-  });
+  execute.mockImplementationOnce(async input => reportResult(input, "工作区隔离机制"));
   expect((await run()).status).toBe("succeeded");
   expect(execute.mock.calls[1][0].prompt).toContain("核心执行架构");
   const nextFiles = vi.mocked(GitHubClient.syncFiles).mock.calls[1][0].files;
@@ -310,37 +252,16 @@ it("runs directly through research and archives numbered topics, source material
   ]);
 });
 
-it("uses connection credentials only for API reads and protects a connection referenced by a source", async () => {
-  await sourcesService.saveSource({
-    id: "orca",
-    name: "Orca",
-    url: "https://github.com/stablyai/orca",
-    options: { github_connection_id: "vault" },
-  });
-  expect((await run()).status).toBe("succeeded");
-  expect(SafeHttpClient.fetch).toHaveBeenCalledWith(
-    expect.any(String),
-    expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: "Bearer test" }),
-    }),
-  );
-  expect(JSON.stringify(execute.mock.calls)).not.toContain("Bearer test");
-  expect(
-    getSqliteDatabase()
-      .prepare("SELECT options_json FROM collection_runs")
-      .get(),
-  ).not.toHaveProperty("credential_ref");
-  await expect(
-    settingsService.deleteRepositoryConnection("vault"),
-  ).rejects.toThrow("正在使用该 GitHub 读取凭据");
-  await expect(
-    sourcesService.saveSource({
-      name: "Unknown",
-      url: "https://github.com/stablyai/orca",
-      capability_id: "github_repository",
-      options: { github_connection_id: "unknown" },
-    }),
-  ).rejects.toThrow("读取连接不存在");
+it('stores only user goals and auto-associated history; goal edits preserve reports', async () => {
+  expect((await run()).status).toBe('succeeded');
+  const before = (await sourcesService.getSource('orca'))!;
+  expect(before.repository_history).toHaveLength(1);
+  expect(before.repository_history![0]).toMatchObject({ status: 'completed', title: '核心执行架构', commit: 'a'.repeat(40) });
+  expect(before.repository_history![0].reports[0].wiki_url).toContain('https://wiki.example/');
+  const saved = await sourcesService.saveSource({ id: 'orca', name: 'Orca', url: before.url, options: { research_focus: '研究状态恢复' } });
+  expect(saved.repository_history).toEqual(before.repository_history);
+  expect(execute).toHaveBeenCalledTimes(1);
+  await expect(sourcesService.saveSource({ id: 'orca', name: 'Other', url: 'https://github.com/example/other' })).rejects.toThrow('仓库地址不能修改');
 });
 
 it("keeps each repository on an independent archive sequence", async () => {
@@ -360,6 +281,7 @@ it("keeps each repository on an independent archive sequence", async () => {
     source_ids: ["orca", "another"],
     deep_analysis_count: 1,
   });
+  vi.setSystemTime(new Date("2026-10-21T02:00:00Z"));
   expect((await run()).status).toBe("succeeded");
   expect(
     vi
@@ -408,7 +330,7 @@ it("reuses generated reports and numbering after a failed archive without exposi
 });
 
 it("leaves the day retryable when GitHub fails and does not generate placeholder reports", async () => {
-  vi.mocked(SafeHttpClient.fetch).mockRejectedValueOnce(
+  vi.mocked(repository.refreshRepository).mockRejectedValueOnce(
     new Error("network down"),
   );
   expect((await run()).status).toBe("failed");
@@ -520,7 +442,7 @@ it("validates task types and prevents cross-type sources and manual research", a
     base_path: "docs/articles",
     source_ids: ["rss"],
   });
-  await collectionService.discoverSource("orca");
+  await run();
   const repositoryItem = getSqliteDatabase()
     .prepare("SELECT id FROM articles")
     .get() as { id: string };
@@ -537,7 +459,7 @@ it("validates task types and prevents cross-type sources and manual research", a
   expect(saved.research_skill_id).toBe("github-code-research");
 });
 
-it("invalidates code reports when the actual code prompt changes while keeping the Skill revision fixed", async () => {
+it("reuses an upload retry even if the code prompt or Skill changes", async () => {
   vi.mocked(GitHubClient.syncFiles).mockResolvedValue({
     status: "failed",
     changedPaths: [],
@@ -549,10 +471,7 @@ it("invalidates code reports when the actual code prompt changes while keeping t
     (instructions) => previous(instructions) + "\n用具体例子解释状态恢复。",
   );
   expect((await run()).status).toBe("failed");
-  expect(execute).toHaveBeenCalledTimes(2);
-  expect(execute.mock.calls[1][0].prompt).not.toBe(
-    execute.mock.calls[0][0].prompt,
-  );
+  expect(execute).toHaveBeenCalledTimes(1);
 });
 
 it("feeds both task types into the same daily feed, report preview and webhook payload", async () => {
@@ -599,18 +518,9 @@ it("feeds both task types into the same daily feed, report preview and webhook p
     }),
     articleId,
   );
-  execute.mockImplementation(async (input) => ({
-    status: "success",
-    provider: "mock",
-    model: "mock",
-    result:
-      input.taskType === "select"
-        ? {
-            selected: [{ article_id: articleId, reason: "Concrete mechanism" }],
-          }
-        : input.taskType === "translate"
-          ? { markdown: input.material }
-          : "# 中文研报\n\n解释源码实现与适用条件。",
+  execute.mockImplementation(async input => input.repository ? reportResult(input) : ({
+    status: 'success', provider: 'mock', model: 'mock',
+    result: input.taskType === 'select' ? { selected: [{ article_id: articleId, reason: 'Concrete mechanism' }] } : input.taskType === 'translate' ? { markdown: input.material } : '# 中文研报\n\n解释源码实现与适用条件。',
   }));
   const repositoryRun = await run();
   const scheduler = new AppScheduler();
@@ -748,7 +658,7 @@ it("exposes task types consistently through the API and rejects incompatible sou
       },
     });
     expect(invalid.statusCode).toBe(400);
-    await collectionService.discoverSource("orca");
+    await run();
     const library = (
       await app.inject({ method: "GET", url: "/api/v1/library" })
     ).json();
@@ -756,4 +666,84 @@ it("exposes task types consistently through the API and rejects incompatible sou
   } finally {
     await app.close();
   }
+});
+
+it('rotates multiple repositories across days and enforces one task-wide daily budget', async () => {
+  await sourcesService.saveSource({ id: 'other', name: 'Other', url: 'https://github.com/example/other', capability_id: 'github_repository', options: { research_focus: '数据结构' } });
+  getSqliteDatabase().prepare("INSERT INTO group_sources(group_id,source_id) VALUES ('study','other')").run();
+  const first = await run();
+  expect(first.output.entries).toHaveLength(1);
+  const firstRepo = execute.mock.calls[0][0].repository.url;
+  expect((await run()).output.entries).toHaveLength(0);
+  vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+  expect((await run()).output.entries).toHaveLength(1);
+  expect(execute.mock.calls[1][0].repository.url).not.toBe(firstRepo);
+  expect(execute.mock.calls.map(([input]) => input.taskType)).toEqual(['research_report', 'research_report']);
+  expect(execute.mock.calls.map(([input]) => input.prompt).join('\n')).toContain('数据结构');
+});
+
+it('fills a total budget larger than the repository count without re-fetching within a run', async () => {
+  getSqliteDatabase().prepare("UPDATE groups SET deep_analysis_count=3 WHERE id='study'").run();
+  let ordinal = 0;
+  execute.mockImplementation(async input => reportResult(input, `核心机制${++ordinal}`));
+  expect((await run()).output.entries).toHaveLength(3);
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(1);
+  expect((await sourcesService.getSource('orca'))!.repository_history).toHaveLength(3);
+  expect((await run()).output.entries).toHaveLength(0);
+});
+
+it('refreshes new investigations after code, goal, prompt and Skill updates; keeps archived reports', async () => {
+  expect((await run()).status).toBe('succeeded');
+  const db = getSqliteDatabase();
+  const first = db.prepare('SELECT request_hash FROM research_tasks').get() as { request_hash: string };
+  const history = (await sourcesService.getSource('orca'))!.repository_history!;
+  await sourcesService.saveSource({ id: 'orca', name: 'Orca', url: 'https://github.com/stablyai/orca', options: { research_focus: '恢复语义' } });
+  vi.mocked(repository.refreshRepository).mockResolvedValue({ commit: 'b'.repeat(40), branch: 'next-default', files: ['src/core.ts'], readme: 'Latest local README' });
+  const previous = prompts.buildCodeResearchPrompt;
+  vi.spyOn(prompts, 'buildCodeResearchPrompt').mockImplementation(instructions => previous(instructions) + '\n具体解释恢复的失败分支。');
+  vi.mocked(skillsService.getSkill).mockResolvedValue({ id: 'github-code-research', name: 'Code', type: 'research', revision: 'v2', description: '', tags: [], file_path: '', system_prompt: '' });
+  execute.mockImplementationOnce(async input => reportResult(input, '恢复机制'));
+  vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+  expect((await run()).status).toBe('succeeded');
+  expect(execute.mock.calls[1][0].repository.commit).toBe('b'.repeat(40));
+  expect(execute.mock.calls[1][0].prompt).toContain('恢复语义');
+  expect(execute.mock.calls[1][0].prompt).toContain('核心执行架构');
+  expect(execute.mock.calls[1][0].material).toContain('Latest local README');
+  const hashes = db.prepare('SELECT request_hash FROM research_tasks').all() as Array<{ request_hash: string }>;
+  expect(hashes[1].request_hash).not.toBe(first.request_hash);
+  const next = (await sourcesService.getSource('orca'))!.repository_history!;
+  expect(next.find(item => item.article_id === history[0].article_id)).toEqual(history[0]);
+});
+
+it('preserves a failed archive snapshot and path across goal, code and prompt changes', async () => {
+  vi.mocked(GitHubClient.syncFiles).mockResolvedValueOnce({ status: 'failed', changedPaths: [], errorMessage: 'offline' });
+  expect((await run()).status).toBe('failed');
+  const before = (await sourcesService.getSource('orca'))!.repository_history![0];
+  expect(before.status).toBe('awaiting_archive');
+  await sourcesService.saveSource({ id: 'orca', name: 'Orca', url: 'https://github.com/stablyai/orca', options: { research_focus: '新的目标' } });
+  vi.mocked(repository.refreshRepository).mockRejectedValue(new Error('new code unavailable'));
+  vi.mocked(skillsService.getSkill).mockResolvedValue(null);
+  vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+  expect((await run()).status).toBe('succeeded');
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(repository.refreshRepository).toHaveBeenCalledTimes(1);
+  expect((await sourcesService.getSource('orca'))!.repository_history![0]).toMatchObject({ article_id: before.article_id, commit: before.commit, status: 'completed' });
+});
+
+it('keeps insufficient evidence retryable and rejects repeating a completed topic', async () => {
+  execute.mockImplementationOnce(async input => {
+    const result = reportResult(input);
+    result.artifacts = [];
+    return result;
+  });
+  expect((await run()).status).toBe('failed');
+  const failed = (await sourcesService.getSource('orca'))!.repository_history![0];
+  expect(failed.status).toBe('failed');
+  expect(failed.error).toContain('源码证据');
+  expect((await run()).status).toBe('succeeded');
+  expect((await sourcesService.getSource('orca'))!.repository_history![0].article_id).toBe(failed.article_id);
+  vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+  expect((await run()).status).toBe('failed');
+  expect((await sourcesService.getSource('orca'))!.repository_history![0].error).toContain('重复');
+  expect(GitHubClient.syncFiles).toHaveBeenCalledTimes(1);
 });

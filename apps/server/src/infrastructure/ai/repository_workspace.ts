@@ -5,6 +5,7 @@ import {
   parseGitHubRepository,
   type RepositoryCheckout,
 } from "@openlore/contracts";
+import { repositoryCache } from "./repository_cache.js";
 import type { runProcess } from "./workspace_runner.js";
 
 /** Fetch the complete tracked source tree at a pinned commit before the AI starts. */
@@ -45,7 +46,7 @@ export async function prepareRepositoryWorkspace(
     );
     if (result.code !== 0 || result.timedOut)
       throw new Error(
-        "无法获取或校验固定 Commit 的完整源码，请检查执行机 Git、网络与仓库读取权限；私有仓库需要执行机自身的 Git 读取凭据",
+        `无法获取或校验固定 Commit 的完整源码，请检查执行机 Git、网络与仓库读取权限；私有仓库需要执行机自身的 Git 读取凭据：${result.stderr.slice(-500)}`,
       );
     return result.stdout.trim();
   };
@@ -60,17 +61,9 @@ export async function prepareRepositoryWorkspace(
     if (saved.url !== url || saved.commit !== checked.commit)
       throw new Error("会话仓库或 Commit 已变化");
   } else {
-    fs.mkdirSync(target);
-    await git(["init", "--quiet"]);
-    await git([
-      "fetch",
-      "--quiet",
-      "--depth=1",
-      "--no-tags",
-      "--no-recurse-submodules",
-      url,
-      checked.commit,
-    ]);
+    const cached = await repositoryCache(url, path.join(workspace, "..", "..", "repository-cache"), run, Math.max(1, deadline - Date.now()), checked.commit, signal);
+    const cloned = await run("git", ["-c", `core.hooksPath=${hooks}`, "clone", "--quiet", "--no-checkout", "--local", cached.cache, target], workspace, "", Math.max(1, deadline - Date.now()), signal);
+    if (cloned.code !== 0 || cloned.timedOut) throw new Error("无法创建源码快照");
     await git([
       "-c",
       "filter.lfs.smudge=",
@@ -79,7 +72,7 @@ export async function prepareRepositoryWorkspace(
       "checkout",
       "--quiet",
       "--detach",
-      "FETCH_HEAD",
+      checked.commit,
     ]);
   }
   if ((await git(["rev-parse", "HEAD"])) !== checked.commit)

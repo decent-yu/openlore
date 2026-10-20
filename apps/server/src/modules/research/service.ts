@@ -141,17 +141,23 @@ export class ResearchService {
     const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
     if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
     if (study) {
-      const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown FROM research_tasks t JOIN articles a ON a.id=t.article_id
+      // Upload retries reuse the approved report before resolving skills, prompts or fresh code.
+      const ready = db.select().from(researchTasksTable).where(and(
+        eq(researchTasksTable.groupId, groupId), eq(researchTasksTable.articleId, articleId), eq(researchTasksTable.status, 'succeeded'),
+      )).all().find(task => !task.archivedAt && task.reportMarkdown.trim());
+      if (ready) return (await this.listResearchTasks(groupId)).find(task => task.id === ready.id)!;
+      const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id
         WHERE t.status='succeeded' AND t.archived_at IS NOT NULL AND t.article_id<>?
-          AND json_extract(a.date_evidence_json,'$.repository_study.directory')=?
-        ORDER BY t.created_at DESC LIMIT 40`).all(articleId, study.directory) as Array<{ title: string; report_markdown: string }>;
-      instructions += `
-
+          AND EXISTS(SELECT 1 FROM source_items si WHERE si.article_id=t.article_id AND si.source_id=?)
+        ORDER BY t.created_at DESC`).all(articleId, study.source_id || '') as Array<{ title: string; report_markdown: string; questions_json: string }>;
+      instructions = `${DEFAULT_RESEARCH_INSTRUCTIONS}
 仓库：${study.repository_url}
-固定 Commit：${study.commit}
-研读重点：${study.focus || '架构设计与核心思想'}
-已归档研读（最近 40 篇）：
-${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).join('\n\n') || '暂无，从整体架构与核心执行链路开始。'}`;
+本次 Commit：${study.commit}
+来源研读目标：${study.focus || '理解核心架构、设计方案与实现思想'}
+研究记录 ID：${study.study_id || articleId}（重试保持不变）
+已归档历史（跨流水线共享）：
+${history.map(item => `- ${item.title}\n研究问题：${item.questions_json}\n${item.report_markdown.slice(0, 1200)}`).join('\n\n') || '暂无，从核心架构与执行链路开始。'}
+围绕目标选择历史尚未深入解释的机制，明确本次研究问题，避免改标题重复研究；Commit 只标识版本，普通 Bug 修复不能自动成为选题。`;
     }
 
     // Generate research report (using AI adapter with primary and fallback support)
@@ -269,6 +275,21 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
 
           if (typeof report !== "string" || !report.trim())
             throw new Error("AI 返回了空研报或无效格式");
+          if (study) {
+            const artifact = aiRes.artifacts?.find(file => file.path === 'evidence.json');
+            if (!artifact) throw new Error('代码研读缺少可核验的源码证据');
+            const evidence = JSON.parse(Buffer.from(artifact.content, 'base64').toString('utf8'));
+            if (evidence.complete !== true || evidence.commit !== study.commit || !Array.isArray(evidence.questions) || !evidence.questions.length || !Array.isArray(evidence.citations) || !evidence.citations.length)
+              throw new Error('关键源码证据不足，保留未完成状态');
+            const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim();
+            const previous = getSqliteDatabase().prepare(`SELECT a.title,t.questions_json FROM research_tasks t JOIN articles a ON a.id=t.article_id
+              WHERE t.archived_at IS NOT NULL AND EXISTS(SELECT 1 FROM source_items s WHERE s.article_id=a.id AND s.source_id=?)`).all(study.source_id || '') as Array<{ title: string; questions_json: string }>;
+            const normalized = (value: string) => value.toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '');
+            if (!title || previous.some(item => normalized(item.title) === normalized(title)) ||
+              evidence.questions.every((question: string) => previous.some(item => (JSON.parse(item.questions_json) as string[]).some(old => normalized(old) === normalized(question)))))
+              throw new Error('本次主题与已归档研读重复，需选择尚未深入的问题');
+            db.update(researchTasksTable).set({ questionsJson: JSON.stringify(evidence.questions), evidenceJson: JSON.stringify(evidence.citations) }).where(eq(researchTasksTable.id, taskId)).run();
+          }
           for (const artifact of aiRes.artifacts || []) {
             safeRelativePath(artifact.path);
             if (!artifact.path.startsWith("assets/")) continue;

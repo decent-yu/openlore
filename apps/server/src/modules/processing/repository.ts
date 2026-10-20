@@ -1,100 +1,247 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
-import { repositoryStudy, type Group } from "@openlore/contracts";
+import {
+  parseGitHubRepository,
+  repositoryStudy,
+  type Group,
+  type ProcessedBatchResult,
+  type Source,
+} from "@openlore/contracts";
 import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import { sourcesService } from "../sources/service.js";
 import { collectionService } from "../collection/service.js";
 import { claimResearchArticle } from "../research/state.js";
+import {
+  refreshRepository,
+  repositoryStudyService,
+  type RepositorySnapshot,
+} from "../repository-study/service.js";
 import { articleSlug } from "../delivery/archive-layout.js";
-import { listPoolCandidates } from "./candidates.js";
 import {
   createProcessedBatch,
   recordProcessedEntry,
   saveProcessedBatch,
 } from "./batch.js";
-import type { ProcessedBatchResult } from "@openlore/contracts";
 
 export class RepositoryProcessingService {
   async runProcessingForGroup(
     group: Group,
     runId: string,
   ): Promise<ProcessedBatchResult> {
-    if (group.deep_analysis_count > 0)
-      for (const source of await sourcesService.listSources()) {
-        if (
-          !source.enabled ||
-          source.capability_id !== "github_repository" ||
-          (group.source_ids.length && !group.source_ids.includes(source.id))
-        )
-          continue;
-        const collected = await collectionService.discoverSource(source.id);
-        if (collected.status === "failed")
-          throw new Error(collected.errors[0]?.message || "仓库材料准备失败");
-      }
-    const pool = listPoolCandidates(group.source_ids, group.task_type);
-    const result = createProcessedBatch(pool.length);
     const db = getSqliteDatabase();
-    for (const item of pool) {
-      if (item.processed || item.busy) {
-        result.counts.already_processed++;
-        continue;
-      }
-      result.counts.candidate++;
-      if (result.entries.length >= group.deep_analysis_count) continue;
-      const article = db
-        .prepare("SELECT * FROM articles WHERE id=?")
-        .get(item.id) as {
-        id: string;
-        title: string;
-        latest_revision: string;
-        author: string;
-        published_at: string;
-        date_evidence_json: string;
-      };
-      const study = repositoryStudy(JSON.parse(article.date_evidence_json));
-      if (!study) throw new Error("仓库研读材料缺少固定版本信息");
-      const revision = db
+    const sources = (await sourcesService.listSources()).filter(
+      (source) =>
+        source.enabled &&
+        source.capability_id === "github_repository" &&
+        (!group.source_ids.length || group.source_ids.includes(source.id)),
+    );
+    const result = createProcessedBatch(sources.length);
+    const day = (date: Date) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: group.timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date);
+    const today = day(new Date());
+    const delivered = (
+      db
         .prepare(
-          "SELECT content_ref FROM article_revisions WHERE article_id=? AND revision_hash=?",
+          "SELECT archived_at FROM research_tasks WHERE group_id=? AND archived_at IS NOT NULL",
         )
-        .get(item.id, article.latest_revision) as
-        { content_ref: string } | undefined;
-      if (!revision || !fs.existsSync(revision.content_ref))
-        throw new Error("仓库研读材料缺失");
-      const content = fs.readFileSync(revision.content_ref, "utf8");
-      if (!claimResearchArticle(item.id, group.id, runId)) continue;
-      const sources = (
+        .all(group.id) as Array<{ archived_at: string }>
+    ).filter((row) => day(new Date(row.archived_at)) === today).length;
+    const budget = Math.max(0, group.deep_analysis_count - delivered);
+    const snapshots = new Map<string, RepositorySnapshot>();
+    const last = (id: string) =>
+      (
         db
           .prepare(
-            "SELECT DISTINCT source_id FROM source_items WHERE article_id=?",
+            "SELECT last_selected_at FROM repository_rotation WHERE source_id=?",
           )
-          .all(item.id) as { source_id: string }[]
-      ).map((row) => row.source_id);
-      recordProcessedEntry(
-        group,
-        {
-          article_id: item.id,
-          revision: article.latest_revision,
-          slug: articleSlug(article.title),
-          title: article.title,
-          original_url: study.repository_url,
-          author: article.author,
-          published_at: article.published_at,
-          tags: ["GitHub", "仓库研读"],
-          summary: study.focus || "研读源码，解释工作原理与设计取舍",
-          organized_markdown: content,
-          asset_refs: [],
-          evidence_refs: study.files,
-          limitations: [],
-        },
-        "每日仓库研读",
-        sources,
-        result,
-      );
+          .get(id) as { last_selected_at: string } | undefined
+      )?.last_selected_at || "";
+    // Round robin across repositories, including across days and pipelines. One turn per repository per round.
+    sources.sort(
+      (a, b) =>
+        last(a.id).localeCompare(last(b.id)) || a.id.localeCompare(b.id),
+    );
+    const selected = new Set<string>();
+    while (result.entries.length < budget && sources.length) {
+      let progress = false;
+      for (const source of sources) {
+        if (result.entries.length >= budget) break;
+        const history = repositoryStudyService.history(source.id);
+        const unfinished = history.filter(
+          (item) =>
+            item.status !== "completed" && !selected.has(item.article_id),
+        );
+        // An existing attempt, including an upload retry, keeps its identity and snapshot.
+        const retry = unfinished.find(
+          (item) =>
+            !selected.has(item.article_id) &&
+            item.status !== "running" &&
+            (!item.reports.length ||
+              item.reports.some((report) => report.group_id === group.id)),
+        );
+        if (!retry && unfinished.length) continue;
+        let articleId = retry?.article_id;
+        let created = false;
+        if (!articleId) {
+          let snapshot = snapshots.get(source.id);
+          if (!snapshot) {
+            snapshot = await this.snapshot(source);
+            snapshots.set(source.id, snapshot);
+          }
+          articleId = this.allocate(source, snapshot, selected);
+          if (!articleId) continue;
+          created = true;
+        }
+        if (!claimResearchArticle(articleId, group.id, runId)) continue;
+        // Failed generation uses fresh default-branch code; successful reports awaiting upload stay unchanged.
+        if (!created && !retry?.reports.length) {
+          let snapshot = snapshots.get(source.id);
+          if (!snapshot) {
+            snapshot = await this.snapshot(source);
+            snapshots.set(source.id, snapshot);
+          }
+          this.materialize(source, snapshot, articleId);
+        }
+        const article = db
+          .prepare("SELECT * FROM articles WHERE id=?")
+          .get(articleId) as {
+          title: string;
+          latest_revision: string;
+          author: string;
+          published_at: string;
+          date_evidence_json: string;
+        };
+        const study = repositoryStudy(JSON.parse(article.date_evidence_json));
+        if (!study) throw new Error("仓库材料缺少源码快照");
+        const revision = db
+          .prepare(
+            "SELECT content_ref FROM article_revisions WHERE article_id=? AND revision_hash=?",
+          )
+          .get(articleId, article.latest_revision) as { content_ref: string };
+        recordProcessedEntry(
+          group,
+          {
+            article_id: articleId,
+            revision: article.latest_revision,
+            slug: articleSlug(article.title),
+            title: article.title,
+            original_url: source.url,
+            author: article.author,
+            published_at: article.published_at,
+            tags: ["GitHub", "仓库研读"],
+            summary: study.focus || "深入理解核心架构、设计方案与实现思想",
+            organized_markdown: fs.readFileSync(revision.content_ref, "utf8"),
+            asset_refs: [],
+            evidence_refs: [],
+            limitations: [],
+          },
+          retry ? "继续未交付研读" : "根据来源目标与历史研报持续研读",
+          [source.id],
+          result,
+        );
+        db.prepare(
+          "INSERT INTO repository_rotation(source_id,last_selected_at) VALUES (?,?) ON CONFLICT(source_id) DO UPDATE SET last_selected_at=excluded.last_selected_at",
+        ).run(
+          source.id,
+          `${new Date().toISOString()}:${String(result.entries.length).padStart(3, "0")}`,
+        );
+        selected.add(articleId);
+        progress = true;
+      }
+      if (!progress) break;
     }
+    result.counts.candidate = result.entries.length;
     result.counts.planned = result.entries.length;
-    result.counts.deferred = result.counts.candidate - result.counts.planned;
+    result.counts.already_processed = delivered;
     saveProcessedBatch(runId, result);
     return result;
+  }
+
+  private async snapshot(source: Source): Promise<RepositorySnapshot> {
+    try {
+      const snapshot = await refreshRepository(source);
+      await sourcesService.updateLastPolled(source.id, true);
+      return snapshot;
+    } catch (error: any) {
+      await sourcesService.updateLastPolled(source.id, false, error.message);
+      throw error;
+    }
+  }
+
+  private allocate(
+    source: Source,
+    snapshot: RepositorySnapshot,
+    selected: Set<string>,
+  ): string | undefined {
+    const id = `art_${crypto.randomUUID()}`;
+    // Allocation and material are durable before claims/research. Source-wide IDs survive other pipelines.
+    return getSqliteDatabase().transaction(() => {
+      if (
+        repositoryStudyService
+          .history(source.id)
+          .some(
+            (item) =>
+              item.status !== "completed" && !selected.has(item.article_id),
+          )
+      )
+        return undefined;
+      this.materialize(source, snapshot, id);
+      return id;
+    })();
+  }
+
+  private materialize(
+    source: Source,
+    snapshot: RepositorySnapshot,
+    articleId: string,
+  ): void {
+    const repository = parseGitHubRepository(source.url)!;
+    const now = new Date().toISOString();
+    const study = {
+      repository_url: source.url,
+      directory: repository.directory,
+      source_id: source.id,
+      study_id: articleId,
+      commit: snapshot.commit,
+      day: now.slice(0, 10),
+      focus: source.options.research_focus,
+      files: snapshot.files,
+      questions: [],
+    };
+    const existing = getSqliteDatabase()
+      .prepare("SELECT title FROM articles WHERE id=?")
+      .get(articleId) as { title: string } | undefined;
+    collectionService.persistContentItem(
+      {
+        source_id: source.id,
+        source_item_id: `${source.id}:${articleId}`,
+        native_id: articleId,
+        original_url: source.url,
+        final_url: source.url,
+        canonical_url: `${source.url}?openlore-study=${articleId}`,
+        title:
+          existing?.title ||
+          `${repository.owner}/${repository.repo} · 深入研读`,
+        author: repository.owner,
+        published_at: now,
+        date_evidence: { repository_study: study },
+        body: {
+          value: `# ${repository.owner}/${repository.repo}\n\n研读目标：${study.focus || "核心架构、设计方案与实现思想"}\n默认分支：${snapshot.branch}\nCommit：${snapshot.commit}\n\n## 本地完整目录\n${snapshot.files.join("\n")}\n\n## README\n${snapshot.readme}`,
+          format: "markdown",
+          completeness: "full",
+        },
+        attachments: [],
+        fetched_at: now,
+        fetch_method: "github_repository",
+        issues: [],
+      },
+      articleId,
+    );
   }
 }
 export const repositoryProcessingService = new RepositoryProcessingService();

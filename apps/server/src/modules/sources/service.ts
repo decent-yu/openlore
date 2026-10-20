@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { repositoryStudyService } from '../repository-study/service.js';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { SourceCapabilitySchema, SourceOptionsSchema, parseGitHubRepository, type Source } from '@openlore/contracts';
@@ -23,6 +24,7 @@ export class SourcesService {
       capability_id: r.capabilityId,
       enabled: Boolean(r.enabled),
       options: SourceOptionsSchema.parse(JSON.parse(r.optionsJson || '{}')),
+      repository_history: r.capabilityId === 'github_repository' ? repositoryStudyService.history(r.id) : undefined,
       quality_stats: Object.fromEntries((getSqliteDatabase().prepare('SELECT status, count(*) n FROM collection_candidates WHERE source_id=? GROUP BY status').all(r.id) as Array<{status:string;n:number}>).map((row) => [row.status,row.n])),
       last_polled_at: r.lastPolledAt || undefined,
       last_success_at: r.lastSuccessAt || undefined,
@@ -42,6 +44,7 @@ export class SourcesService {
       capability_id: r.capabilityId,
       enabled: Boolean(r.enabled),
       options: SourceOptionsSchema.parse(JSON.parse(r.optionsJson || '{}')),
+      repository_history: r.capabilityId === 'github_repository' ? repositoryStudyService.history(r.id) : undefined,
       quality_stats: Object.fromEntries((getSqliteDatabase().prepare('SELECT status, count(*) n FROM collection_candidates WHERE source_id=? GROUP BY status').all(r.id) as Array<{status:string;n:number}>).map((row) => [row.status,row.n])),
       last_polled_at: r.lastPolledAt || undefined,
       last_success_at: r.lastSuccessAt || undefined,
@@ -73,8 +76,8 @@ export class SourcesService {
       url = repository!.url;
     }
     const options = SourceOptionsSchema.parse(data.options ?? previous?.options ?? (capability === 'github_repository' ? { poll_interval_mins: 60 } : {}));
-    if (capability === 'github_repository' && options.github_connection_id)
-      z.string().refine(value => Boolean(getSqliteDatabase().prepare('SELECT id FROM repository_connections WHERE id=?').get(value)), 'GitHub 读取连接不存在').parse(options.github_connection_id);
+    if (previous?.capability_id === 'github_repository' && previous.url !== url)
+      z.string().refine(() => false, '仓库地址不能修改，请新建来源以保留独立历史').parse(url);
     const record = {
       id,
       name,
@@ -96,8 +99,10 @@ export class SourcesService {
 
     if (previous && (previous.url !== url || JSON.stringify(previous.options) !== JSON.stringify(options))) {
       db.delete(sourceStatesTable).where(eq(sourceStatesTable.sourceId, id)).run();
-      const { collectionService } = await import('../collection/service.js');
-      await collectionService.revalidateSource(id);
+      if (capability !== 'github_repository') {
+        const { collectionService } = await import('../collection/service.js');
+        await collectionService.revalidateSource(id);
+      }
     }
     return this.getSource(id) as Promise<Source>;
   }
