@@ -300,6 +300,42 @@ describe('Task execution and independent multi-task reports', () => {
     expect(push?.ai_log_id).toBeUndefined();
     await report.deletePlan('digest-scope');
   });
+  it('uses the archived article initial positioning for both preview and delivery instead of long summaries', async () => {
+    seedRun('positioning-run', 'agent', 'succeeded', 'article');
+    const db = getSqliteDatabase();
+    const positioning = '面向健康辅导等具有严格业务边界的对话系统，介绍如何结合单轮评测、动态多轮模拟、运行时安全检查与专家审核改进评测体系。适合参考评测架构、评分准则治理和发布门禁设计，属于工程实践案例，尚不足以作为安全有效性的验证报告。';
+    db.prepare("UPDATE articles SET latest_revision='new-revision' WHERE id='article'").run();
+    const insert = db.prepare("INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article',?,'succeeded',?,?)");
+    insert.run('rev', JSON.stringify({positioning, summary: 'Long initial-review problem, method, conclusion and limitations'}), new Date().toISOString());
+    insert.run('new-revision', JSON.stringify({positioning: 'Newer revision positioning must not replace the archived revision'}), new Date().toISOString());
+    await report.savePlan({id: 'positioning-report', name: '日报', enabled: false, pipeline_ids: ['agent'], notification_connection_id: 'channel'});
+    const ai = vi.spyOn(aiAdapters, 'getAIAdapterWithFallback').mockImplementation(() => { throw new Error('Reports must not use AI'); });
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+    const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({status: 'sent'});
+
+    const preview = await report.preview('positioning-report');
+    expect(preview.articles[0].summary).toBe(positioning);
+    expect(preview.summary).toContain(positioning);
+    expect(preview.summary).toContain('[article](https://github.com/example/docs/article.md)');
+    for (const text of ['Summary', 'Long initial-review', 'Newer revision', '含深度调研']) expect(preview.summary).not.toContain(text);
+    expect((await report.send('positioning-report')).state).toBe('sent');
+    expect(sender.mock.calls[0][1].summary).toBe(preview.summary);
+    expect(sender.mock.calls[0][1].articles?.[0].summary).toBe(positioning);
+    expect(ai).not.toHaveBeenCalled();
+  });
+
+  it('keeps the article link without falling back to long text when positioning is missing', async () => {
+    seedRun('missing-positioning-run', 'agent', 'succeeded', 'article');
+    getSqliteDatabase().prepare("INSERT INTO article_reviews(article_id,revision_hash,status,result_json,created_at) VALUES ('article','rev','succeeded',?,?)")
+      .run(JSON.stringify({summary: 'Long initial-review text'}), new Date().toISOString());
+    await report.savePlan({id: 'missing-positioning', name: '日报', enabled: false, pipeline_ids: ['agent']});
+    const preview = await report.preview('missing-positioning');
+    expect(preview.articles[0].summary).toBe('');
+    expect(preview.summary).toContain('[article](https://github.com/example/docs/article.md)');
+    expect(preview.summary).not.toContain('Long initial-review text');
+    expect(preview.summary).not.toContain('Summary');
+  });
+
   it('checks task schedules while a source request is still running and does not re-trigger within the minute', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-16T00:00:00Z'));

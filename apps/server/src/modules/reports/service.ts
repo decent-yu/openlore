@@ -172,13 +172,14 @@ export class ReportService {
       const latest = taskRuns[0];
       const publications = getSqliteDatabase()
         .prepare(
-          `SELECT r.article_id,a.title,a.canonical_url,r.report_markdown
+          `SELECT r.article_id,r.revision_hash,a.title,a.canonical_url,r.report_markdown
         FROM research_tasks r JOIN articles a ON a.id=r.article_id
         WHERE r.group_id=? AND r.status='succeeded' AND julianday(r.archived_at)>=julianday(?) AND julianday(r.archived_at)<julianday(?)
         ORDER BY r.archived_at DESC,r.rowid DESC`,
         )
         .all(id, start, end) as Array<{
         article_id: string;
+        revision_hash: string;
         title: string;
         canonical_url: string | null;
         report_markdown: string;
@@ -201,14 +202,15 @@ export class ReportService {
         const old = outputs.get(publication.article_id);
         const cached = getSqliteDatabase()
           .prepare(
-            "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
+            "SELECT result_json FROM article_reviews WHERE article_id=? AND revision_hash=? AND status='succeeded'",
           )
-          .get(publication.article_id) as
+          .get(publication.article_id, publication.revision_hash) as
           { result_json: string } | undefined;
-        let summary = old?.summary || "";
-        if (!summary && cached) {
+        let summary = "";
+        if (cached) {
           try {
-            summary = JSON.parse(cached.result_json).summary || "";
+            const positioning = JSON.parse(cached.result_json).positioning;
+            if (typeof positioning === "string") summary = positioning.trim();
           } catch {}
         }
         entries.set(publication.article_id, {
@@ -250,7 +252,7 @@ export class ReportService {
             ? [...entries.values()]
                 .map(
                   (entry) =>
-                    `- [${entry.title}](${readingUrl(entry) || "#"})${entry.is_deep_analyzed ? " · 含深度调研" : ""}\n  ${entry.summary}`,
+                    `- [${entry.title}](${readingUrl(entry) || "#"})${entry.summary ? `\n  ${entry.summary}` : ""}`,
                 )
                 .join("\n")
             : status === "succeeded"
