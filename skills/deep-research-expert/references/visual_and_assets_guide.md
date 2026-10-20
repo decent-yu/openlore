@@ -15,9 +15,14 @@
   - **水平居中**：SVG 顶部主标题与副标题必须一律采用水平居中对齐（`text-anchor="middle"`，`x` 设置为画布宽度中轴 `W/2`），确保全幅画面对称平稳；
   - **零英文标签**：主标题上方**严禁放置任何英文分类标签或小胶囊**（例如 `PARADIGM SHIFT`、`DELIVERY PIPELINE`、`EFFICIENCY PARADOX` 等）。标题区必须干净、直白，直接展示中文主标题与副标题，视觉焦点坚决聚焦于核心业务拓扑与工程流转本身。
 
-### 1.2 正文引用与出现节奏
-- **先叙述后引图**：正文必须先阐明问题或推论，再自然引出配图，严禁无前兆突兀插入。
-- **禁止视觉堆叠**：一篇长文中，图表应均匀分布在关键论点推导处。严禁在前两节连续塞入多张图。
+### 1.2 配图数量与结构化分布
+- **多图矩阵（生成 2～4 张互补 SVG）**：深度研报必须根据论述脉络生成 **2～4 张原生独立 SVG 矢量图**，放置于 `assets/` 目录。图表必须分工明确、互为补充：
+  - **图 1 · 架构拓扑 / 全链路流转**：勾勒宏观分层架构、核心组件与流转边界；
+  - **图 2 · 多方案对比矩阵 / 选型雷达**：横向并列对比 2～3 种对标方案的核心机制、吞吐与运维代价；
+  - **图 3 · 状态机 / 容灾自愈 / 时序流**：展示关键状态生命周期、故障降级路径或模块调用时序；
+  - **图 4（可选）· 决策排障树 / 性能度量**：生产选型决策流或关键参数量化关系。
+- **先叙述后引图**：正文必须先阐明问题、推论或数据，再自然引出配图，严禁无前兆突兀插入。
+- **避免堆叠**：图表应均匀分布在关键论点推导处（如架构剖析节、方案对比节、容灾分析节各一张），严禁在前两节集中堆放。
 
 ## 2. 现代工程级 SVG 设计美学与绘制指南
 
@@ -161,7 +166,317 @@
 </svg>
 ```
 
-### 3.2 SVG 视觉工程与样式防御硬约束 (SVG Styling, Arrow & Distortion Defenses)
+### 3.2 多方案架构横向对比卡片范式 (Side-by-Side Comparison Matrix)
+
+当深度调研涉及方案选型或代际演进对比时，采用双栏/三栏并列对比卡片，从机制、吞吐与运维成本等维度直观呈现差异：
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="t-cmp d-cmp">
+  <title id="t-cmp">技术方案核心机制与权衡对比</title>
+  <desc id="d-cmp">并列展示方案A与方案B在架构拓扑、吞吐性能与心智成本维度的对比</desc>
+  <defs>
+    <filter id="cmp-shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.05"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.03"/>
+    </filter>
+    <linearGradient id="cmp-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#cmp-bg)"/>
+
+  <!-- 居中标题 -->
+  <g font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <text x="800" y="75" text-anchor="middle" font-size="34" font-weight="800" fill="#0f172a">核心架构方案横向多维对比</text>
+    <text x="800" y="110" text-anchor="middle" font-size="16" fill="#64748b">从调度机制、吞吐能力、故障边界到运维心智负担的客观权衡</text>
+  </g>
+
+  <!-- 方案 A 卡片 (左栏: x: 80, width: 690) -->
+  <g filter="url(#cmp-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="80" y="150" width="690" height="680" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <rect x="80" y="150" width="690" height="6" rx="3" fill="#3b82f6"/>
+    <rect x="110" y="180" width="160" height="30" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="190" y="200" text-anchor="middle" font-size="13" font-weight="700" fill="#1d4ed8">方案 A · 传统轮询</text>
+    <text x="110" y="245" font-size="22" font-weight="700" fill="#0f172a">单体数据库轮询架构</text>
+    <text x="110" y="270" font-size="14" fill="#64748b">简单易维护，但受制于数据库连接与锁竞争瓶颈</text>
+
+    <!-- 维度行 1 -->
+    <rect x="110" y="300" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="135" y="330" font-size="15" font-weight="700" fill="#334155">吞吐量与调度延迟</text>
+    <text x="135" y="358" font-size="13" fill="#475569">• 极限吞吐约为 500 QPS，秒级轮询间隔存在天然调度延迟</text>
+    <text x="135" y="380" font-size="13" fill="#dc2626">• 高并发场景下数据库 CPU 占用容易被空轮询打满</text>
+
+    <!-- 维度行 2 -->
+    <rect x="110" y="410" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="135" y="440" font-size="15" font-weight="700" fill="#334155">一致性与容灾恢复</text>
+    <text x="135" y="468" font-size="13" fill="#475569">• 基于事务状态天然幂等，节点宕机重启后自动认领断点任务</text>
+    <text x="135" y="490" font-size="13" fill="#166534">• 零额外中间件依赖，数据库主从切换即为最高容灾保障</text>
+
+    <!-- 维度行 3 -->
+    <rect x="110" y="520" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="135" y="550" font-size="15" font-weight="700" fill="#334155">团队落地心智成本</text>
+    <text x="135" y="578" font-size="13" fill="#166534">• 极低：普通工程师半天内即可看懂完整状态流转</text>
+    <text x="135" y="600" font-size="13" fill="#475569">• 调试仅需查看单表记录，排障与回溯成本趋近于零</text>
+
+    <!-- 选型判定徽章 -->
+    <rect x="110" y="640" width="630" height="60" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="135" y="675" font-size="14" font-weight="700" fill="#1d4ed8">适用结论：适合任务量低于 100 QPS、更关注运维极简的中小团队日常业务</text>
+  </g>
+
+  <!-- 方案 B 卡片 (右栏: x: 830, width: 690) -->
+  <g filter="url(#cmp-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="830" y="150" width="690" height="680" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <rect x="830" y="150" width="690" height="6" rx="3" fill="#10b981"/>
+    <rect x="860" y="180" width="160" height="30" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="940" y="200" text-anchor="middle" font-size="13" font-weight="700" fill="#166534">方案 B · 事件驱动</text>
+    <text x="860" y="245" font-size="22" font-weight="700" fill="#0f172a">分布式事件总线架构</text>
+    <text x="860" y="270" font-size="14" fill="#64748b">高吞吐低延迟，但对中间件高可用与幂等治理要求严格</text>
+
+    <!-- 维度行 1 -->
+    <rect x="860" y="300" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="885" y="330" font-size="15" font-weight="700" fill="#334155">吞吐量与调度延迟</text>
+    <text x="885" y="358" font-size="13" fill="#166534">• 支持 50,000+ QPS 峰值突增，端到端延迟缩短至 5ms 以内</text>
+    <text x="885" y="380" font-size="13" fill="#475569">• 事件推送彻底杜绝空轮询对系统计算资源的浪费</text>
+
+    <!-- 维度行 2 -->
+    <rect x="860" y="410" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="885" y="440" font-size="15" font-weight="700" fill="#334155">一致性与容灾恢复</text>
+    <text x="885" y="468" font-size="13" fill="#475569">• 需建立严苛的消费者 ACK、死信队列与重复消息去重表</text>
+    <text x="885" y="490" font-size="13" fill="#dc2626">• 跨服务事件链路追踪需要引入全局 TraceId 与 OpenTelemetry</text>
+
+    <!-- 维度行 3 -->
+    <rect x="860" y="520" width="630" height="95" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="885" y="550" font-size="15" font-weight="700" fill="#334155">团队落地心智成本</text>
+    <text x="885" y="578" font-size="13" fill="#dc2626">• 较高：必须掌握分区再均衡、消息堆积告警与脑裂排查能力</text>
+    <text x="885" y="600" font-size="13" fill="#475569">• 基础设施多出 MQ 集群，需要配置专属监控大盘与告警通道</text>
+
+    <!-- 选型判定徽章 -->
+    <rect x="860" y="640" width="630" height="60" rx="10" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="885" y="675" font-size="14" font-weight="700" fill="#166534">适用结论：适合超大规模分布式链路、高频异步解耦与对毫秒级响应苛刻的场景</text>
+  </g>
+</svg>
+```
+
+### 3.3 核心状态转移与异常自愈流转范式 (State Machine & Fallback Cycle)
+
+当调研涵盖任务调度、长事务、工作流引擎或 AI Agent 执行生命周期时，采用清晰的状态流转图展示正向流程、异常挂起与回滚重试机制：
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="t-sm d-sm">
+  <title id="t-sm">核心状态机与异常自愈机制</title>
+  <desc id="d-sm">展示任务全生命周期的状态转换、租约续期、超时熔断与自愈回滚闭环</desc>
+  <defs>
+    <filter id="sm-shadow" x="-8%" y="-8%" width="116%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.06"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.04"/>
+    </filter>
+    <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#10b981"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#f97316"/>
+    </marker>
+    <marker id="arr-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#ef4444"/>
+    </marker>
+    <linearGradient id="sm-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sm-bg)"/>
+
+  <!-- 居中标题 -->
+  <g font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <text x="800" y="75" text-anchor="middle" font-size="34" font-weight="800" fill="#0f172a">核心状态转移与异常熔断自愈闭环</text>
+    <text x="800" y="110" text-anchor="middle" font-size="16" fill="#64748b">基于排他租约与重试退避的状态机生命周期演进模型</text>
+  </g>
+
+  <!-- 状态 1: QUEUED (就绪排队) -->
+  <g filter="url(#sm-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="100" y="240" width="280" height="220" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <rect x="100" y="240" width="280" height="6" rx="3" fill="#64748b"/>
+    <rect x="125" y="265" width="130" height="28" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="190" y="284" text-anchor="middle" font-size="12" font-weight="700" fill="#475569">状态 01 · 初始入队</text>
+    <text x="125" y="325" font-size="22" font-weight="800" fill="#0f172a">QUEUED</text>
+    <text x="125" y="355" font-size="13" fill="#64748b">• 校验请求签名与参数</text>
+    <text x="125" y="380" font-size="13" fill="#64748b">• 写入持久化 WAL 队列</text>
+    <text x="125" y="405" font-size="13" fill="#64748b">• 等待 Worker 抢占租约</text>
+  </g>
+
+  <!-- 状态 2: RUNNING (执行中) -->
+  <g filter="url(#sm-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="480" y="240" width="300" height="220" rx="16" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="480" y="240" width="300" height="6" rx="3" fill="#3b82f6"/>
+    <rect x="505" y="265" width="130" height="28" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="570" y="284" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">状态 02 · 独占执行</text>
+    <text x="505" y="325" font-size="22" font-weight="800" fill="#0f172a">RUNNING</text>
+    <text x="505" y="355" font-size="13" fill="#64748b">• 锁定排他租约 (Lease)</text>
+    <text x="505" y="380" font-size="13" fill="#64748b">• 周期性心跳保活 (Heartbeat)</text>
+    <text x="505" y="405" font-size="13" fill="#64748b">• 沙箱内执行任务与产物写入</text>
+  </g>
+
+  <!-- 状态 3: SUCCESS (成功归档) -->
+  <g filter="url(#sm-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="880" y="240" width="280" height="220" rx="16" fill="#ffffff" stroke="#86efac" stroke-width="1.5"/>
+    <rect x="880" y="240" width="280" height="6" rx="3" fill="#10b981"/>
+    <rect x="905" y="265" width="130" height="28" rx="6" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="970" y="284" text-anchor="middle" font-size="12" font-weight="700" fill="#166534">状态 03 · 验证通过</text>
+    <text x="905" y="325" font-size="22" font-weight="800" fill="#0f172a">SUCCEEDED</text>
+    <text x="905" y="355" font-size="13" fill="#64748b">• 产物哈希比对与不可变固化</text>
+    <text x="905" y="380" font-size="13" fill="#64748b">• 释放 Worker 资源与租约</text>
+    <text x="905" y="405" font-size="13" fill="#64748b">• 触发下游通知与知识归档</text>
+  </g>
+
+  <!-- 状态 4: RETRY / BACKOFF (异常退避重试) -->
+  <g filter="url(#sm-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="480" y="560" width="300" height="200" rx="16" fill="#ffffff" stroke="#fed7aa" stroke-width="1.5"/>
+    <rect x="480" y="560" width="300" height="6" rx="3" fill="#f97316"/>
+    <rect x="505" y="585" width="140" height="28" rx="6" fill="#fff7ed" stroke="#fed7aa"/>
+    <text x="575" y="604" text-anchor="middle" font-size="12" font-weight="700" fill="#c2410c">自愈分支 · 优雅退避</text>
+    <text x="505" y="640" font-size="22" font-weight="800" fill="#0f172a">RETRYING</text>
+    <text x="505" y="670" font-size="13" fill="#64748b">• 指数退避加随机抖动 (Jitter)</text>
+    <text x="505" y="695" font-size="13" fill="#64748b">• 重置执行环境并清理孤儿文件</text>
+    <text x="505" y="720" font-size="13" fill="#64748b">• 重试计数器判定 (Count &lt; 3)</text>
+  </g>
+
+  <!-- 状态 5: FAILED / DEAD_LETTER (最终失败/死信) -->
+  <g filter="url(#sm-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="1220" y="240" width="280" height="220" rx="16" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+    <rect x="1220" y="240" width="280" height="6" rx="3" fill="#ef4444"/>
+    <rect x="1245" y="265" width="130" height="28" rx="6" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="1310" y="284" text-anchor="middle" font-size="12" font-weight="700" fill="#991b1b">终态异常 · 熔断隔离</text>
+    <text x="1245" y="325" font-size="22" font-weight="800" fill="#0f172a">FAILED</text>
+    <text x="1245" y="355" font-size="13" fill="#64748b">• 记录现场堆栈与诊断信息</text>
+    <text x="1245" y="380" font-size="13" fill="#64748b">• 移入死信队列防止毒药丸</text>
+    <text x="1245" y="405" font-size="13" fill="#64748b">• 触发值班告警卡片等待人工介入</text>
+  </g>
+
+  <!-- 连线：QUEUED -> RUNNING (抢占成功) -->
+  <line x1="380" y1="350" x2="474" y2="350" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#arr-blue)"/>
+  <text x="430" y="338" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">抢占租约</text>
+
+  <!-- 连线：RUNNING -> SUCCEEDED (正常完结) -->
+  <line x1="780" y1="350" x2="874" y2="350" stroke="#10b981" stroke-width="2.5" marker-end="url(#arr-green)"/>
+  <text x="830" y="338" text-anchor="middle" font-size="12" font-weight="700" fill="#166534">校验通过</text>
+
+  <!-- 连线：RUNNING -> RETRY (异常触发重试) -->
+  <line x1="630" y1="460" x2="630" y2="554" stroke="#f97316" stroke-width="2.5" marker-end="url(#arr-orange)"/>
+  <text x="670" y="515" font-size="12" font-weight="700" fill="#c2410c">临时超时/可恢复错误</text>
+
+  <!-- 连线：RETRY -> RUNNING (重新认领) -->
+  <path d="M 480 660 H 420 V 410 H 474" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,6" marker-end="url(#arr-blue)"/>
+  <text x="375" y="540" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">退避完毕重新认领</text>
+
+  <!-- 连线：RETRY -> FAILED (超过最大重试次数) -->
+  <path d="M 780 660 H 1360 V 466" fill="none" stroke="#ef4444" stroke-width="2.5" marker-end="url(#arr-red)"/>
+  <text x="1070" y="650" text-anchor="middle" font-size="12" font-weight="700" fill="#dc2626">重试耗尽 (Count ≥ 3) 移入死信</text>
+</svg>
+```
+
+### 3.4 模块时序交互与数据流转范式 (Sequence & Data Flow)
+
+当分析分布式协议、RPC 调用链路、事件总线流转或人机交互时，采用优雅的时序卡片流转图：
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="t-seq d-seq">
+  <title id="t-seq">核心模块交互与时序数据流</title>
+  <desc id="d-seq">展示客户端、网关调度器、执行引擎与存储归档之间的全链路交互时序</desc>
+  <defs>
+    <filter id="seq-shadow" x="-6%" y="-6%" width="112%" height="115%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.05"/>
+    </filter>
+    <marker id="seq-arr-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#3b82f6"/>
+    </marker>
+    <marker id="seq-arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#10b981"/>
+    </marker>
+    <marker id="seq-arr-violet" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 7 3, 0 6" fill="#8b5cf6"/>
+    </marker>
+    <linearGradient id="seq-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#seq-bg)"/>
+
+  <!-- 居中标题 -->
+  <g font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <text x="800" y="75" text-anchor="middle" font-size="34" font-weight="800" fill="#0f172a">核心模块交互时序与数据流转</text>
+    <text x="800" y="110" text-anchor="middle" font-size="16" fill="#64748b">端到端请求校验、异步任务派发、流式结果回传与持久化闭环</text>
+  </g>
+
+  <!-- 4 个角色生命线 (Lifelines) -->
+  <line x1="220" y1="210" x2="220" y2="820" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,6"/>
+  <line x1="600" y1="210" x2="600" y2="820" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,6"/>
+  <line x1="980" y1="210" x2="980" y2="820" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,6"/>
+  <line x1="1360" y1="210" x2="1360" y2="820" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,6"/>
+
+  <!-- 角色卡片 1: 客户端 / 调用方 -->
+  <g filter="url(#seq-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="120" y="150" width="200" height="60" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="220" y="185" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">发起方 / 触发端</text>
+  </g>
+
+  <!-- 角色卡片 2: 网关与调度器 -->
+  <g filter="url(#seq-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="500" y="150" width="200" height="60" rx="12" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="600" y="185" text-anchor="middle" font-size="16" font-weight="700" fill="#1d4ed8">网关与调度核心</text>
+  </g>
+
+  <!-- 角色卡片 3: 执行沙箱 / Worker -->
+  <g filter="url(#seq-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="880" y="150" width="200" height="60" rx="12" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.5"/>
+    <text x="980" y="185" text-anchor="middle" font-size="16" font-weight="700" fill="#6d28d9">执行沙箱 / Worker</text>
+  </g>
+
+  <!-- 角色卡片 4: 存储与知识库 -->
+  <g filter="url(#seq-shadow)" font-family="Inter, -apple-system, 'PingFang SC', sans-serif">
+    <rect x="1260" y="150" width="200" height="60" rx="12" fill="#ffffff" stroke="#86efac" stroke-width="1.5"/>
+    <text x="1360" y="185" text-anchor="middle" font-size="16" font-weight="700" fill="#166534">存储与产物归档</text>
+  </g>
+
+  <!-- 步骤 1: 提交任务 (220 -> 600) -->
+  <line x1="220" y1="260" x2="594" y2="260" stroke="#3b82f6" stroke-width="2" marker-end="url(#seq-arr-blue)"/>
+  <text x="410" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#1e293b">1. 提交任务请求与入参参数 (POST /jobs)</text>
+
+  <!-- 步骤 2: 租约入库 (600 -> 1360) -->
+  <line x1="600" y1="320" x2="1354" y2="320" stroke="#10b981" stroke-width="2" marker-end="url(#seq-arr-green)"/>
+  <text x="980" y="310" text-anchor="middle" font-size="13" font-weight="600" fill="#166534">2. 写入任务 WAL 与分配租约 (QUEUED)</text>
+
+  <!-- 步骤 3: 立即返回 TaskId (600 -> 220) -->
+  <line x1="600" y1="380" x2="226" y2="380" stroke="#64748b" stroke-width="1.8" stroke-dasharray="5,5" marker-end="url(#seq-arr-blue)"/>
+  <text x="410" y="370" text-anchor="middle" font-size="13" font-weight="500" fill="#64748b">3. 响应 202 Accepted 并返回 task_id</text>
+
+  <!-- 步骤 4: Worker 抢占租约 (600 -> 980) -->
+  <line x1="600" y1="440" x2="974" y2="440" stroke="#8b5cf6" stroke-width="2" marker-end="url(#seq-arr-violet)"/>
+  <text x="790" y="430" text-anchor="middle" font-size="13" font-weight="600" fill="#6d28d9">4. 派发执行任务包并锁定 Worker 租约</text>
+
+  <!-- 步骤 5: 沙箱执行与产物生成 (980 -> 980 自回环) -->
+  <rect x="980" y="480" width="16" height="130" fill="#c4b5fd" rx="4"/>
+  <text x="1010" y="530" font-size="13" font-weight="600" fill="#6d28d9">5. 沙箱隔离运行、深潜调研、生成研报与 SVG 资产</text>
+
+  <!-- 步骤 6: 写入最终成果 (980 -> 1360) -->
+  <line x1="996" y1="640" x2="1354" y2="640" stroke="#10b981" stroke-width="2" marker-end="url(#seq-arr-green)"/>
+  <text x="1175" y="630" text-anchor="middle" font-size="13" font-weight="600" fill="#166534">6. 持久化 research.md 与 assets/ 矢量文件</text>
+
+  <!-- 步骤 7: 变更通知回传 (1360 -> 600) -->
+  <line x1="1360" y1="710" x2="606" y2="710" stroke="#64748b" stroke-width="1.8" stroke-dasharray="5,5" marker-end="url(#seq-arr-blue)"/>
+  <text x="980" y="700" text-anchor="middle" font-size="13" font-weight="500" fill="#64748b">7. 更新任务终态为 SUCCEEDED 并释放租约</text>
+
+  <!-- 步骤 8: 交付确认与通知 (600 -> 220) -->
+  <line x1="600" y1="770" x2="226" y2="770" stroke="#10b981" stroke-width="2" marker-end="url(#seq-arr-green)"/>
+  <text x="410" y="760" text-anchor="middle" font-size="13" font-weight="600" fill="#166534">8. 推送飞书研报通知卡片并完成归档</text>
+</svg>
+```
+
+### 3.5 SVG 视觉工程与样式防御硬约束 (SVG Styling, Arrow & Distortion Defenses)
 
 为了防止在不同终端、浏览器及 Markdown 渲染器（GitHub, VS Code, 掘金, 微信等）中出现连线断裂、箭头丢失、文字溢出或非等比形变，SVG 编写必须严格遵守以下**四大视觉防御硬约束**：
 
