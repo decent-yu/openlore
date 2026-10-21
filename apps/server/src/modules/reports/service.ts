@@ -256,14 +256,12 @@ export class ReportService {
               : "等待任务成功完成归档。"),
       );
       for (const entry of entries.values()) {
-        const previous = articles.get(entry.article_id);
-        articles.set(entry.article_id, {
+        articles.set(wikiLinkKey(id, entry.article_id), {
           article_id: entry.article_id,
           title: entry.title,
           summary: entry.summary,
-          url: previous?.is_deep_analyzed ? previous.url : readingUrl(entry),
-          is_deep_analyzed:
-            entry.is_deep_analyzed || previous?.is_deep_analyzed || false,
+          url: readingUrl(entry),
+          is_deep_analyzed: entry.is_deep_analyzed,
         });
       }
     }

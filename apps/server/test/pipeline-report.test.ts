@@ -304,7 +304,7 @@ describe('Task execution and independent multi-task reports', () => {
         }),
       );
   }
-  it('waits for all selected tasks and sends one deduplicated report instead of one per task', async () => {
+  it('waits for all selected tasks and counts separate reports on the same article with their own titles and links', async () => {
     seedRun('agent-run', 'agent', 'succeeded', 'shared-article');
     seedRun('frontend-run', 'frontend', 'running', 'shared-article');
     const sender = vi
@@ -322,15 +322,43 @@ describe('Task execution and independent multi-task reports', () => {
       .run(new Date().toISOString());
     getSqliteDatabase().prepare("INSERT OR IGNORE INTO articles(id,title) VALUES ('article','article')").run();
     getSqliteDatabase().prepare("INSERT OR REPLACE INTO research_tasks(id,group_id,article_id,revision_hash,status,archived_at) VALUES ('report_frontend','frontend','shared-article','rev','succeeded',?)").run(new Date().toISOString());
+    const db = getSqliteDatabase();
+    db.prepare("UPDATE research_tasks SET report_markdown='# Agent report' WHERE group_id='agent'").run();
+    db.prepare("UPDATE research_tasks SET report_markdown='# Frontend report' WHERE group_id='frontend'").run();
+    for (const groupId of ['agent', 'frontend']) {
+      const output = JSON.parse((db.prepare('SELECT output_json FROM runs WHERE group_id=?').get(groupId) as { output_json: string }).output_json);
+      output.entries[0].document_url = `https://example.com/${groupId}/research`;
+      db.prepare('UPDATE runs SET output_json=? WHERE group_id=?').run(JSON.stringify(output), groupId);
+    }
     const preview = await report.preview('daily');
     expect(preview.tasks).toHaveLength(2);
-    expect(preview.articles).toHaveLength(1);
-    expect(preview.articles[0].is_deep_analyzed).toBe(true);
+    expect(preview.articles).toEqual([
+      expect.objectContaining({ article_id: 'shared-article', title: 'Agent report', url: 'https://example.com/agent/research', is_deep_analyzed: true }),
+      expect.objectContaining({ article_id: 'shared-article', title: 'Frontend report', url: 'https://example.com/frontend/research', is_deep_analyzed: true }),
+    ]);
+    expect(preview.summary).toContain('共 2 篇已归档研报');
+    expect(preview.summary.match(/^- \[/gm)).toHaveLength(2);
     expect((await report.send('daily')).state).toBe('sent');
     expect((await report.send('daily')).state).toBe('sent');
     expect(sender).toHaveBeenCalledTimes(1);
     expect(sender.mock.calls[0][1].summary).toContain('agent');
     expect(sender.mock.calls[0][1].summary).toContain('frontend');
+    expect(sender.mock.calls[0][1].articles).toEqual(preview.articles);
+  });
+  it('counts only the latest report when one task researches the same article again', async () => {
+    seedRun('older-agent-run', 'agent', 'succeeded', 'shared-article');
+    seedRun('newer-agent-run', 'agent', 'succeeded', 'shared-article');
+    seedRun('frontend-run', 'frontend', 'succeeded', 'other-article');
+    const db = getSqliteDatabase();
+    db.prepare("UPDATE research_tasks SET report_markdown='# Older report' WHERE id='report_older-agent-run'").run();
+    db.prepare("UPDATE research_tasks SET report_markdown='# Latest report' WHERE id='report_newer-agent-run'").run();
+    const preview = await report.preview('daily');
+    expect(preview.tasks.map(task => task.count)).toEqual([1, 1]);
+    expect(preview.articles).toHaveLength(2);
+    expect(preview.summary).toContain('Latest report');
+    expect(preview.summary).not.toContain('Older report');
+    expect(preview.summary).toContain('共 2 篇已归档研报');
+    expect(preview.summary.match(/^- \[/gm)).toHaveLength(2);
   });
   it('blocks an incomplete or failed task from being included in a report', async () => {
     seedRun('agent-run', 'agent', 'succeeded', 'agent-article');
