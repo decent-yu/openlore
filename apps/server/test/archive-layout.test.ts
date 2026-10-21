@@ -38,6 +38,18 @@ const read = (bundle: ArtifactBundle, name: string) =>
       .content_bytes!,
     "base64",
   ).toString("utf8");
+const researchTask = (report: string): ResearchTask => ({
+  id: "research",
+  group_id: "learning",
+  article_id: "one",
+  article_title: "Agent Evals",
+  article_slug: "agent-evals",
+  status: "succeeded",
+  questions: [],
+  evidence: [],
+  report_markdown: report,
+  created_at: new Date().toISOString(),
+});
 beforeAll(() => initDatabase());
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -181,6 +193,27 @@ it("does not promote an unsuccessful collection into subsequent navigation", asy
   expect(read(bundle, "README.md")).not.toContain("Failed article");
 });
 
+it.each([
+  ["# 研报标题\n\n正文与 [来源](https://example.com)\n", "# 研报标题"],
+  ["研报标题\n========\n\n正文", "研报标题\n========"],
+  ["正文，没有一级标题", "# Agent Evals"],
+  ["# 研报标题\n\n```md\n# 代码中的标题\n```\n\n正文", "# 研报标题"],
+  ["# 研报标题\n\n    const message = '正文';\n", "# 研报标题"],
+  ["# 研报标题\n\n> 正文：[阅读正文](article.md)\n\n正文", "# 研报标题"],
+])("links batch research back to the archived Chinese article beneath its title: %s", async (report, title) => {
+  const task = researchTask(report);
+  const { bundle } = await deliver([entry("one", "Agent Evals")], [task]);
+  const path = `${bundle.entries[0].directory}/research.md`;
+  const markdown = read(bundle, path);
+  expect(markdown.startsWith(`${title}\n\n> 正文：[阅读中文正文](article-zh-CN.md)\n\n`)).toBe(true);
+  expect(markdown.match(/> 正文：/g)).toHaveLength(1);
+  expect(markdown).toContain("正文");
+  if (report.includes("```md")) expect(markdown).toContain("```md\n# 代码中的标题\n```");
+  if (report.includes("    const")) expect(markdown).toContain("\n\n    const message = '正文';\n");
+  expect(bundle.files.some(file => file.path === `docs/agent-learning/${bundle.entries[0].directory}/article-zh-CN.md`)).toBe(true);
+  expect(task.report_markdown).toBe(report);
+});
+
 it("updates article and date navigation when research is added later, and retains it in the next batch", async () => {
   await deliver([entry("one", "Agent Evals")]);
   const task: ResearchTask = {
@@ -208,6 +241,10 @@ it("updates article and date navigation when research is added later, and retain
   );
   expect(Buffer.from(overview.content, "base64").toString()).toContain(
     "article-zh-CN.md",
+  );
+  const report = upload.files.find(file => file.path.endsWith("/research.md"))!;
+  expect(Buffer.from(report.content, "base64").toString()).toBe(
+    "# Research\n\n> 正文：[阅读中文正文](article-zh-CN.md)\n\n",
   );
   const next = (await deliver([entry("two", "Second article")])).bundle;
   expect(read(next, "README.md")).toContain("20261020-agent-evals/research.md");

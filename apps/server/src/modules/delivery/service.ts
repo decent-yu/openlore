@@ -26,6 +26,7 @@ import {
   navigationFiles,
   finalizeManifest,
   batchNavigationFile,
+  researchWithArticleLink,
 } from "./archive-layout.js";
 import {
   articlesTable,
@@ -217,19 +218,10 @@ export class DeliveryService {
       }
 
       if (research) {
-        bundleFiles.push({
-          path: `${articleFullPath}/research.md`,
-          content_bytes: Buffer.from(
-            research.report_markdown,
-            "utf-8",
-          ).toString("base64"),
-          encoding: "utf-8",
-          sha256: crypto
-            .createHash("sha256")
-            .update(research.report_markdown)
-            .digest("hex"),
-          media_type: "text/markdown",
-        });
+        bundleFiles.push(markdownFile(
+          `${articleFullPath}/research.md`,
+          researchWithArticleLink(research.report_markdown, true, entry.title),
+        ));
       }
 
       // Assets for this article
@@ -413,6 +405,9 @@ export class DeliveryService {
     item.has_research = true;
     manifest.article_locations[task.article_id] = item;
     const researchPath = `${base}/${loc.directory}/research.md`;
+    const hasChinese = !!manifest.managed_files[
+      `${base}/${loc.directory}/${CHINESE_ARTICLE_FILENAME}`
+    ];
     const batchId = `research_${task.id}`;
     const bundle: ArtifactBundle = {
       group_id: group.id,
@@ -431,7 +426,10 @@ export class DeliveryService {
         },
       ],
       assets: [],
-      files: [markdownFile(researchPath, task.report_markdown)],
+      files: [markdownFile(
+        researchPath,
+        researchWithArticleLink(task.report_markdown, hasChinese, task.article_title),
+      )],
     };
     for (const asset of db
       .select()
@@ -450,12 +448,7 @@ export class DeliveryService {
     bundle.files.push(
       markdownFile(
         `${base}/${loc.directory}/README.md`,
-        articleOverview(
-          item,
-          !!manifest.managed_files[
-            `${base}/${loc.directory}/${CHINESE_ARTICLE_FILENAME}`
-          ],
-        ),
+        articleOverview(item, hasChinese),
       ),
       ...navigationFiles(group, manifest),
     );

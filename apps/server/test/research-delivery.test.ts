@@ -23,10 +23,13 @@ beforeAll(async () => {
 afterEach(()=>vi.restoreAllMocks());
 
 it('records a standalone research archive and displays its commit instead of the older batch',async()=>{
-  vi.spyOn(GitHubClient,'syncFiles').mockResolvedValue({status:'updated',commitSha:'new',commitUrl:'https://github.com/example/archive/commit/new',changedPaths:['docs/task/20261016-01/01-article/research.md']});
+  const sync=vi.spyOn(GitHubClient,'syncFiles').mockResolvedValue({status:'updated',commitSha:'new',commitUrl:'https://github.com/example/archive/commit/new',changedPaths:['docs/task/20261016-01/01-article/research.md']});
   const group=(await groupsService.getGroup('task'))!;
   const task=(await researchService.listResearchTasks('task'))[0];
   await deliveryService.deliverResearchReport(group,task);
+  const report=sync.mock.calls[0][0].files.find(file=>file.path.endsWith('/research.md'))!;
+  expect(Buffer.from(report.content,'base64').toString()).toBe('# Selected article\n\n> 正文：[阅读正文](article.md)\n\nGenerated research');
+  expect(Buffer.from(report.content,'base64').toString()).not.toContain('article-zh-CN.md');
   expect(getSqliteDatabase().prepare("SELECT status,commit_sha FROM deliveries WHERE batch_id='research_research'").get()).toEqual({status:'updated',commit_sha:'new'});
   const feed=await feedService.getDailyFeed('task');
   expect(feed.deep_articles[0].delivery?.commit_url).toBe('https://github.com/example/archive/commit/new');

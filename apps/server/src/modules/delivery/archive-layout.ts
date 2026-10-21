@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import type { ArtifactBundleFile, Group, Manifest } from "@openlore/contracts";
 import { CHINESE_ARTICLE_FILENAME } from "./translation.js";
 
@@ -52,6 +53,28 @@ const label = (text: string) =>
 const href = (filePath: string) =>
   filePath.split("/").map(encodeURIComponent).join("/");
 export { label as markdownLabel, href as archiveHref };
+
+/** Add archive navigation without depending on the AI to know the final file layout. */
+export function researchWithArticleLink(
+  markdown: string,
+  hasChinese: boolean,
+  fallbackTitle: string,
+): string {
+  const title = fromMarkdown(markdown).children.find(
+    node => node.type === "heading" && node.depth === 1,
+  );
+  const end = title?.position?.end.offset;
+  const heading = end === undefined
+    ? `# ${label(fallbackTitle)}`
+    : markdown.slice(0, end).trimEnd();
+  const body = (end === undefined ? markdown : markdown.slice(end))
+    .replace(/^(?:[ \t]*\r?\n)+/, "")
+    .replace(/^> 正文：\[阅读(?:中文正文|正文)\]\((?:article-zh-CN\.md|article\.md)\)(?:\r?\n|$)(?:[ \t]*\r?\n)*/, "");
+  const link = hasChinese
+    ? `[阅读中文正文](${CHINESE_ARTICLE_FILENAME})`
+    : "[阅读正文](article.md)";
+  return `${heading}\n\n> 正文：${link}\n\n${body}`;
+}
 
 export function batchNavigationFile(
   group: Group,
