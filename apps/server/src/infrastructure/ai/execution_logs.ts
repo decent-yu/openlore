@@ -37,10 +37,10 @@ export function redactExecutionText(text: string): string {
   return result;
 }
 function serialize(value: unknown): string {
-  return redactExecutionText(
-    typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? ""),
-  );
+  if (typeof value === 'string') return redactExecutionText(value);
+  return JSON.stringify(value, (_key, item) => typeof item === 'string' ? redactExecutionText(item) : item, 2) ?? '';
 }
+
 type Row = {
   id: string;
   job_id: string;

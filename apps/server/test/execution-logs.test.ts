@@ -293,3 +293,16 @@ it('separates report plans from pipeline ownership and selects the exact digest 
   expect(exact.total).toBe(1);expect(exact.items[0].id).toBe(second);
   expect(exact.items[0].id).not.toBe(first);
 });
+
+it('redacts nested log strings before JSON serialization so quoted API examples remain readable', async () => {
+  const example = JSON.stringify({ snippet: '-H "x-goog-api-key: example-secret" \\ sample' });
+  const id = executionLogs.start({ ...input, jobId: 'quoted-secret', material: example });
+  executionLogs.attempts(id, [{ index: 1, profile_id: 'primary', executor_name: 'Codex', provider: 'codex_cli', transport: 'local', model: 'test', timeout_seconds: 30, queue_timeout_seconds: 30, started_at: new Date().toISOString(), status: 'success', output: JSON.stringify({ nested: example }), diagnostics: { stdout: example, stderr: '', exit_code: 0, timed_out: false, timeout_seconds: 30 } }]);
+  const row = getSqliteDatabase().prepare('SELECT input_json,attempts_json FROM ai_execution_logs WHERE id=?').get(id) as { input_json: string; attempts_json: string };
+  expect(() => JSON.parse(row.input_json)).not.toThrow();
+  expect(() => JSON.parse(row.attempts_json)).not.toThrow();
+  expect(row.input_json + row.attempts_json).not.toContain('example-secret');
+  expect(executionLogs.get(id)?.attempts[0].output).toContain('[REDACTED]');
+  const response = await app.inject({method:'GET',url:`/api/v1/execution-logs/${id}`});
+  expect(response.statusCode).toBe(200);
+});
