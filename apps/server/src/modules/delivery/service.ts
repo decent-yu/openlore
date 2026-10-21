@@ -26,7 +26,7 @@ import {
   navigationFiles,
   finalizeManifest,
   batchNavigationFile,
-  researchWithArticleLink,
+  researchWithArticleHeader,
 } from "./archive-layout.js";
 import {
   articlesTable,
@@ -220,7 +220,7 @@ export class DeliveryService {
       if (research) {
         bundleFiles.push(markdownFile(
           `${articleFullPath}/research.md`,
-          researchWithArticleLink(research.report_markdown, true, entry.title),
+          researchWithArticleHeader(research.report_markdown, entry, true, group.timezone),
         ));
       }
 
@@ -428,7 +428,12 @@ export class DeliveryService {
       assets: [],
       files: [markdownFile(
         researchPath,
-        researchWithArticleLink(task.report_markdown, hasChinese, task.article_title),
+        researchWithArticleHeader(task.report_markdown, {
+          title: task.article_title,
+          original_url: article?.canonicalUrl || item.original_url,
+          author: article?.author,
+          published_at: article?.publishedAt,
+        }, hasChinese, group.timezone),
       )],
     };
     for (const asset of db

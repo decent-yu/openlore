@@ -200,18 +200,32 @@ it.each([
   ["# 研报标题\n\n```md\n# 代码中的标题\n```\n\n正文", "# 研报标题"],
   ["# 研报标题\n\n    const message = '正文';\n", "# 研报标题"],
   ["# 研报标题\n\n> 正文：[阅读正文](article.md)\n\n正文", "# 研报标题"],
+  ["# 研报标题\n\n> 来源：旧来源  \n> 作者：旧作者 · 发布时间：旧时间  \n> 翻译正文：[阅读中文正文](article-zh-CN.md)\n\n正文", "# 研报标题"],
 ])("links batch research back to the archived Chinese article beneath its title: %s", async (report, title) => {
   const task = researchTask(report);
   const { bundle } = await deliver([entry("one", "Agent Evals")], [task]);
   const path = `${bundle.entries[0].directory}/research.md`;
   const markdown = read(bundle, path);
-  expect(markdown.startsWith(`${title}\n\n> 正文：[阅读中文正文](article-zh-CN.md)\n\n`)).toBe(true);
-  expect(markdown.match(/> 正文：/g)).toHaveLength(1);
+  expect(markdown.startsWith(`${title}\n\n> 来源：[example.com](<https://example.com/one>)  \n> 作者：未知 · 发布时间：未知  \n> 翻译正文：[阅读中文正文](article-zh-CN.md)\n\n`)).toBe(true);
+  expect(markdown.match(/> 翻译正文：/g)).toHaveLength(1);
+  expect(markdown).not.toContain('> 正文：');
   expect(markdown).toContain("正文");
   if (report.includes("```md")) expect(markdown).toContain("```md\n# 代码中的标题\n```");
   if (report.includes("    const")) expect(markdown).toContain("\n\n    const message = '正文';\n");
   expect(bundle.files.some(file => file.path === `docs/agent-learning/${bundle.entries[0].directory}/article-zh-CN.md`)).toBe(true);
   expect(task.report_markdown).toBe(report);
+});
+
+it.each([
+  ['2026-10-19T17:48:26.614000+00:00', '2026-10-20 01:48（Asia/Shanghai）'],
+  ['2026-10-19', '2026-10-19'],
+  ['invalid', '未知'],
+])('uses article metadata and a readable publication time without changing date-only values: %s', async (publishedAt, expected) => {
+  const { bundle } = await deliver([{ ...entry('one', 'Agent Evals'), author: 'Original Author', published_at: publishedAt }], [researchTask('# Research\n\nIndependent analysis')]);
+  const markdown = read(bundle, `${bundle.entries[0].directory}/research.md`);
+  expect(markdown).toContain(`> 作者：Original Author · 发布时间：${expected}  \n`);
+  expect(markdown).toContain('[example.com](<https://example.com/one>)');
+  expect(markdown).toContain('\n\nIndependent analysis');
 });
 
 it("updates article and date navigation when research is added later, and retains it in the next batch", async () => {
@@ -244,7 +258,7 @@ it("updates article and date navigation when research is added later, and retain
   );
   const report = upload.files.find(file => file.path.endsWith("/research.md"))!;
   expect(Buffer.from(report.content, "base64").toString()).toBe(
-    "# Research\n\n> 正文：[阅读中文正文](article-zh-CN.md)\n\n",
+    "# Research\n\n> 来源：[example.com](<https://example.com/one>)  \n> 作者：未知 · 发布时间：未知  \n> 翻译正文：[阅读中文正文](article-zh-CN.md)\n\n",
   );
   const next = (await deliver([entry("two", "Second article")])).bundle;
   expect(read(next, "README.md")).toContain("20261020-agent-evals/research.md");

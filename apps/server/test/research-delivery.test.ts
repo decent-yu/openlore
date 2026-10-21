@@ -28,7 +28,7 @@ it('records a standalone research archive and displays its commit instead of the
   const task=(await researchService.listResearchTasks('task'))[0];
   await deliveryService.deliverResearchReport(group,task);
   const report=sync.mock.calls[0][0].files.find(file=>file.path.endsWith('/research.md'))!;
-  expect(Buffer.from(report.content,'base64').toString()).toBe('# Selected article\n\n> 正文：[阅读正文](article.md)\n\nGenerated research');
+  expect(Buffer.from(report.content,'base64').toString()).toBe('# Selected article\n\n> 来源：未知  \n> 作者：未知 · 发布时间：未知  \n> 正文：[阅读原文](article.md)\n\nGenerated research');
   expect(Buffer.from(report.content,'base64').toString()).not.toContain('article-zh-CN.md');
   expect(getSqliteDatabase().prepare("SELECT status,commit_sha FROM deliveries WHERE batch_id='research_research'").get()).toEqual({status:'updated',commit_sha:'new'});
   const feed=await feedService.getDailyFeed('task');

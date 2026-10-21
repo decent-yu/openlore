@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import type { ArtifactBundleFile, Group, Manifest } from "@openlore/contracts";
+import type { ArtifactBundleFile, Group, Manifest, StructuredEntry } from "@openlore/contracts";
 import { CHINESE_ARTICLE_FILENAME } from "./translation.js";
 
 export type ArchivedArticle = Manifest["article_locations"][string];
@@ -54,26 +54,49 @@ const href = (filePath: string) =>
   filePath.split("/").map(encodeURIComponent).join("/");
 export { label as markdownLabel, href as archiveHref };
 
-/** Add archive navigation without depending on the AI to know the final file layout. */
-export function researchWithArticleLink(
+type ResearchArticle = Pick<StructuredEntry, "title" | "original_url" | "author" | "published_at">;
+
+function publicationTime(value: string | null | undefined, timezone: string): string {
+  if (!value || Number.isNaN(Date.parse(value))) return "未知";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(value));
+  const part = (name: string) => parts.find(item => item.type === name)?.value;
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}（${timezone}）`;
+}
+
+/** Fill article context from saved metadata and the actual archive layout. */
+export function researchWithArticleHeader(
   markdown: string,
+  article: ResearchArticle,
   hasChinese: boolean,
-  fallbackTitle: string,
+  timezone = "Asia/Shanghai",
 ): string {
   const title = fromMarkdown(markdown).children.find(
     node => node.type === "heading" && node.depth === 1,
   );
   const end = title?.position?.end.offset;
   const heading = end === undefined
-    ? `# ${label(fallbackTitle)}`
+    ? `# ${label(article.title)}`
     : markdown.slice(0, end).trimEnd();
   const body = (end === undefined ? markdown : markdown.slice(end))
     .replace(/^(?:[ \t]*\r?\n)+/, "")
-    .replace(/^> 正文：\[阅读(?:中文正文|正文)\]\((?:article-zh-CN\.md|article\.md)\)(?:\r?\n|$)(?:[ \t]*\r?\n)*/, "");
+    .replace(/^> 正文：\[阅读(?:中文正文|正文)\]\((?:article-zh-CN\.md|article\.md)\)(?:\r?\n|$)(?:[ \t]*\r?\n)*/, "")
+    .replace(/^> 来源：[^\n]*\n> 作者：[^\n]*\n> (?:翻译正文|正文)：\[[^\n]*\]\((?:article-zh-CN\.md|article\.md)\)[ \t]*(?:\r?\n|$)(?:[ \t]*\r?\n)*/, "");
+  let source = "未知";
+  if (article.original_url) {
+    try {
+      const url = new URL(article.original_url);
+      if (["http:", "https:"].includes(url.protocol))
+        source = `[${label(url.hostname)}](<${url.href.replace(/>/g, "%3E")}>)`;
+    } catch { /* Missing or invalid source metadata stays unknown. */ }
+  }
   const link = hasChinese
-    ? `[阅读中文正文](${CHINESE_ARTICLE_FILENAME})`
-    : "[阅读正文](article.md)";
-  return `${heading}\n\n> 正文：${link}\n\n${body}`;
+    ? `翻译正文：[阅读中文正文](${CHINESE_ARTICLE_FILENAME})`
+    : "正文：[阅读原文](article.md)";
+  return `${heading}\n\n> 来源：${source}  \n> 作者：${label(article.author?.trim() || "未知")} · 发布时间：${publicationTime(article.published_at, timezone)}  \n> ${link}\n\n${body}`;
 }
 
 export function batchNavigationFile(

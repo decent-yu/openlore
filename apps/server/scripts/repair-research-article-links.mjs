@@ -8,7 +8,7 @@ import { GitHubClient } from '../dist/infrastructure/repositories/github/client.
 import { getGitHubToken } from '../dist/infrastructure/repositories/github/credentials.js';
 import { groupsService } from '../dist/modules/groups/service.js';
 import { loadManifest } from '../dist/modules/delivery/publication.js';
-import { researchWithArticleLink, markdownFile, finalizeManifest } from '../dist/modules/delivery/archive-layout.js';
+import { researchWithArticleHeader, markdownFile, finalizeManifest } from '../dist/modules/delivery/archive-layout.js';
 
 const args = process.argv.slice(2);
 const groupIndex = args.indexOf('--group');
@@ -62,7 +62,11 @@ try {
       const articlePath = `${directory}/${hasChinese ? 'article-zh-CN.md' : 'article.md'}`;
       if (!remote.has(articlePath)) throw new Error(`没有可链接的正文：${file}`);
       const before = await read(file);
-      const after = researchWithArticleLink(before.toString('utf8'), hasChinese, item.title);
+      const article = db.prepare('SELECT author,published_at FROM articles WHERE id=?').get(articleId);
+      const after = researchWithArticleHeader(before.toString('utf8'), {
+        title: item.title, original_url: item.original_url,
+        author: article?.author, published_at: article?.published_at,
+      }, hasChinese, group.timezone);
       if (before.equals(Buffer.from(after))) continue;
       writes.push(markdownFile(file, after));
       originals.set(file, before);
@@ -88,7 +92,7 @@ try {
     const result = await GitHubClient.syncFiles({
       owner: repository.owner, repo: repository.repo, branch: repository.default_branch, token,
       basePath: base, expectedHead: head,
-      commitMessage: 'docs(research): link archived reports to article bodies',
+      commitMessage: 'docs(research): add source context to archived reports',
       files: writes.map(file => ({ path: file.path, content: file.content_bytes, encoding: file.encoding, sha256: file.sha256 })),
     });
     fs.writeFileSync(path.join(backup, 'result.json'), JSON.stringify(result, null, 2), { mode: 0o600 });
