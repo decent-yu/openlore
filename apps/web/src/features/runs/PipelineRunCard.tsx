@@ -1,3 +1,6 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../../lib/api.js";
+import { Button } from "../../components/ui/button.js";
 import React, { useState } from "react";
 import type { Run } from "@openlore/contracts";
 import { ExecutionLogs } from "./ExecutionLogs.js";
@@ -30,6 +33,8 @@ export function PipelineRunCard({
   onReport: (report: { title: string; markdown: string }) => void;
   onError: (error: string) => void;
 }) {
+  const client = useQueryClient();
+  const retry = useMutation({ mutationFn: () => api.retryRunDelivery(run.id), onSuccess: () => { client.invalidateQueries({queryKey:['runs']}); client.invalidateQueries({queryKey:['execution-logs']}); }, onError: (error) => onError(error.message) });
   const [open, setOpen] = useState(initiallyOpen);
   return (
     <article className="rounded-xl border bg-white p-4">
@@ -76,6 +81,7 @@ export function PipelineRunCard({
           {run.error_message}
         </p>
       )}
+      {run.stage === 'delivery' && ['failed', 'partial'].includes(run.status) && <div className="mt-3 space-y-1"><Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? '正在提交…' : '仅重试交付'}</Button><p className="text-xs text-neutral-500">复用已有研报与译文，只补齐缺失译文，不重新选文或调研。</p></div>}
       {run.output?.commit_url && (
         <a
           className="mt-2 inline-block text-sm text-blue-700"

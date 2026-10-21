@@ -161,6 +161,7 @@ export const api = {
   // Runs
   listRuns: (groupId?: string) =>
     request<Run[]>(groupId ? `/runs?group_id=${groupId}` : '/runs'),
+  retryRunDelivery: (id: string) => request<Run>(`/runs/${id}/retry-delivery`, { method: 'POST' }),
   getRun: (id: string) => request<Run>(`/runs/${id}`),
   listPushDeliveries: () => request<PushDeliveryRecord[]>('/runs/pushes'),
 

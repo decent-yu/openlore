@@ -207,6 +207,65 @@ describe('Task execution and independent multi-task reports', () => {
     );
   });
 
+  it('retries only the saved delivery, preserving reports and preventing duplicate retries', async () => {
+    const db = getSqliteDatabase();
+    db.prepare("INSERT INTO runs(id,group_id,snapshot_json,status,stage,output_json) VALUES ('retry-delivery','task',?,'failed','delivery',?)").run(JSON.stringify({group:await groupsService.getGroup('task'),processed_entries:entries.slice(0,1)}),JSON.stringify({entries:[{article_id:entries[0].article_id,title:entries[0].title,summary:entries[0].summary,is_deep_analyzed:false}]}));
+    vi.spyOn(researchService,'listResearchTasks').mockResolvedValue([{id:'ready',group_id:'task',article_id:entries[0].article_id,article_title:entries[0].title,article_slug:'topic',status:'succeeded',report_markdown:'# Existing report',created_at:new Date().toISOString(),questions:[],evidence:[]}]);
+    const select = vi.spyOn(processingService,'runProcessingForGroup');
+    const research = vi.spyOn(researchService,'runResearchOnArticle');
+    let release!:()=>void;
+    const delivery = vi.spyOn(deliveryService,'buildAndDeliverBatch').mockImplementation(async()=> { await new Promise<void>(resolve=>{release=resolve}); return successfulDelivery(); });
+    const scheduler = new AppScheduler();
+    const started = await scheduler.retryDelivery('retry-delivery');
+    expect(started.status).toBe('running');
+    await vi.waitFor(()=>expect(delivery).toHaveBeenCalledOnce());
+    expect((await scheduler.retryDelivery('retry-delivery')).status).toBe('running');
+    release();
+    await vi.waitFor(async()=>expect((await scheduler.getRun('retry-delivery'))?.status).toBe('succeeded'));
+    expect(select).not.toHaveBeenCalled();
+    expect(research).not.toHaveBeenCalled();
+    expect(delivery.mock.calls[0][0].entries).toEqual(entries.slice(0,1));
+    const finished = (await scheduler.getRun('retry-delivery'))!;
+    expect(finished.output.entries[0].is_deep_analyzed).toBe(true);
+    expect(finished.error_message).toBeFalsy();
+    expect(finished.ai_logs.at(-1)?.response_preview).toContain('未重新选文或调研');
+    await expect(scheduler.retryDelivery('retry-delivery')).rejects.toThrow('只有归档阶段失败');
+  });
+
+  it('restores older delivery inputs from their saved translation source and original research revision', async () => {
+    const db=getSqliteDatabase();
+    const articleId='legacy-delivery-article';
+    const body='Saved original article body with local images.';
+    const file=path.join(dataDir,'legacy-original.md');
+    fs.writeFileSync(file,'Original material before image rewriting.');
+    db.prepare("INSERT INTO articles(id,title,latest_revision,author,published_at,canonical_url) VALUES (?,?,?,'Author','2026-10-20','https://example.com/article')").run(articleId,'Legacy title','legacy-rev');
+    db.prepare("INSERT INTO article_revisions(id,article_id,revision_hash,content_ref,body_format,fetched_at) VALUES ('legacy-revision',?,?,?,'markdown','2026-10-21T00:00:00Z')").run(articleId,'legacy-rev',file);
+    db.prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,report_markdown) VALUES ('legacy-research','task',?,'legacy-rev','succeeded','# Saved report')").run(articleId);
+    db.prepare("INSERT INTO runs(id,group_id,snapshot_json,status,stage,output_json) VALUES ('legacy-delivery','task','{}','failed','delivery',?)").run(JSON.stringify({entries:[{article_id:articleId,title:'Legacy title',summary:'Saved intro',is_deep_analyzed:false}]}));
+    db.prepare("INSERT INTO ai_execution_logs(id,job_id,run_id,article_id,task_type,started_at,status,input_json,output) VALUES ('legacy-translation','job','legacy-delivery',?,'translate',?,'invalid_output',?,'{}')").run(articleId,new Date().toISOString(),JSON.stringify({material:`> **标签**: Original tag\n\n## 原文整理\n\n${body}\n`}));
+    const research=vi.spyOn(researchService,'runResearchOnArticle');
+    const delivery=vi.spyOn(deliveryService,'buildAndDeliverBatch').mockResolvedValue(successfulDelivery());
+    const scheduler=new AppScheduler();
+    await scheduler.retryDelivery('legacy-delivery');
+    await vi.waitFor(async()=>expect((await scheduler.getRun('legacy-delivery'))?.status).toBe('succeeded'));
+    expect(delivery.mock.calls[0][0].entries[0]).toMatchObject({revision:'legacy-rev',organized_markdown:body,tags:['Original tag'],summary:'Saved intro'});
+    expect(research).not.toHaveBeenCalled();
+  });
+
+  it('leaves delivery retryable when no completed report can be reused', async () => {
+    const db=getSqliteDatabase();
+    db.prepare("INSERT INTO runs(id,group_id,snapshot_json,status,stage,output_json) VALUES ('retry-no-report','task',?,'failed','delivery',?)").run(JSON.stringify({processed_entries:entries.slice(0,1)}),JSON.stringify({entries:[{article_id:entries[0].article_id,title:entries[0].title,summary:'',is_deep_analyzed:false}]}));
+    const select=vi.spyOn(processingService,'runProcessingForGroup');
+    const research=vi.spyOn(researchService,'runResearchOnArticle');
+    const scheduler=new AppScheduler();
+    await scheduler.retryDelivery('retry-no-report');
+    await vi.waitFor(async()=>expect((await scheduler.getRun('retry-no-report'))?.status).toBe('failed'));
+    expect((await scheduler.getRun('retry-no-report'))?.error_message).toContain('缺少可复用研报');
+    expect(select).not.toHaveBeenCalled();
+    expect(research).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT count(*) n FROM research_claims WHERE owner_id='retry-no-report'").get()).toEqual({n:0});
+  });
+
   function seedRun(
     id: string,
     groupId: string,

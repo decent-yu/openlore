@@ -25,6 +25,7 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { articleReviewsService } from "../processing/article-reviews.js";
 import { collectionService } from "../collection/service.js";
+import { retryRunDelivery } from "../delivery/retry.js";
 import { deliveryService } from "../delivery/service.js";
 import { groupsService } from "../groups/service.js";
 import {
@@ -202,6 +203,26 @@ export class AppScheduler {
     }
   }
 
+  async retryDelivery(runId: string): Promise<Run> {
+    const db = getSqliteDatabase();
+    const run = db.prepare('SELECT group_id,status,stage,snapshot_json,ai_logs_json,error_message FROM runs WHERE id=?').get(runId) as { group_id: string; status: string; stage: string; snapshot_json: string; ai_logs_json: string; error_message: string | null } | undefined;
+    if (!run) throw Object.assign(new Error('运行记录不存在'), { statusCode: 404 });
+    if (run.status === 'running' && run.stage === 'delivery') return (await this.getRun(runId))!;
+    if (run.stage !== 'delivery' || !['failed', 'partial'].includes(run.status)) throw Object.assign(new Error('只有归档阶段失败的任务可以重试交付'), { statusCode: 400 });
+    if (db.prepare("SELECT 1 FROM runs WHERE group_id=? AND status='running'").get(run.group_id)) throw Object.assign(new Error('流水线正在运行，请稍后重试交付'), { statusCode: 409 });
+    const savedGroup = JSON.parse(run.snapshot_json).group as Group | undefined;
+    const group = savedGroup || await groupsService.getGroup(run.group_id);
+    if (!group) throw new Error('流水线不存在');
+    const retryLogs = JSON.parse(run.ai_logs_json);
+    if (run.error_message) retryLogs.push({ timestamp: new Date().toISOString(), task_type: 'delivery', prompt_preview: '', response_preview: `此前交付失败：${run.error_message}；本次仅重试交付，保留已有研报。`, status: 'failed' });
+    db.prepare("UPDATE runs SET status='running',finished_at=NULL,ai_logs_json=? WHERE id=?").run(JSON.stringify(retryLogs), runId);
+    this.notifySse('run', runId, 'delivery');
+    retryRunDelivery(runId, group).then(async () => this.notifySse('run', runId, (await this.getRun(runId))!.status)).catch(error => {
+      db.prepare("UPDATE runs SET status='failed',error_message=?,finished_at=? WHERE id=?").run(String(error), new Date().toISOString(), runId);
+    });
+    return (await this.getRun(runId))!;
+  }
+
   async triggerAllEnabledGroups(): Promise<Run[]> {
     const runs: Run[] = [];
     for (const group of (await groupsService.listGroups()).filter(
@@ -316,6 +337,8 @@ export class AppScheduler {
           })
           .where(eq(runsTable.id, runId))
           .run();
+      const savedSnapshot = JSON.parse((getSqliteDatabase().prepare('SELECT snapshot_json FROM runs WHERE id=?').get(runId) as { snapshot_json: string }).snapshot_json);
+      db.update(runsTable).set({ snapshotJson: JSON.stringify({ ...savedSnapshot, processed_entries: result.entries }) }).where(eq(runsTable.id, runId)).run();
       save();
       const researchTasks: ResearchTask[] = [];
       let failure: unknown;

@@ -36,6 +36,11 @@ export const runsRoutes: FastifyPluginAsync = async (fastify) => {
     return appScheduler.listRuns(query.group_id);
   });
 
+  fastify.post<{ Params: { id: string } }>("/runs/:id/retry-delivery", async (request, reply) => {
+    const run = await appScheduler.retryDelivery(request.params.id);
+    return reply.status(202).send(run);
+  });
+
   fastify.get("/runs/pushes", async () => {
     return appScheduler.listPushDeliveries();
   });
