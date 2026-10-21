@@ -107,7 +107,7 @@ export class DeliveryService {
 
     const manifest = loadManifest(group);
 
-    // Complete and validate every translation before allocating archive locations or publishing.
+    // Reuse available translations before allocating archive locations or publishing.
     const articles: Array<{ original: string; chinese: string }> = [];
     for (const entry of entries) {
       const original = buildArticleMarkdown(

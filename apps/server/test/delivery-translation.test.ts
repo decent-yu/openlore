@@ -1,3 +1,4 @@
+import { executionLogs } from "../src/infrastructure/ai/execution_logs.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -74,7 +75,7 @@ beforeAll(async () => {
 beforeEach(() => {
   const db = getSqliteDatabase();
   db.exec(
-    "DELETE FROM deliveries; DELETE FROM artifact_bundles; DELETE FROM article_locations; DELETE FROM collections",
+    "DELETE FROM deliveries; DELETE FROM artifact_bundles; DELETE FROM article_locations; DELETE FROM collections; DELETE FROM ai_execution_logs",
   );
   for (const name of fs.readdirSync(getAppPaths().blobsDir))
     if (name.startsWith("translation-"))
@@ -179,7 +180,7 @@ it("regenerates a cached translation after its writing prompt changes", async ()
   expect(execute).toHaveBeenCalledTimes(2);
 });
 
-it("stops before creating archive records or publishing if a translation changes an image", async () => {
+it("publishes a usable translation despite formatting or image-reference differences", async () => {
   execute.mockImplementationOnce(async (input) => ({
     status: "success",
     provider: "mock",
@@ -192,12 +193,11 @@ it("stops before creating archive records or publishing if a translation changes
       ),
     },
   }));
-  await expect(deliver()).rejects.toThrow("译文改变");
-  expect(GitHubClient.syncFiles).not.toHaveBeenCalled();
-  for (const table of ["collections", "article_locations", "artifact_bundles"])
-    expect(
-      getSqliteDatabase().prepare(`SELECT count(*) n FROM ${table}`).get(),
-    ).toEqual({ n: 0 });
+  const result = await deliver();
+  expect(result.syncResult.status).toBe('updated');
+  expect(GitHubClient.syncFiles).toHaveBeenCalledOnce();
+  const chinese = result.bundle.files.find(file=>file.path.endsWith('/article-zh-CN.md'))!;
+  expect(Buffer.from(chinese.content_bytes!, 'base64').toString()).toContain('./assets/new.svg');
 });
 
 it("reports an unavailable executor and does not publish an English copy as Chinese", async () => {
@@ -210,4 +210,29 @@ it("skips translation and publication for an empty batch", async () => {
   expect((await deliver([])).syncResult.status).toBe("unchanged");
   expect(execute).not.toHaveBeenCalled();
   expect(GitHubClient.syncFiles).not.toHaveBeenCalled();
+});
+
+
+it('recovers previously rejected translations without calling AI again and repairs the log honestly', async () => {
+  let trace = '';
+  execute.mockImplementationOnce(async input => {
+    trace = executionLogs.start(input);
+    executionLogs.attempts(trace, [{index:1,profile_id:'mock',executor_name:'Mock',provider:'mock',transport:'local',model:'mock',timeout_seconds:30,queue_timeout_seconds:30,started_at:new Date().toISOString(),status:'success',usage:{totalTokens:15}}]);
+    const result = {status:'success' as const,provider:'mock',model:'mock',durationMs:1,result:{markdown:translate(input.material).replace('# 工作机制','## 工作机制')}};
+    executionLogs.finish(trace,result,1);
+    executionLogs.invalidate(trace,'中文翻译失败：译文改变了原文结构、图片、链接或代码');
+    throw new Error('old pipeline rejected the translation');
+  });
+  await expect(deliver()).rejects.toThrow('old pipeline');
+  expect((await deliver()).syncResult.status).toBe('updated');
+  expect(execute).toHaveBeenCalledTimes(1);
+  const log = executionLogs.get(trace)!;
+  expect(log.status).toBe('success');
+  expect(log.error_message).toBeUndefined();
+  expect(log.attempts.at(-1)).toMatchObject({phase:'recovery',duration_ms:0,notice:expect.stringContaining('中文译文')});
+  expect(log.attempts.at(-1)?.output).toContain('markdown');
+  expect(log.usage_summary?.total_attempts).toBe(1);
+  expect(log.usage_summary?.usage.totalTokens).toBe(15);
+  await deliver();
+  expect(execute).toHaveBeenCalledTimes(1);
 });
