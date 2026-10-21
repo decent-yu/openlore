@@ -215,7 +215,7 @@ export class AppScheduler {
     if (!group) throw new Error('流水线不存在');
     const retryLogs = JSON.parse(run.ai_logs_json);
     if (run.error_message) retryLogs.push({ timestamp: new Date().toISOString(), task_type: 'delivery', prompt_preview: '', response_preview: `此前交付失败：${run.error_message}；本次仅重试交付，保留已有研报。`, status: 'failed' });
-    db.prepare("UPDATE runs SET status='running',finished_at=NULL,ai_logs_json=? WHERE id=?").run(JSON.stringify(retryLogs), runId);
+    db.prepare("UPDATE runs SET status='running',finished_at=NULL,error_message=NULL,ai_logs_json=? WHERE id=?").run(JSON.stringify(retryLogs), runId);
     this.notifySse('run', runId, 'delivery');
     retryRunDelivery(runId, group).then(async () => this.notifySse('run', runId, (await this.getRun(runId))!.status)).catch(error => {
       db.prepare("UPDATE runs SET status='failed',error_message=?,finished_at=? WHERE id=?").run(String(error), new Date().toISOString(), runId);

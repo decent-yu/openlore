@@ -203,7 +203,7 @@ export function ExecutionLogs({
                   : ""}
               </span>
               <span>
-                {log.attempts.at(-1)?.phase === 'recovery' ? '复用已有研报，未调用 AI' : <>{log.attempts.at(-1)?.executor_name || "正在准备"} · 时限 {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒</>}
+                {log.attempts.at(-1)?.phase === 'recovery' ? '复用已有产物，未调用 AI' : <>{log.attempts.at(-1)?.executor_name || "正在准备"} · 时限 {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒</>}
                 {log.status === "running" &&
                 log.attempts.at(-1)?.progress_state === "queued"
                   ? " · 等待执行槽位"

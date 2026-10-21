@@ -8,6 +8,7 @@ describe('API request bodies', () => {
     vi.stubGlobal('fetch',fetch);
     await api.triggerGroupRun('task');
     await api.pollAllSources();
+    await api.retryRunDelivery('failed-run');
     for (const [, options] of fetch.mock.calls) {
       expect(options.method).toBe('POST');
       expect(options.body).toBeUndefined();

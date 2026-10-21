@@ -218,6 +218,7 @@ describe('Task execution and independent multi-task reports', () => {
     const scheduler = new AppScheduler();
     const started = await scheduler.retryDelivery('retry-delivery');
     expect(started.status).toBe('running');
+    expect(started.error_message).toBeFalsy();
     await vi.waitFor(()=>expect(delivery).toHaveBeenCalledOnce());
     expect((await scheduler.retryDelivery('retry-delivery')).status).toBe('running');
     release();
