@@ -194,6 +194,8 @@ export const PushDeliveryRecordSchema = z.object({
   total_count: z.number().default(0),
   deep_count: z.number().default(0),
   candidate_count: z.number().default(0),
+  trigger: z.enum(['manual', 'scheduled']).optional(),
+  partial: z.boolean().optional(),
   platform_response: z.string().optional(),
   error_message: z.string().nullable().optional(),
   created_at: z.string(),

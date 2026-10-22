@@ -259,6 +259,8 @@ export function RunsPage() {
                   } as Record<string, string>
                 )[push.status] || push.status}{" "}
                 · {push.total_count} 篇
+                {push.trigger && ` · ${push.trigger === "manual" ? "手动推送" : "定时推送"}`}
+                {push.partial && " · 包含未完成任务"}
               </summary>
               {push.error_message && (
                 <p role="alert" className="mt-3 text-sm text-red-700">

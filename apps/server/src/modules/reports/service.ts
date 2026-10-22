@@ -34,6 +34,11 @@ function reportTitle(markdown: string, fallback: string): string {
   return (heading ? titleText(heading).trim().replace(/\s+/g, ' ') : '') || fallback;
 }
 
+const taskStatusLabel = (status: string) => ({
+  partial: "部分失败", failed: "执行失败", cancelled: "已取消",
+  running: "仍在运行", not_run: "今天尚未运行", missing: "任务已删除",
+}[status] || status);
+
 export class ReportService {
   private sending = new Set<string>();
 
@@ -195,10 +200,12 @@ export class ReportService {
       }>;
       const status = !group
         ? "missing"
-        : latest?.status || (publications.length ? "succeeded" : "not_run");
+        : taskRuns.some(run => run.status === "running")
+          ? "running"
+          : latest?.status || (publications.length ? "succeeded" : "not_run");
       const outputs = new Map<string, RunOutput["entries"][number]>();
       for (const run of taskRuns.filter(
-        (item) => item.status === "succeeded",
+        (item) => item.status === "succeeded" || item.status === "partial",
       )) {
         const output: RunOutput = JSON.parse(run.outputJson || "{}");
         for (const entry of output.entries || [])
@@ -235,15 +242,11 @@ export class ReportService {
         status,
         count: entries.size,
       });
-      // Never mix a failed/in-progress task into a seemingly complete report.
-      if (
-        status !== "succeeded" ||
-        taskRuns.some((run) => run.status === "running") ||
-        !group
-      )
-        result.state = "waiting";
       sections.push(
         `### ${group?.name || id}\n\n` +
+          (status !== "succeeded"
+            ? `> ${taskStatusLabel(status)}；${entries.size ? `先汇报已归档的 ${entries.size} 篇研报。` : "暂无已归档研报。"}\n\n`
+            : "") +
           (entries.size
             ? [...entries.values()]
                 .map(
@@ -253,7 +256,7 @@ export class ReportService {
                 .join("\n\n")
             : status === "succeeded"
               ? "本次暂无新完成的研报。"
-              : "等待任务成功完成归档。"),
+              : ""),
       );
       for (const entry of entries.values()) {
         articles.set(wikiLinkKey(id, entry.article_id), {
@@ -280,12 +283,13 @@ export class ReportService {
       config.card_title_template,
       templateValues,
     );
-    if (result.state === "waiting")
-      result.message = "等待所选任务今天全部成功完成并归档后再汇报";
-    else if (result.articles.length === 0) {
-      result.state = "empty";
-      result.message = "所选任务已完成，今天暂无新完成的研报，跳过推送";
-    } else result.message = "所有任务已完成，可汇总推送";
+    const incomplete = result.tasks.filter(task => task.status !== "succeeded");
+    if (result.articles.length === 0) {
+      result.state = incomplete.length ? "waiting" : "empty";
+      result.message = "今天暂无已归档研报，定时汇报将在当天继续检查";
+    } else result.message = incomplete.length
+      ? `可先发送 ${result.articles.length} 篇已归档研报；${incomplete.map(task => `${task.name}：${taskStatusLabel(task.status)}`).join("；")}`
+      : "所有任务已完成，可汇总推送";
     return result;
   }
 
@@ -300,7 +304,7 @@ export class ReportService {
     this.sending.add(planId);
     try {
       const preview = await this.preview(planId);
-      if (preview.state === "invalid_config" || (!options.force && preview.state !== "ready"))
+      if (preview.state === "invalid_config")
         return { ok: false, state: preview.state, message: preview.message };
       const db = getDb();
       const connection = config.notification_connection_id
@@ -348,14 +352,17 @@ export class ReportService {
           state: "sent",
           message: "今天这些任务的汇报已发送，未重复推送",
         };
+      if (!options.force && preview.state !== "ready")
+        return { ok: false, state: preview.state, message: preview.message };
       const summary = preview.summary;
+      const partial = preview.tasks.some(task => task.status !== "succeeded");
       const deepCount = preview.articles.filter(
         (article) => article.is_deep_analyzed,
       ).length;
       const response = await GenericWebhookSender.send(url, {
         event: "daily_push.completed",
         event_id: options.force ? `${batchId}_${crypto.randomUUID()}` : batchId,
-        status: "success",
+        status: partial ? "partial" : "success",
         summary,
         card_title: preview.card_title,
         counts: { published: preview.articles.length, failed: 0, deferred: 0 },
@@ -377,6 +384,9 @@ export class ReportService {
             pipeline_ids: config.pipeline_ids,
             total_count: preview.articles.length,
             deep_count: deepCount,
+            trigger: options.force ? "manual" : "scheduled",
+            partial,
+            tasks: preview.tasks,
             platform_response: response.platform_response,
           }),
           errorMessage: response.error?.message,
@@ -389,7 +399,7 @@ export class ReportService {
         state: response.status,
         message:
           response.status === "sent"
-            ? `汇报已发送到「${connection.name}」`
+            ? `汇报已发送到「${connection.name}」${partial ? `（先发送已归档的 ${preview.articles.length} 篇）` : ""}`
             : response.error?.message || "发送失败",
       };
     } finally {

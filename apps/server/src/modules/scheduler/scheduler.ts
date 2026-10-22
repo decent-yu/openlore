@@ -181,7 +181,7 @@ export class AppScheduler {
             .run();
           const sending = (async () => {
             const result = await reportService.send(plan.id);
-            if (result.state !== "waiting") {
+            if (result.state === "sent" || result.state === "invalid_config") {
               db.update(reportPlansTable)
                 .set({ pendingDate: null })
                 .where(eq(reportPlansTable.id, plan.id))
@@ -489,6 +489,8 @@ export class AppScheduler {
         total_count: meta.total_count ?? 0,
         deep_count: meta.deep_count ?? 0,
         candidate_count: meta.candidate_count ?? 0,
+        trigger: meta.trigger,
+        partial: meta.partial,
         platform_response: meta.platform_response,
         error_message: r.errorMessage || undefined,
         created_at: r.createdAt,

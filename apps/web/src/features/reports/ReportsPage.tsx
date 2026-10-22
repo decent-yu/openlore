@@ -253,7 +253,7 @@ export function ReportsPage() {
                 {preview
                   ? preview.state === 'invalid_config'
                     ? preview.message
-                    : '手动推送当前预览，无需等待全部任务完成，允许重复发送。'
+                    : `${preview.message}。手动推送允许重复发送。`
                   : '正在加载任务结果…'}
               </p>
             </div>
@@ -378,7 +378,7 @@ export function ReportsPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-neutral-500">
-                  支持多个任务。所选任务今天全部成功归档后发送，未就绪则等待；相同文章自动去重。
+                  到点先发送已归档研报，部分失败或仍在运行不阻塞。无产物或发送失败时当天继续重试；每个方案当天自动发送一次。
                 </p>
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">

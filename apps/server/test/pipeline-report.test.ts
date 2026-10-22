@@ -304,7 +304,7 @@ describe('Task execution and independent multi-task reports', () => {
         }),
       );
   }
-  it('waits for all selected tasks and counts separate reports on the same article with their own titles and links', async () => {
+  it('counts separate reports on the same article with their own titles and links', async () => {
     seedRun('agent-run', 'agent', 'succeeded', 'shared-article');
     seedRun('frontend-run', 'frontend', 'running', 'shared-article');
     const sender = vi
@@ -313,7 +313,7 @@ describe('Task execution and independent multi-task reports', () => {
     vi.spyOn(secretsStore, 'getSecret').mockReturnValue(
       'https://example.com/webhook',
     );
-    expect((await report.send('daily')).state).toBe('waiting');
+    expect((await report.preview('daily')).state).toBe('ready');
     expect(sender).not.toHaveBeenCalled();
     getSqliteDatabase()
       .prepare(
@@ -360,10 +360,22 @@ describe('Task execution and independent multi-task reports', () => {
     expect(preview.summary).toContain('共 2 篇已归档研报');
     expect(preview.summary.match(/^- \[/gm)).toHaveLength(2);
   });
-  it('blocks an incomplete or failed task from being included in a report', async () => {
+  it.each(['partial', 'failed', 'running', 'cancelled', 'not_run'])('sends archived work despite a %s task and records its status', async (status) => {
     seedRun('agent-run', 'agent', 'succeeded', 'agent-article');
-    seedRun('frontend-run', 'frontend', 'failed', 'frontend-article');
-    expect((await report.preview('daily')).state).toBe('waiting');
+    if (status !== 'not_run') seedRun('frontend-run', 'frontend', status, 'frontend-article');
+    const preview = await report.preview('daily');
+    expect(preview.state).toBe('ready');
+    expect(preview.tasks).toContainEqual({ id: 'frontend', name: 'frontend', status, count: 0 });
+    expect(preview.articles.map(article => article.article_id)).toEqual(['agent-article']);
+    expect(preview.summary).toContain('暂无已归档研报');
+    const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({ status: 'sent' });
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+    expect((await report.send('daily')).state).toBe('sent');
+    expect(sender.mock.calls[0][1]).toMatchObject({ status: 'partial', summary: preview.summary, articles: preview.articles });
+    const push = (await new AppScheduler().listPushDeliveries())[0];
+    expect(push).toMatchObject({ trigger: 'scheduled', partial: true, total_count: 1 });
+    const saved = JSON.parse((getSqliteDatabase().prepare('SELECT response_json FROM deliveries WHERE id=?').get(push.id) as { response_json: string }).response_json);
+    expect(saved.tasks).toEqual(preview.tasks);
     await expect(
       report.savePlan({
         id: 'daily',
@@ -372,6 +384,27 @@ describe('Task execution and independent multi-task reports', () => {
         pipeline_ids: [],
       }),
     ).rejects.toThrow('请选择任务');
+  });
+  it('includes a partial task’s already archived reports without including its failed research', async () => {
+    seedRun('agent-partial', 'agent', 'succeeded', 'archived-article');
+    getSqliteDatabase().prepare("UPDATE runs SET status='partial' WHERE id='agent-partial'").run();
+    getSqliteDatabase().prepare("INSERT INTO articles(id,title) VALUES ('failed-article','Failed research')").run();
+    getSqliteDatabase().prepare("INSERT INTO research_tasks(id,group_id,article_id,revision_hash,status,report_markdown) VALUES ('failed-report','agent','failed-article','rev','failed','# Do not publish')").run();
+    const preview = await report.preview('daily');
+    expect(preview.state).toBe('ready');
+    expect(preview.tasks[0]).toMatchObject({ status: 'partial', count: 1 });
+    expect(preview.summary).toContain('部分失败；先汇报已归档的 1 篇研报');
+    expect(preview.summary).not.toContain('Do not publish');
+    expect(preview.articles.map(article => article.article_id)).toEqual(['archived-article']);
+    expect(preview.articles[0].url).toBe('https://github.com/example/docs/article.md');
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+    const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({ status: 'sent' });
+    expect((await report.send('daily', { force: true })).state).toBe('sent');
+    // A manual send also satisfies the scheduled send, even if artifacts later disappear.
+    getSqliteDatabase().exec('DELETE FROM research_tasks');
+    expect((await report.send('daily')).message).toContain('未重复推送');
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect((await new AppScheduler().listPushDeliveries())[0]).toMatchObject({ trigger: 'manual', partial: true });
   });
   it('sends the exact template preview without using an AI executor',async()=>{
     seedRun('scope-agent-run','agent','succeeded','article');
@@ -448,11 +481,11 @@ describe('Task execution and independent multi-task reports', () => {
     seedRun('repeat-waiting-run', 'agent', 'running', 'article');
     await report.savePlan({id: 'repeat-waiting', name: '测试等待', enabled: false, pipeline_ids: ['agent'], notification_connection_id: 'channel'});
     const sender = vi.spyOn(GenericWebhookSender, 'send');
+    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
     expect((await report.send('repeat-waiting')).state).toBe('waiting');
     expect(sender).not.toHaveBeenCalled();
     let finish!: (value: {status: 'sent'}) => void;
     sender.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
     const first = report.send('repeat-waiting', {force: true});
     await vi.waitFor(() => expect(sender).toHaveBeenCalledTimes(1));
     expect((await report.send('repeat-waiting', {force: true})).message).toBe('汇报正在发送中');
@@ -468,8 +501,7 @@ describe('Task execution and independent multi-task reports', () => {
     vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
     const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({status: 'sent'});
     const preview = await report.preview('manual-status');
-    expect(preview.state).toBe(status === 'succeeded' ? 'empty' : 'waiting');
-    expect((await report.send('manual-status')).ok).toBe(false);
+    expect(preview.state).toBe(status === 'succeeded' ? 'empty' : 'ready');
     expect(sender).not.toHaveBeenCalled();
     expect((await report.send('manual-status', {force: true})).state).toBe('sent');
     expect(sender.mock.calls[0][1].summary).toBe(preview.summary);
@@ -528,7 +560,7 @@ describe('Task execution and independent multi-task reports', () => {
     }
   });
 
-  it('continues checking a pending report after its scheduled minute', async () => {
+  it.each(['waiting', 'empty', 'failed'])('retries a %s report after its scheduled minute and clears pending state after delivery', async (state) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-16T01:00:00Z'));
     const scheduler = new AppScheduler();
@@ -537,8 +569,8 @@ describe('Task execution and independent multi-task reports', () => {
       .spyOn(reportService, 'send')
       .mockResolvedValueOnce({
         ok: false,
-        state: 'waiting',
-        message: 'Waiting',
+        state,
+        message: state,
       })
       .mockResolvedValueOnce({ ok: true, state: 'sent', message: 'Sent' });
     try {
@@ -568,6 +600,52 @@ describe('Task execution and independent multi-task reports', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('automatically delivers archived reports from partial runs at the scheduled time, without repeating after restart', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-22T01:00:00Z'));
+    try {
+      seedRun('partial-agent', 'agent', 'succeeded', 'agent-article');
+      seedRun('ready-frontend', 'frontend', 'succeeded', 'frontend-article');
+      getSqliteDatabase().prepare("UPDATE runs SET status='partial' WHERE id='partial-agent'").run();
+      vi.spyOn(AppScheduler.prototype, 'pollDueSources').mockResolvedValue([]);
+      vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+      const sender = vi.spyOn(GenericWebhookSender, 'send').mockResolvedValue({ status: 'sent' });
+      await new AppScheduler().tick();
+      await vi.waitFor(() => expect(sender).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(getSqliteDatabase().prepare("SELECT pending_date FROM report_plans WHERE id='daily'").get()).toEqual({ pending_date: null }));
+      expect(sender.mock.calls[0][1]).toMatchObject({ status: 'partial', counts: { published: 2 } });
+      expect(sender.mock.calls[0][1].summary).toContain('部分失败');
+      await new AppScheduler().tick();
+      await vi.waitFor(() => expect(getSqliteDatabase().prepare("SELECT pending_date FROM report_plans WHERE id='daily'").get()).toEqual({ pending_date: null }));
+      expect(sender).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps a failed notification pending and retries with the same event until it is sent', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-22T01:00:00Z'));
+    try {
+      seedRun('notification-retry-agent', 'agent', 'succeeded', 'agent-article');
+      const scheduler = new AppScheduler();
+      vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+      vi.spyOn(secretsStore, 'getSecret').mockReturnValue('https://example.com/webhook');
+      const sender = vi.spyOn(GenericWebhookSender, 'send')
+        .mockResolvedValueOnce({ status: 'failed', error: { code: 'timeout', message: 'Network timeout' } })
+        .mockResolvedValue({ status: 'sent' });
+      await scheduler.tick();
+      await vi.waitFor(() => expect(getSqliteDatabase().prepare("SELECT status FROM deliveries WHERE group_id='daily'").all()).toEqual([{ status: 'failed' }]));
+      expect(getSqliteDatabase().prepare("SELECT pending_date FROM report_plans WHERE id='daily'").get()).toEqual({ pending_date: '2026-10-22' });
+      vi.setSystemTime(new Date('2026-10-22T01:01:00Z'));
+      await scheduler.tick();
+      await vi.waitFor(() => expect(getSqliteDatabase().prepare("SELECT pending_date FROM report_plans WHERE id='daily'").get()).toEqual({ pending_date: null }));
+      expect(sender).toHaveBeenCalledTimes(2);
+      expect(sender.mock.calls[0][1].event_id).toBe(sender.mock.calls[1][1].event_id);
+      expect(getSqliteDatabase().prepare("SELECT status,error_message FROM deliveries WHERE group_id='daily' ORDER BY rowid").all()).toEqual([
+        { status: 'failed', error_message: 'Network timeout' }, { status: 'sent', error_message: null },
+      ]);
+    } finally { vi.useRealTimers(); }
   });
 
   it('archives research with the articles in one GitHub batch and never sends task notifications', async () => {
