@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import * as prompts from "@openlore/contracts";
 import { processingService } from "../src/modules/processing/service.js";
 import { createServer } from "../src/http/server.js";
@@ -225,6 +226,52 @@ it("collects pinned code once per local day, rotates files without a new commit,
     first.items[0].date_evidence?.repository_study,
   );
   expect(next.items[0].body.value).toContain("core-06.ts");
+});
+
+it.each([3, 4, 7])("keeps README fences of length %i and example images inside archived source blocks", async (length) => {
+  const innerFence = "`".repeat(length);
+  const readme = [
+    "# README",
+    `${innerFence}bash`,
+    "echo hello",
+    innerFence,
+    "![Example](docs/assets/readme-evolution-en.png)",
+    '<img src="docs/assets/example.png" />',
+    "[Example reference]: docs/assets/reference.png",
+    "![Example][Example reference]",
+    "~~~markdown",
+    "![Another example](missing.png)",
+    "~~~",
+  ].join("\n");
+  const originalFetch = vi.mocked(SafeHttpClient.fetch).getMockImplementation()!;
+  vi.mocked(SafeHttpClient.fetch).mockImplementation(async (url, options) => {
+    const response = await originalFetch(url, options);
+    if (!url.endsWith("/git/blobs/readme")) return response;
+    const text = JSON.stringify({
+      encoding: "base64",
+      content: Buffer.from(readme).toString("base64"),
+    });
+    return { ...response, text, data: Buffer.from(text) };
+  });
+
+  expect((await run()).status).toBe("succeeded");
+  const source = vi.mocked(GitHubClient.syncFiles).mock.calls[0][0].files.find(
+    (file) => file.path === "docs/xxx/stablyai@orca/articles/01-核心执行架构.md",
+  )!;
+  const tree = fromMarkdown(Buffer.from(source.content, "base64").toString());
+  type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[] };
+  const nodes: MarkdownNode[] = [];
+  const visit = (node: MarkdownNode) => {
+    nodes.push(node);
+    node.children?.forEach(visit);
+  };
+  visit(tree);
+  expect(
+    nodes.filter((node) => node.type === "code").map((node) => node.value),
+  ).toContain(readme);
+  expect(
+    nodes.filter((node) => ["image", "imageReference", "html"].includes(node.type)),
+  ).toEqual([]);
 });
 
 it("runs directly through research and archives numbered topics, source material and valid Wiki links", async () => {

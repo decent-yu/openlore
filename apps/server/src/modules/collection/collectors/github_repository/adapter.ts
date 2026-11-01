@@ -164,9 +164,13 @@ export class GithubRepositoryCollectorAdapter implements CollectorAdapter {
           throw new Error(`不支持的源码编码：${file.path}`);
         const source = Buffer.from(blob.content, "base64").toString("utf8");
         const snippet = source.slice(0, 10000);
+        // Embedded Markdown must stay literal even when it contains its own fences.
+        const fence = "`".repeat(
+          Math.max(3, ...Array.from(snippet.matchAll(/`+/g), (match) => match[0].length + 1)),
+        );
         const sourceUrl = `${repository.url}/blob/${commit.sha}/${file.path.split("/").map(encodeURIComponent).join("/")}`;
         excerpts.push(
-          `## ${file.path}\n\n[固定版本源码](${sourceUrl})\n\n\`\`\`\n${snippet}\n\`\`\`${source.length > snippet.length ? "\n\n（文件节选，后续内容未采集）" : ""}`,
+          `## ${file.path}\n\n[固定版本源码](${sourceUrl})\n\n${fence}\n${snippet}\n${fence}${source.length > snippet.length ? "\n\n（文件节选，后续内容未采集）" : ""}`,
         );
       }
       const study: RepositoryStudy = {
