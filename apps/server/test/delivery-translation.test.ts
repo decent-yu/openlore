@@ -39,14 +39,15 @@ const translate = (markdown: string) =>
     .replace("Durable recovery", "持久化恢复")
     .replace("Retry safely.", "安全地重试。")
     .replace("# Mechanism", "# 工作机制")
+    .replace("Mechanism", "工作机制")
     .replace("Save state.", "保存状态。")
-    .replace("[Guide]", "[指南]");
+    .replace("Guide", "指南");
 const execute = vi.fn(async (input: any) => ({
   status: "success" as const,
   provider: "mock",
   model: "mock",
   durationMs: 1,
-  result: { markdown: translate(input.material) },
+  result: { segments: JSON.parse(input.material).segments.map((segment: {id:string;text:string}) => ({...segment,text:translate(segment.text)})) },
 }));
 
 beforeAll(async () => {
@@ -179,20 +180,17 @@ it("regenerates a cached translation after its writing prompt changes", async ()
   expect(execute).toHaveBeenCalledTimes(2);
 });
 
-it("stops before creating archive records or publishing if a translation changes an image", async () => {
+it("stops before creating archive records or publishing if translation segments are missing", async () => {
   execute.mockImplementationOnce(async (input) => ({
     status: "success",
     provider: "mock",
     model: "mock",
     durationMs: 1,
     result: {
-      markdown: translate(input.material).replace(
-        "./assets/original.svg",
-        "./assets/new.svg",
-      ),
+      segments: JSON.parse(input.material).segments.slice(1),
     },
   }));
-  await expect(deliver()).rejects.toThrow("译文改变");
+  await expect(deliver()).rejects.toThrow("必须返回全部");
   expect(GitHubClient.syncFiles).not.toHaveBeenCalled();
   for (const table of ["collections", "article_locations", "artifact_bundles"])
     expect(

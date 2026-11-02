@@ -40,7 +40,7 @@ const defaultExecute = async (input: any) =>
       }
     : input.taskType === 'translate' ? {
         status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
-        result: {markdown: input.material.replaceAll(body, '具备详细执行轨迹和基准证据、可复现的智能体架构。')},
+        result: {segments: JSON.parse(input.material).segments.map((segment: any) => ({...segment,text:segment.text.replaceAll(body, '具备详细执行轨迹和基准证据、可复现的智能体架构。')}))},
       }
     : input.taskType === 'select' ? {
         status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,

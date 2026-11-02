@@ -468,7 +468,7 @@ describe('Task execution and independent multi-task reports', () => {
     vi.spyOn(aiAdapters, 'getAIAdapterWithFallback').mockReturnValue({
       execute: async (input) => ({
         status: 'success', provider: 'mock', model: 'mock', durationMs: 1,
-        result: {markdown: input.material.replaceAll('Article body', '文章正文')},
+        result: {segments: JSON.parse(input.material).segments.map((segment: any) => ({...segment,text:segment.text.replaceAll('Article body', '文章正文')}))},
       }),
       testConnection: async () => ({ok: true, message: 'mock'}),
     });

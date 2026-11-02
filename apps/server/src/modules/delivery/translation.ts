@@ -8,6 +8,7 @@ import { gfm } from "micromark-extension-gfm";
 import { getAIAdapterWithFallback } from "../../infrastructure/ai/fallback_runner.js";
 import { executionLogs } from "../../infrastructure/ai/execution_logs.js";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
+import { translationSegments, translationSegmentIssues, renderTranslation } from './translation-segments.js';
 
 export const CHINESE_ARTICLE_FILENAME = "article-zh-CN.md";
 
@@ -62,6 +63,8 @@ export class ArticleTranslationService {
 
     const adapter = getAIAdapterWithFallback(profileId);
     if (!adapter) throw new Error("中文翻译失败：请先配置可用的 AI 执行器");
+    const segments = translationSegments(markdown);
+    if (!segments.length) return markdown;
     const response = await adapter.execute({
       jobId: `translation_${crypto.randomUUID()}`,
       runId,
@@ -71,21 +74,27 @@ export class ArticleTranslationService {
       profileId: profileId || "default",
       taskType: "translate",
       prompt,
-      material: markdown,
+      material: JSON.stringify({ markdown, segments: segments.map(({ id, text }) => ({ id, text })) }),
       outputSchema: {
         type: "object",
         additionalProperties: false,
-        properties: { markdown: { type: "string" } },
-        required: ["markdown"],
+        properties: {
+          segments: { type: 'array', items: {
+            type: 'object', additionalProperties: false,
+            properties: { id: { type: 'string' }, text: { type: 'string' } },
+            required: ['id', 'text'],
+          } },
+        },
+        required: ["segments"],
       },
-    });
+    }, undefined, { validateResult: (result) => translationSegmentIssues(segments, result) });
     if (response.status !== "success")
       throw new Error(
         `中文翻译失败：${response.error?.message || "AI 执行失败"}`,
       );
     let translated: string;
     try {
-      translated = validateTranslation(markdown, response.result);
+      translated = validateTranslation(markdown, { markdown: renderTranslation(markdown, response.result) });
     } catch (error) {
       executionLogs.invalidate(response.trace_id, (error as Error).message);
       throw error;
