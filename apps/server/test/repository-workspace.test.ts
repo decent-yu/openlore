@@ -17,6 +17,9 @@ import {
   scanSkillDirectory,
 } from "../src/infrastructure/ai/skill_bundle.js";
 import { sessionBinding } from "../src/infrastructure/ai/workspace_session.js";
+import { FallbackAIAdapter } from "../src/infrastructure/ai/fallback_runner.js";
+import { initDatabase } from "../src/infrastructure/persistence/sqlite/db.js";
+import { executionLogs } from "../src/infrastructure/ai/execution_logs.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlore-code-study-"));
 const source = path.join(root, "source repo");
@@ -31,6 +34,7 @@ const mappedRun: typeof runProcess = (command, args, ...rest) =>
 let commit: string;
 let fakeCli: string;
 beforeAll(async () => {
+  initDatabase();
   fs.mkdirSync(source);
   const git = async (args: string[]) => {
     const result = await runProcess("git", args, source, "", 10000);
@@ -147,6 +151,94 @@ it("rejects unpinned and non-GitHub targets before fetching", async () => {
   expect(run).not.toHaveBeenCalled();
 });
 
+it("retries transient fetch timeouts and reuses the verified pinned source without a network fetch", async () => {
+  const cache = path.join(root, "cache");
+  let fetches = 0;
+  const flaky: typeof runProcess = async (command, args, ...rest) => {
+    if (
+      args.includes("fetch") &&
+      args.includes(repositoryUrl) &&
+      ++fetches === 1
+    )
+      return {
+        code: null,
+        stdout: "",
+        stderr: "connection timed out",
+        timedOut: true,
+        stderrTruncated: false,
+      };
+    return mappedRun(command, args, ...rest);
+  };
+  await actualPrepare(
+    { url: repositoryUrl, commit },
+    workspace(),
+    flaky,
+    10000,
+    undefined,
+    false,
+    cache,
+  );
+  expect(fetches).toBe(2);
+  const offline: typeof runProcess = (command, args, ...rest) => {
+    if (args.includes(repositoryUrl)) throw new Error("Network is unavailable");
+    return mappedRun(command, args, ...rest);
+  };
+  const folder = workspace();
+  await actualPrepare(
+    { url: repositoryUrl, commit },
+    folder,
+    offline,
+    10000,
+    undefined,
+    false,
+    cache,
+  );
+  expect(
+    fs.readFileSync(path.join(folder, "input/repository/src/core.ts"), "utf8"),
+  ).toContain("pinned-original");
+  fs.writeFileSync(
+    path.join(folder, "input/repository/src/core.ts"),
+    "local modification",
+  );
+  const isolated = workspace();
+  await actualPrepare(
+    { url: repositoryUrl, commit },
+    isolated,
+    offline,
+    10000,
+    undefined,
+    false,
+    cache,
+  );
+  expect(
+    fs.readFileSync(
+      path.join(isolated, "input/repository/src/core.ts"),
+      "utf8",
+    ),
+  ).toContain("pinned-original");
+});
+
+it("does not retry permanent Git permission failures and retains the failing command and diagnostics", async () => {
+  let fetches = 0;
+  const denied: typeof runProcess = (command, args, ...rest) => {
+    if (args.includes("fetch")) {
+      fetches++;
+      return Promise.resolve({
+        code: 128,
+        stdout: "",
+        stderr: "Permission denied (publickey)",
+        timedOut: false,
+        stderrTruncated: false,
+      });
+    }
+    return mappedRun(command, args, ...rest);
+  };
+  await expect(
+    actualPrepare({ url: repositoryUrl, commit }, workspace(), denied, 10000),
+  ).rejects.toThrow("Permission denied");
+  expect(fetches).toBe(1);
+});
+
 it("stops on an unavailable commit and propagates cancellation", async () => {
   await expect(
     actualPrepare(
@@ -253,20 +345,106 @@ it("does not invoke the AI when full source preparation fails or the article Ski
   );
 });
 
-it('requires a written research document instead of accepting a conversational response as a code report', async () => {
-  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockResolvedValue();
-  const cli = path.join(root, 'no-report-cli');
-  fs.writeFileSync(cli, `#!${process.execPath}\nconsole.log(JSON.stringify({response:'I could not research the source.'}));`, {mode: 0o700});
-  const result = await executeInWorkspace({...request(), cli_path: cli});
-  expect(result.status).toBe('failed');
-  expect(result.error?.message).toContain('未生成有效的 output/research.md');
+it("requires a written research document instead of accepting a conversational response as a code report", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockResolvedValue();
+  const cli = path.join(root, "no-report-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconsole.log(JSON.stringify({response:'I could not research the source.'}));`,
+    { mode: 0o700 },
+  );
+  const result = await executeInWorkspace({ ...request(), cli_path: cli });
+  expect(result.status).toBe("failed");
+  expect(result.error?.message).toContain("未生成有效的 output/research.md");
 });
 
-it('rejects reports if the AI changes the pinned implementation while researching', async () => {
-  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
-  const cli = path.join(root, 'modifies-source-cli');
-  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('input/repository/src/core.ts','changed');fs.writeFileSync('output/research.md','# Report');console.log(JSON.stringify({response:'Done'}));`, {mode:0o700});
-  const result = await executeInWorkspace({...request(), cli_path:cli});
-  expect(result.status).toBe('failed');
-  expect(result.error?.message).toContain('源码工作区已修改');
+it("rejects reports if the AI changes the pinned implementation while researching", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation(
+    (repo, folder, _run, timeout, signal, resume) =>
+      actualPrepare(repo, folder, mappedRun, timeout, signal, resume),
+  );
+  const cli = path.join(root, "modifies-source-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('input/repository/src/core.ts','changed');fs.writeFileSync('output/research.md','# Report');console.log(JSON.stringify({response:'Done'}));`,
+    { mode: 0o700 },
+  );
+  const result = await executeInWorkspace({ ...request(), cli_path: cli });
+  expect(result.status).toBe("failed");
+  expect(result.error?.message).toContain("源码工作区已修改");
+});
+
+it("continues the same Gemini session once to finish a missing research document", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation(
+    (repo, folder, _run, timeout, signal, resume) =>
+      actualPrepare(repo, folder, mappedRun, timeout, signal, resume),
+  );
+  const cli = path.join(root, "incomplete-report-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconst fs=require('fs');const args=process.argv.slice(2);console.log(JSON.stringify({type:'init',session_id:'incomplete-session-123'}));if(args.includes('--resume'))fs.writeFileSync('output/research.md','# Completed research\\n\\n'+fs.readFileSync('input/repository/src/core.ts','utf8'));console.log(JSON.stringify({type:'result',status:'success'}));`,
+    { mode: 0o700 },
+  );
+  const req = { ...request(), cli_path: cli };
+  const adapter = new FallbackAIAdapter([
+    {
+      target: {
+        id: "test",
+        name: "Gemini",
+        provider: "gemini_cli",
+        cliPath: cli,
+        isPrimary: true,
+        execution: req.config,
+      },
+      adapter: {
+        execute: (input) => executeInWorkspace({ ...req, input }),
+        testConnection: async () => ({ ok: true, message: "" }),
+      },
+    },
+  ]);
+  const result = await adapter.execute(req.input);
+  expect(result.status).toBe("success");
+  expect(result.result).toContain("pinned-original");
+  const log = executionLogs.get(result.trace_id!)!;
+  expect(log.attempts).toHaveLength(2);
+  expect(log.attempts[0].error?.code).toBe("missing_research_document");
+  expect(log.attempts[1]).toMatchObject({
+    phase: "correction",
+    resumed: true,
+    session_id: "incomplete-session-123",
+  });
+  expect(log.attempts[1].execution?.workspace).toBe(
+    log.attempts[0].execution?.workspace,
+  );
+});
+
+it("stops after one continuation if a successful CLI still does not deliver a report", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockResolvedValue();
+  const cli = path.join(root, "never-delivers-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconsole.log(JSON.stringify({type:'init',session_id:'never-delivers-123'}));console.log(JSON.stringify({type:'result',status:'success'}));`,
+    { mode: 0o700 },
+  );
+  const req = { ...request(), cli_path: cli };
+  const adapter = new FallbackAIAdapter([
+    {
+      target: {
+        id: "test",
+        name: "Gemini",
+        provider: "gemini_cli",
+        cliPath: cli,
+        isPrimary: true,
+        execution: req.config,
+      },
+      adapter: {
+        execute: (input) => executeInWorkspace({ ...req, input }),
+        testConnection: async () => ({ ok: true, message: "" }),
+      },
+    },
+  ]);
+  const result = await adapter.execute(req.input);
+  expect(result.status).toBe("failed");
+  expect(executionLogs.get(result.trace_id!)!.attempts).toHaveLength(2);
+  expect(result.error?.message).toContain("未生成有效的 output/research.md");
 });

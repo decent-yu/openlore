@@ -153,6 +153,14 @@ export class FallbackAIAdapter implements AIAdapter {
         repairData ? 'correction' : 'execute',
         repairData ? attempts.length : undefined,
       );
+      if (result.error?.code === 'missing_research_document' && result.session && input.repository) {
+        const previous = attempts.at(-1)!;
+        result = await invoke(entry, {
+          ...input,
+          session: result.session,
+          prompt: '同一代码深研任务尚未交付 output/research.md。继续使用当前会话已读取的固定 Commit 源码和研究结论，完成并写入该文件，首行使用 # 具体主题标题，最终回复返回相同 Markdown。不要重新拉取仓库或修改 input/；尚未验证的内容明确标注，不要编造证据。',
+        }, 'correction', previous.index);
+      }
       while (result.status === 'success' && options.validateResult) {
         const issues = options.validateResult(result.result);
         if (!issues.length) break;

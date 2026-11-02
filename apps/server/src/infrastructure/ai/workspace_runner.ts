@@ -269,6 +269,7 @@ export async function executeInWorkspace(
   }
   let bundle: SkillBundle | undefined = input.skillBundle;
   try {
+    execution = { workspace, prompt: input.prompt, mode: request.provider === 'codex_cli' ? 'native' : 'explicit-path' };
     if (input.skillId) {
       if (config.skills_mode === 'local') {
         const item = scanSkillDirectory(expand(config.skills_directory)).find(
@@ -305,7 +306,7 @@ export async function executeInWorkspace(
       verifySession(workspace, input.session, binding, input.material);
     if (input.repository || input.skillId === GITHUB_CODE_RESEARCH_SKILL) {
       if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
-      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(180000, config.timeout_seconds * 1000), signal, Boolean(input.session));
+      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(180000, config.timeout_seconds * 1000), signal, Boolean(input.session), path.join(root, 'repository-cache'));
     }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
     const prompt = input.prompt;
@@ -612,7 +613,7 @@ export async function executeInWorkspace(
           ? path.join(workspace, 'output', 'digest.md')
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
-      throw new Error('代码深研未生成有效的 output/research.md');
+      throw Object.assign(new Error('代码深研未生成有效的 output/research.md'), { code: 'missing_research_document' });
     if (input.repository)
       await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
@@ -644,7 +645,7 @@ export async function executeInWorkspace(
       execution,
       session,
       diagnostics,
-      error: { code: 'execution_failed', message: error.message },
+      error: { code: error.code || 'execution_failed', message: error.message },
     };
   } finally {
     try {
