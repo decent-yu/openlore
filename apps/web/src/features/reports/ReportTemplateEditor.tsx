@@ -34,7 +34,7 @@ export function ReportTemplateEditor({
     task_count: taskNames.length || 1,
     article_count: 2,
     deep_count: 2,
-    content: `### ${taskNames[0] || "Agent 工程"}\n\n- [Agent 工具调用的可恢复执行](https://wiki.example.com/agent/research)  \n  通过任务标识、持久状态和结果核对，处理执行中断与恢复。\n\n- [上下文证据的结构化整理](https://wiki.example.com/context/research)  \n  将原文证据按片段组织，让结论和出处可以回查。`,
+    content: `### ${taskNames[0] || "Agent 工程"}\n\n- [Agent 工具调用的可恢复执行](https://wiki.example.com/agent/research)\n\n- [上下文证据的结构化整理](https://wiki.example.com/context/research)`,
   };
   return (
     <>
@@ -80,7 +80,7 @@ export function ReportTemplateEditor({
         ))}
       </div>
       <p className="text-[11px] text-neutral-500">
-        文章清单固定为「按任务分组 → 文章标题链接 → 已有导读」，有研报时优先链接
+        清单按任务分组，仅展示研报标题链接；缺少研报标题时使用原文标题。优先链接
         Wiki 研报，否则使用 Wiki 正文。未配置 Wiki 时使用归档或原文链接。
       </p>
       <Button

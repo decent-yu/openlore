@@ -3,6 +3,7 @@ import { ArticleReviewSchema } from './article-review.js';
 import { ExecutionResultSchema } from './execution.js';
 import { GroupRouteSchema } from './delivery.js';
 import { PipelineTaskTypeSchema } from './pipelines.js';
+import { RepositoryStudySchema, type RepositoryHistory } from './github-source.js';
 
 export const SourceCapabilitySchema = z.enum([
   'web_feed',
@@ -15,8 +16,6 @@ export type SourceCapability = z.infer<typeof SourceCapabilitySchema>;
 
 export const SourceOptionsSchema = z.object({
   poll_interval_mins: z.number().int().min(1).max(10080).default(30),
-  github_ref: z.string().trim().max(200).default(''),
-  github_connection_id: z.string().trim().default(''),
   research_focus: z.string().trim().max(4000).default(''),
   keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_keywords: z.array(z.string().trim().min(1)).default([]),
@@ -41,6 +40,7 @@ export const SourceSchema = z.object({
   last_polled_at: z.string().nullable().optional(),
   last_success_at: z.string().nullable().optional(),
   last_error: z.string().nullable().optional(),
+  repository_history: z.array(z.custom<RepositoryHistory>()).optional(),
 });
 export type Source = z.infer<typeof SourceSchema>;
 
@@ -79,6 +79,8 @@ export const SkillSchema = z.object({
 export type Skill = z.infer<typeof SkillSchema>;
 
 export const DailyFeedArticleSchema = z.object({
+  created_at: z.string().default(''),
+  review: ArticleReviewSchema.nullable().default(null),
   task_type: PipelineTaskTypeSchema.default('article_research'),
   wiki_url: z.string().optional(),
   id: z.string(),
@@ -104,6 +106,8 @@ export const DailyFeedArticleSchema = z.object({
       wiki_url: z.string().optional(),
       questions: z.array(z.string()).default([]),
       evidence: z.array(z.any()).default([]),
+      finished_at: z.string().nullable().optional(),
+      archived_at: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
@@ -190,6 +194,8 @@ export const PushDeliveryRecordSchema = z.object({
   total_count: z.number().default(0),
   deep_count: z.number().default(0),
   candidate_count: z.number().default(0),
+  trigger: z.enum(['manual', 'scheduled']).optional(),
+  partial: z.boolean().optional(),
   platform_response: z.string().optional(),
   error_message: z.string().nullable().optional(),
   created_at: z.string(),
@@ -201,6 +207,7 @@ export const ResearchTaskSchema = z.object({
   execution: ExecutionResultSchema.shape.execution,
   model: z.string().optional(),
   id: z.string(),
+  repository_study: RepositoryStudySchema.optional(),
   group_id: z.string(),
   article_id: z.string(),
   article_title: z.string(),

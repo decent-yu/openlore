@@ -37,10 +37,10 @@ export function redactExecutionText(text: string): string {
   return result;
 }
 function serialize(value: unknown): string {
-  return redactExecutionText(
-    typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? ""),
-  );
+  if (typeof value === 'string') return redactExecutionText(value);
+  return JSON.stringify(value, (_key, item) => typeof item === 'string' ? redactExecutionText(item) : item, 2) ?? '';
 }
+
 type Row = {
   id: string;
   job_id: string;
@@ -107,6 +107,9 @@ export const executionLogs = {
           material: input.material,
           outputSchema: input.outputSchema,
           skillRevision: input.skillRevision,
+          context_reports: input.repository_context?.history.length,
+          context_report_titles: input.repository_context?.history.map(report => report.title),
+          research_goal: input.repository_context?.goal,
         }),
       );
     return id;
@@ -129,6 +132,25 @@ export const executionLogs = {
         result.error ? redactExecutionText(result.error.message) : null,
         id,
       );
+  },
+  recover(id: string, result: ExecutionResult) {
+    const log = this.get(id);
+    if (!log) return;
+    const origin = log.attempts.find(attempt => attempt.execution?.workspace === result.execution?.workspace);
+    if (origin && log.error_message) origin.notice = [origin.notice, `原接纳失败原因：${log.error_message}`].filter(Boolean).join('；');
+    if (origin && !origin.usage && result.usage) origin.usage = result.usage;
+    const now = new Date().toISOString();
+    const attempts: AIExecutionAttempt[] = [...log.attempts, {
+      index: log.attempts.length + 1,
+      profile_id: origin?.profile_id || '', executor_name: origin?.executor_name || '本地产物恢复',
+      provider: result.provider, transport: origin?.transport || 'local', model: result.model,
+      timeout_seconds: 0, queue_timeout_seconds: 0, started_at: now, finished_at: now,
+      duration_ms: 0, status: 'success', phase: 'recovery', resumed: false,
+      report_reused: true, notice: result.notice || '已接纳此前保存的研报和配图，未重新调用 AI；原始尝试记录保留。',
+      execution: result.execution, output: serialize(result.result),
+    }];
+    this.attempts(id, attempts);
+    getSqliteDatabase().prepare("UPDATE ai_execution_logs SET status='success',finished_at=?,output=?,error_message=NULL WHERE id=?").run(now, serialize(result.result), id);
   },
   invalidate(id: string | undefined, reason: string) {
     if (id)
@@ -169,7 +191,7 @@ export const executionLogs = {
       params.push(filters.log_id);
     }
     if (filters.status === "problem")
-      clauses.push("status NOT IN ('success','running')");
+      clauses.push("status NOT IN ('success','running','cancelled')");
     else if (filters.status) {
       clauses.push("status=?");
       params.push(filters.status);

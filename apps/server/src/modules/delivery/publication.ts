@@ -18,7 +18,7 @@ import {
   repositoryConnectionsTable,
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { GitHubClient } from "../../infrastructure/repositories/github/client.js";
-import { secretsStore } from "../../infrastructure/secrets/local_file/secrets_store.js";
+import { getGitHubToken } from "../../infrastructure/repositories/github/credentials.js";
 import { markResearchArchived } from "../research/state.js";
 
 export type { ArchiveInput, DeliveryResult } from "@openlore/contracts";
@@ -85,7 +85,7 @@ export async function publishArchive(
     )
     .get();
   if (!repository) throw new Error("GitHub 归档失败：仓库连接不存在");
-  const token = secretsStore.getSecret(repository.credentialRef);
+  const token = getGitHubToken(repository.credentialRef);
   if (!token) throw new Error("GitHub 归档失败：未配置仓库凭据");
   const result = await GitHubClient.syncFiles({
     owner: repository.owner,

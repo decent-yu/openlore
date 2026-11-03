@@ -4,8 +4,13 @@ import { Badge } from "../../components/ui/badge.js";
 export function LibraryArticleStatus({
   article,
 }: {
-  article: Pick<LibraryArticle, "is_deep_analyzed" | "review">;
+  article: Pick<LibraryArticle, "is_deep_analyzed" | "review"> & Partial<Pick<LibraryArticle, "task_type" | "research">>;
 }) {
+  if (article.task_type === 'repository_research') {
+    const status = article.research?.status;
+    const label = article.is_deep_analyzed ? '已归档' : status === 'succeeded' ? '研报待归档' : status === 'running' || status === 'queued' ? '研读中' : status === 'failed' ? '研读失败' : status === 'cancelled' ? '已取消' : '待研读';
+    return <Badge variant="outline" className="text-[10px] font-normal">{label}</Badge>;
+  }
   if (article.is_deep_analyzed)
     return (
       <Badge className="border-purple-300 bg-purple-50 text-[10px] font-normal text-purple-700">

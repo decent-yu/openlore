@@ -26,6 +26,7 @@ export function sessionBinding(
         inherit_user_config: request.config.inherit_user_config,
         material: request.input.material,
         repository: request.input.repository,
+        repository_context: request.input.repository_context,
         schema: request.input.outputSchema,
         skill: bundle?.id,
         revision: bundle?.revision,

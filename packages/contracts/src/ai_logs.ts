@@ -15,11 +15,14 @@ export interface AIExecutionAttempt {
   finished_at?: string;
   duration_ms?: number;
   status: string;
-  phase?: "execute" | "correction";
+  phase?: "execute" | "correction" | "recovery";
+  notice?: string;
+  report_reused?: boolean;
   correction_of?: number;
   validation_issues?: Array<{ path: string; code: string; message: string }>;
   session_id?: string;
   resumed?: boolean;
+  context_reports?: number;
   progress_state?: "queued" | "running";
   queue_duration_ms?: number;
   progress_at?: string;
@@ -57,7 +60,8 @@ export interface AIExecutionLog {
 export function summarizeExecutionUsage(
   attempts: AIExecutionAttempt[],
 ): NonNullable<AIExecutionLog["usage_summary"]> {
-  const recorded = attempts.filter((attempt) => attempt.usage);
+  const executed = attempts.filter(attempt => attempt.phase !== "recovery");
+  const recorded = executed.filter((attempt) => attempt.usage);
   const usage: NonNullable<ExecutionResult["usage"]> = {};
   for (const key of [
     "promptTokens",
@@ -74,7 +78,7 @@ export function summarizeExecutionUsage(
   }
   return {
     recorded_attempts: recorded.length,
-    total_attempts: attempts.length,
+    total_attempts: executed.length,
     usage,
   };
 }
@@ -82,7 +86,7 @@ export interface AIExecutionLogDetail extends AIExecutionLog {
   input: Pick<
     ExecutionInput,
     "prompt" | "material" | "outputSchema" | "skillRevision"
-  >;
+  > & { context_reports?: number; context_report_titles?: string[]; research_goal?: string };
   output: string;
 }
 export interface AIExecutionLogPage {

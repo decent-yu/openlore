@@ -151,6 +151,12 @@ export function SettingsPage() {
     },
   });
 
+  const defaultGitHubTokenMutation = useMutation({
+    mutationFn: api.setDefaultGitHubToken,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); setNotice('默认 Token 已设置，GitHub 拉取将自动使用'); },
+    onError: (error: Error) => setNotice(error.message),
+  });
+
   const deleteRepoMutation = useMutation({
     mutationFn: api.deleteRepo,
     onSuccess: () => {
@@ -378,7 +384,7 @@ export function SettingsPage() {
                   GitHub 仓库连接
                 </CardTitle>
                 <CardDescription className="text-xs text-neutral-500 mt-0.5">
-                  粘贴仓库 Git 地址与 Personal Access Token，各流水线任务可按需挂载并自动推送 Markdown 归档。
+                  将已有连接设为默认 Token，仓库拉取自动复用；各流水线任务按需关联归档仓库。
                 </CardDescription>
               </div>
               <Button size="sm" onClick={openCreateRepoModal} className="h-8 text-xs gap-1">
@@ -400,6 +406,7 @@ export function SettingsPage() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-sm text-neutral-900">{r.name}</p>
+                            {settings?.default_github_token_connection_id === r.id && <Badge variant="default">默认 Token</Badge>}
                             <Badge variant={r.state === 'ready' ? 'success' : 'destructive'}>
                               {({ready:'可用',invalid_credential:'凭据无效',repo_not_found:'仓库不存在',unknown:'待核验'} as Record<string,string>)[r.state] || r.state}
                             </Badge>
@@ -431,6 +438,7 @@ export function SettingsPage() {
                           >
                             测试连通性
                           </Button>
+                          {settings?.default_github_token_connection_id !== r.id && <Button variant="outline" size="sm" className="text-xs h-8" disabled={defaultGitHubTokenMutation.isPending} onClick={() => defaultGitHubTokenMutation.mutate(r.id)}>设为默认 Token</Button>}
                           <Button
                             variant="outline"
                             size="sm"
@@ -786,10 +794,10 @@ export function SettingsPage() {
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-neutral-700">Personal Access Token</label>
+                <label className="text-xs font-medium text-neutral-700">Personal Access Token{settings?.github_token_configured ? '（可选，覆盖默认 Token）' : ''}</label>
                 <Input
                   type="password"
-                  placeholder={repoModal.mode === 'edit' ? '留空保持原有 Token' : 'ghp_... (需要 repo 读写权限)'}
+                  placeholder={repoModal.mode === 'edit' ? '留空保持原有 Token' : settings?.github_token_configured ? '留空使用默认 Token' : 'ghp_... (需要 repo 读写权限)'}
                   value={repoModal.token}
                   onChange={(e) => setRepoModal((prev) => ({ ...prev, token: e.target.value }))}
                 />
@@ -832,7 +840,7 @@ export function SettingsPage() {
                   disabled={
                     !repoModal.url ||
                     !wikiConfig.success ||
-                    (repoModal.mode === 'create' && !repoModal.token) ||
+                    (repoModal.mode === 'create' && !repoModal.token && !settings?.github_token_configured) ||
                     saveRepoMutation.isPending
                   }
                   onClick={() =>

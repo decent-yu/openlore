@@ -18,6 +18,7 @@ const date = z.string().date("请选择有效日期（YYYY-MM-DD）").optional()
 
 export const LibraryQuerySchema = z
   .object({
+    task_type: z.enum(["all", "article_research", "repository_research"]).default("all"),
     time_range: LibraryTimeRangeSchema.default("all"),
     discovered_from: date,
     discovered_to: date,
@@ -67,6 +68,7 @@ export const LibraryQuerySchema = z
   });
 
 export interface LibraryFilterParams {
+  task_type?: "all" | "article_research" | "repository_research";
   time_range?: LibraryTimeRange;
   discovered_from?: string;
   discovered_to?: string;

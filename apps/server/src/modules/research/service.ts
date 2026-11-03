@@ -1,12 +1,12 @@
 import { claimResearchArticle, releaseResearchClaims } from "./state.js";
 import crypto from "node:crypto";
-import { buildResearchPrompt, buildCodeResearchPrompt, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
+import { buildResearchPrompt, buildCodeResearchPrompt, buildRepositoryResearchInstructions, repositoryResearchContext, type RepositoryResearchContext, GITHUB_CODE_RESEARCH_SKILL, DEFAULT_RESEARCH_INSTRUCTIONS, repositoryStudy } from "@openlore/contracts";
 import fs from "node:fs";
 import path from "node:path";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
 import { safeRelativePath } from "../../infrastructure/ai/skill_bundle.js";
 import { and, eq } from "drizzle-orm";
-import type { ResearchTask } from "@openlore/contracts";
+import type { ResearchTask, ExecutionResult, RepositoryStudy } from "@openlore/contracts";
 import { getAIAdapterWithFallback } from "../../infrastructure/ai/fallback_runner.js";
 import { getDb, getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import {
@@ -18,11 +18,16 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { mediaAssetsArchiver } from "../../infrastructure/media_assets/archiver.js";
 import { skillsService } from "../skills/service.js";
+import { sourcesService } from "../sources/service.js";
 import { groupsService } from "../groups/service.js";
 import { listPoolCandidates } from "../processing/candidates.js";
+import { collectResearchArtifacts, readRepositoryReport } from '../../infrastructure/ai/workspace_runner.js';
+import { parseCodexUsage } from "../../infrastructure/ai/cli_output.js";
+import { executionLogs } from '../../infrastructure/ai/execution_logs.js';
 import { articleSlug } from "../delivery/archive-layout.js";
 
 export class ResearchService {
+  private activeRepositories = new Map<string, Promise<ResearchTask>>();
   async listResearchTasks(groupId?: string): Promise<ResearchTask[]> {
     const db = getDb();
     const rows = groupId
@@ -40,13 +45,16 @@ export class ResearchService {
         .from(articlesTable)
         .where(eq(articlesTable.id, r.articleId))
         .get();
+      const snapshot = repositoryStudy({ repository_study: JSON.parse(r.repositoryStudyJson || '{}') });
+      const title = snapshot && r.reportMarkdown.trim() ? /^#\s+(.+)$/m.exec(r.reportMarkdown)?.[1]?.trim() || art?.title || '仓库研读' : art?.title || 'Untitled Article';
       tasks.push({
         id: r.id,
+        repository_study: snapshot,
         skill_id: JSON.parse(r.executionJson || '{}').skill_id || (repositoryStudy(JSON.parse(art?.dateEvidenceJson || '{}')) ? GITHUB_CODE_RESEARCH_SKILL : undefined),
         group_id: r.groupId,
         article_id: r.articleId,
-        article_title: art?.title || "Untitled Article",
-        article_slug: articleSlug(art?.title || "article"),
+        article_title: title,
+        article_slug: articleSlug(title),
         status: r.status as any,
         questions: JSON.parse(r.questionsJson || "[]"),
         evidence: JSON.parse(r.evidenceJson || "[]"),
@@ -72,6 +80,7 @@ export class ResearchService {
     customInstructions?: string,
     runId?: string,
     claimOwner?: string,
+    regenerate = false,
   ): Promise<ResearchTask> {
     const pipeline = await groupsService.getGroup(groupId);
     if (!pipeline || !listPoolCandidates(pipeline.source_ids, pipeline.task_type).some(item=>item.id===articleId))
@@ -83,15 +92,64 @@ export class ResearchService {
       });
     }
     try {
-      return await this.generateResearch(
-        groupId,
-        articleId,
-        customInstructions,
-        runId,
-      );
+      const article = getSqliteDatabase().prepare('SELECT date_evidence_json FROM articles WHERE id=?').get(articleId) as { date_evidence_json: string };
+      const study = pipeline.task_type === 'repository_research' ? repositoryStudy(JSON.parse(article.date_evidence_json)) : undefined;
+      if (!study) return await this.generateResearch(groupId, articleId, customInstructions, runId, regenerate);
+      // Same-repository research is sequential so each report sees earlier accepted reports,
+      // including work awaiting archive in this very batch. Different repositories still run in parallel.
+      const key = study.source_id || study.directory;
+      const previous = this.activeRepositories.get(key);
+      const task = (async () => {
+        if (previous) {
+          const preceding = await previous;
+          if (preceding.status !== 'succeeded') throw new Error('前一篇仓库研读未完成，已停止后续研读');
+        }
+        return this.generateResearch(groupId, articleId, customInstructions, runId, regenerate);
+      })();
+      this.activeRepositories.set(key, task);
+      try { return await task; }
+      finally { if (this.activeRepositories.get(key) === task) this.activeRepositories.delete(key); }
+
     } finally {
       if (!runId && !claimOwner) releaseResearchClaims(owner);
     }
+  }
+
+  /** Accept an existing local artifact without opening an AI session or fetching source. */
+  async recoverRepositoryReport(taskId: string): Promise<ResearchTask | null> {
+    const db = getSqliteDatabase();
+    const task = db.prepare('SELECT group_id,article_id,status,repository_study_json FROM research_tasks WHERE id=?').get(taskId) as { group_id: string; article_id: string; status: string; repository_study_json: string } | undefined;
+    if (!task || task.status === 'running') return null;
+    const article = db.prepare('SELECT date_evidence_json FROM articles WHERE id=?').get(task.article_id) as { date_evidence_json: string } | undefined;
+    const study = repositoryStudy({repository_study: JSON.parse(task.repository_study_json || "{}")}) || repositoryStudy(JSON.parse(article?.date_evidence_json || '{}'));
+    if (!study) return null;
+    if (task.status === 'succeeded') return (await this.listResearchTasks(task.group_id)).find(row => row.id === taskId)!;
+    const logs = executionLogs.list({ job_id: taskId, page: 1, page_size: 20 });
+    for (const summary of logs.items) {
+      const log = executionLogs.get(summary.id)!;
+      for (const attempt of [...log.attempts].reverse()) {
+        const workspace = attempt.execution?.workspace;
+        if (!workspace || attempt.transport !== 'local' || !fs.existsSync(path.join(workspace, 'manifest.json'))) continue;
+        const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'manifest.json'), 'utf8'));
+        if (manifest.job_id !== taskId) continue;
+        const report = readRepositoryReport(workspace);
+        if (!report) continue;
+        let repository: ExecutionResult['repository'];
+        try { repository = JSON.parse(fs.readFileSync(path.join(workspace, 'input/repository.json'), 'utf8')); } catch {}
+        let usage = attempt.usage;
+        if (!usage && attempt.provider === 'codex_cli' && fs.existsSync(path.join(workspace, 'events.log'))) usage = parseCodexUsage(fs.readFileSync(path.join(workspace, 'events.log'), 'utf8'));
+        const result: ExecutionResult = {
+          status: 'success', provider: attempt.provider, model: attempt.model, durationMs: 0,
+          result: report, repository, execution: attempt.execution, usage,
+          artifacts: collectResearchArtifacts(path.join(workspace, 'output')),
+          report_reused: true, notice: '复用已有研报，未重新调用 AI。',
+        };
+        const accepted = await this.generateResearch(task.group_id, task.article_id, undefined, undefined, false, { taskId, result, study });
+        if (accepted.status === 'succeeded') executionLogs.recover(log.id, result);
+        return accepted;
+      }
+    }
+    return null;
   }
 
   private async generateResearch(
@@ -99,10 +157,19 @@ export class ResearchService {
     articleId: string,
     customInstructions?: string,
     runId?: string,
+    regenerate = false,
+    recovered?: { taskId: string; result: ExecutionResult; study: RepositoryStudy },
   ): Promise<ResearchTask> {
     const db = getDb();
     const now = new Date().toISOString();
-    const taskId = `res_${crypto.randomUUID().slice(0, 12)}`;
+    if (!regenerate && !recovered) {
+      const failed = getSqliteDatabase().prepare("SELECT id FROM research_tasks WHERE group_id=? AND article_id=? AND status IN ('failed','cancelled') ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string } | undefined;
+      if (failed) {
+        const saved = await this.recoverRepositoryReport(failed.id);
+        if (saved) return saved;
+      }
+    }
+    const taskId = recovered?.taskId || `res_${crypto.randomUUID().slice(0, 12)}`;
 
     const art = db
       .select()
@@ -138,28 +205,30 @@ export class ResearchService {
       customInstructions ||
       group?.researchInstructions ||
       DEFAULT_RESEARCH_INSTRUCTIONS;
-    const study = group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined;
-    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少固定版本材料');
+    const study = recovered?.study || (group?.taskType === 'repository_research' ? repositoryStudy(JSON.parse(art.dateEvidenceJson)) : undefined);
+    if (group?.taskType === 'repository_research' && !study) throw new Error('仓库研读任务缺少来源与目标');
+    let repositoryContext: RepositoryResearchContext | undefined;
     if (study) {
-      const history = getSqliteDatabase().prepare(`SELECT a.title,t.report_markdown FROM research_tasks t JOIN articles a ON a.id=t.article_id
-        WHERE t.status='succeeded' AND t.archived_at IS NOT NULL AND t.article_id<>?
-          AND json_extract(a.date_evidence_json,'$.repository_study.directory')=?
-        ORDER BY t.created_at DESC LIMIT 40`).all(articleId, study.directory) as Array<{ title: string; report_markdown: string }>;
-      instructions += `
+      // Upload retries reuse the approved report before resolving skills, prompts or fresh code.
+      const latest = getSqliteDatabase().prepare("SELECT id,archived_at,report_markdown FROM research_tasks WHERE group_id=? AND article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string; archived_at: string | null; report_markdown: string } | undefined;
+      if (!recovered && !regenerate && latest && !latest.archived_at && latest.report_markdown.trim())
+        return (await this.listResearchTasks(groupId)).find(task => task.id === latest.id)!;
+      const sourceId = study.source_id || (getSqliteDatabase().prepare('SELECT source_id FROM source_items WHERE article_id=? LIMIT 1').get(articleId) as { source_id: string } | undefined)?.source_id;
+      const source = sourceId ? await sourcesService.getSource(sourceId) : null;
+      if (!source) throw new Error('仓库来源配置不存在，无法准备目标和研究历史');
+      const prior = getSqliteDatabase().prepare("SELECT questions_json FROM research_tasks WHERE article_id=? AND status='succeeded' ORDER BY rowid DESC LIMIT 1").get(articleId) as { questions_json: string } | undefined;
+      repositoryContext = repositoryResearchContext({ ...source, options: { ...source.options, research_focus: study.focus } }, prior ? undefined : articleId);
+      instructions = buildRepositoryResearchInstructions(repositoryContext, customInstructions || group?.researchInstructions, { study_id: study.study_id || articleId });
+      if (prior) instructions += `\n用户明确重新调研已有主题：${art.title}。原研究问题：${prior.questions_json}。围绕原问题追踪本次最新源码、复核和深化，可修正旧认识，不另换无关主题。新研报覆盖原归档路径，旧内容由 Git 历史保留，允许有依据地再次回答相同问题。`;
 
-仓库：${study.repository_url}
-固定 Commit：${study.commit}
-研读重点：${study.focus || '架构设计与核心思想'}
-已归档研读（最近 40 篇）：
-${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).join('\n\n') || '暂无，从整体架构与核心执行链路开始。'}`;
     }
 
     // Generate research report (using AI adapter with primary and fallback support)
-    const aiAdapter = getAIAdapterWithFallback(group?.aiProfileId);
+    const aiAdapter = recovered ? { execute: async () => recovered.result } : getAIAdapterWithFallback(group?.aiProfileId);
 
     const skillId = study ? GITHUB_CODE_RESEARCH_SKILL : group?.researchSkillId || 'deep-research-expert';
     if (!study && skillId === GITHUB_CODE_RESEARCH_SKILL) throw new Error('github-code-research 仅用于 GitHub 仓库来源，请为文章选择文章调研 Skill');
-    const researchSkill = await skillsService.getSkill(
+    const researchSkill = recovered ? { id: GITHUB_CODE_RESEARCH_SKILL, type: "research", revision: undefined } : await skillsService.getSkill(
       skillId,
       group?.aiProfileId || "default",
     );
@@ -172,6 +241,7 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
         JSON.stringify([
           art.latestRevision,
           instructions,
+          repositoryContext,
           prompt,
           researchSkill?.revision,
           skillId,
@@ -194,18 +264,19 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
       .all()
       .filter((task) => !task.archivedAt && task.reportMarkdown.trim())
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (reusable)
+    if (!regenerate && !study && reusable)
       return (await this.listResearchTasks(groupId)).find(
         (task) => task.id === reusable.id,
       )!;
 
     // Insert task as queued
-    db.insert(researchTasksTable)
+    if (!recovered) db.insert(researchTasksTable)
       .values({
         id: taskId,
         groupId,
         articleId,
         revisionHash: art.latestRevision,
+        repositoryStudyJson: JSON.stringify(study || {}),
         status: "running",
         requestHash,
         questionsJson: JSON.stringify([
@@ -244,7 +315,8 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
           taskType: "research_report",
           skillId: researchSkill.id,
           skillRevision: researchSkill.revision,
-          repository: study ? {url: study.repository_url, commit: study.commit} : undefined,
+          repository: study ? {url: study.repository_url} : undefined,
+          repository_context: repositoryContext,
           prompt,
           material: `Title: ${art.title}\nSource URL: ${art.canonicalUrl || "未提供"}\n\n${content}`,
         });
@@ -256,6 +328,11 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
           })
           .where(eq(researchTasksTable.id, taskId))
           .run();
+        if (study && aiRes.repository?.url === study.repository_url) {
+          study.commit = aiRes.repository.commit;
+          db.update(researchTasksTable).set({ repositoryStudyJson: JSON.stringify(study) }).where(eq(researchTasksTable.id, taskId)).run();
+          db.update(articlesTable).set({ dateEvidenceJson: JSON.stringify({ ...JSON.parse(art.dateEvidenceJson), repository_study: study }) }).where(eq(articlesTable.id, articleId)).run();
+        }
         if (aiRes.status !== "success")
           failure = aiRes.error?.message || "AI 调研调用失败";
         if (aiRes.status === "success" && aiRes.result) {
@@ -269,6 +346,10 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
 
           if (typeof report !== "string" || !report.trim())
             throw new Error("AI 返回了空研报或无效格式");
+          if (study) {
+            // The report itself is the source of research history; auxiliary citations are optional.
+            db.update(researchTasksTable).set({ questionsJson: '[]', evidenceJson: '[]' }).where(eq(researchTasksTable.id, taskId)).run();
+          }
           for (const artifact of aiRes.artifacts || []) {
             safeRelativePath(artifact.path);
             if (!artifact.path.startsWith("assets/")) continue;
@@ -286,7 +367,7 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
               extension === ".svg" &&
               /<script|onload=|javascript:/i.test(bytes.toString())
             )
-              throw new Error("生成的 SVG 含不允许的执行内容");
+              continue;
             const hash = crypto
               .createHash("sha256")
               .update(bytes)
@@ -372,7 +453,10 @@ ${history.map(item => `- ${item.title}\n${item.report_markdown.slice(0, 800)}`).
     const finishedAt = new Date().toISOString();
     if (study) {
       const title = /^#\s+(.+)$/m.exec(report)?.[1]?.trim().slice(0, 160);
-      if (title) db.update(articlesTable).set({ title, updatedAt: finishedAt }).where(eq(articlesTable.id, articleId)).run();
+      if (title) {
+        db.update(articlesTable).set({ title, updatedAt: finishedAt }).where(eq(articlesTable.id, articleId)).run();
+        getSqliteDatabase().prepare('UPDATE ai_execution_logs SET article_title=? WHERE job_id=?').run(title, taskId);
+      }
     }
     db.update(researchTasksTable)
       .set({

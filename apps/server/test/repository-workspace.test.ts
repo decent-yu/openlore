@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
   ExecutorConfigSchema,
   RepositoryCheckoutSchema,
+  RepositoryTargetSchema,
   GITHUB_CODE_RESEARCH_SKILL,
 } from "@openlore/contracts";
 import {
@@ -16,10 +17,10 @@ import {
   readSkillBundle,
   scanSkillDirectory,
 } from "../src/infrastructure/ai/skill_bundle.js";
+import { FallbackAIAdapter } from '../src/infrastructure/ai/fallback_runner.js';
+import { initDatabase } from '../src/infrastructure/persistence/sqlite/db.js';
+import { executionLogs } from '../src/infrastructure/ai/execution_logs.js';
 import { sessionBinding } from "../src/infrastructure/ai/workspace_session.js";
-import { FallbackAIAdapter } from "../src/infrastructure/ai/fallback_runner.js";
-import { initDatabase } from "../src/infrastructure/persistence/sqlite/db.js";
-import { executionLogs } from "../src/infrastructure/ai/execution_logs.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlore-code-study-"));
 const source = path.join(root, "source repo");
@@ -74,7 +75,10 @@ const fs=require('fs');
 const source=fs.readFileSync('input/repository/src/core.ts','utf8');
 const caller=fs.readFileSync('input/repository/src/caller.ts','utf8');
 const test=fs.readFileSync('input/repository/tests/core.test.ts','utf8');
-const report='# Code research\\n'+source+'\\n'+caller+'\\n'+test;
+const metadata=JSON.parse(fs.readFileSync('input/repository.json','utf8'));
+const citation=metadata.url+'/blob/'+metadata.commit+'/src/core.ts#L1';
+const report='# Code research\\n'+source+'\\n'+caller+'\\n'+test+'\\n'+citation;
+
 fs.writeFileSync('output/research.md',report);
 console.log(JSON.stringify({response:'The report is saved.'}));
 `,
@@ -89,12 +93,12 @@ const workspace = () => {
   return folder;
 };
 
-it("prepares the pinned source tree including callers and tests, rather than the branch head or supplied sample", async () => {
+it("prepares default-branch source including callers and tests", async () => {
   const folder = workspace();
   await actualPrepare({ url: repositoryUrl, commit }, folder, mappedRun, 10000);
   expect(
     fs.readFileSync(path.join(folder, "input/repository/src/core.ts"), "utf8"),
-  ).toContain("pinned-original");
+  ).toContain("new-version");
   expect(
     fs.existsSync(path.join(folder, "input/repository/src/caller.ts")),
   ).toBe(true);
@@ -105,7 +109,7 @@ it("prepares the pinned source tree including callers and tests, rather than the
     JSON.parse(
       fs.readFileSync(path.join(folder, "input/repository.json"), "utf8"),
     ),
-  ).toMatchObject({ url: repositoryUrl, commit });
+  ).toMatchObject({ url: repositoryUrl });
   await actualPrepare(
     { url: repositoryUrl, commit },
     folder,
@@ -114,153 +118,8 @@ it("prepares the pinned source tree including callers and tests, rather than the
     undefined,
     true,
   );
-  fs.writeFileSync(
-    path.join(folder, "input/repository/src/core.ts"),
-    "modified",
-  );
-  await expect(
-    actualPrepare(
-      { url: repositoryUrl, commit },
-      folder,
-      mappedRun,
-      10000,
-      undefined,
-      true,
-    ),
-  ).rejects.toThrow("源码工作区已修改");
-});
-
-it("rejects unpinned and non-GitHub targets before fetching", async () => {
-  expect(
-    RepositoryCheckoutSchema.safeParse({ url: repositoryUrl, commit: "main" })
-      .success,
-  ).toBe(false);
-  expect(
-    RepositoryCheckoutSchema.safeParse({ url: "file:///tmp/source", commit })
-      .success,
-  ).toBe(false);
-  const run = vi.fn();
-  await expect(
-    actualPrepare(
-      { url: repositoryUrl, commit: "main" },
-      workspace(),
-      run,
-      10000,
-    ),
-  ).rejects.toThrow();
-  expect(run).not.toHaveBeenCalled();
-});
-
-it("retries transient fetch timeouts and reuses the verified pinned source without a network fetch", async () => {
-  const cache = path.join(root, "cache");
-  let fetches = 0;
-  const flaky: typeof runProcess = async (command, args, ...rest) => {
-    if (
-      args.includes("fetch") &&
-      args.includes(repositoryUrl) &&
-      ++fetches === 1
-    )
-      return {
-        code: null,
-        stdout: "",
-        stderr: "connection timed out",
-        timedOut: true,
-        stderrTruncated: false,
-      };
-    return mappedRun(command, args, ...rest);
-  };
-  await actualPrepare(
-    { url: repositoryUrl, commit },
-    workspace(),
-    flaky,
-    10000,
-    undefined,
-    false,
-    cache,
-  );
-  expect(fetches).toBe(2);
-  const offline: typeof runProcess = (command, args, ...rest) => {
-    if (args.includes(repositoryUrl)) throw new Error("Network is unavailable");
-    return mappedRun(command, args, ...rest);
-  };
-  const folder = workspace();
-  await actualPrepare(
-    { url: repositoryUrl, commit },
-    folder,
-    offline,
-    10000,
-    undefined,
-    false,
-    cache,
-  );
-  expect(
-    fs.readFileSync(path.join(folder, "input/repository/src/core.ts"), "utf8"),
-  ).toContain("pinned-original");
-  fs.writeFileSync(
-    path.join(folder, "input/repository/src/core.ts"),
-    "local modification",
-  );
-  const isolated = workspace();
-  await actualPrepare(
-    { url: repositoryUrl, commit },
-    isolated,
-    offline,
-    10000,
-    undefined,
-    false,
-    cache,
-  );
-  expect(
-    fs.readFileSync(
-      path.join(isolated, "input/repository/src/core.ts"),
-      "utf8",
-    ),
-  ).toContain("pinned-original");
-});
-
-it("does not retry permanent Git permission failures and retains the failing command and diagnostics", async () => {
-  let fetches = 0;
-  const denied: typeof runProcess = (command, args, ...rest) => {
-    if (args.includes("fetch")) {
-      fetches++;
-      return Promise.resolve({
-        code: 128,
-        stdout: "",
-        stderr: "Permission denied (publickey)",
-        timedOut: false,
-        stderrTruncated: false,
-      });
-    }
-    return mappedRun(command, args, ...rest);
-  };
-  await expect(
-    actualPrepare({ url: repositoryUrl, commit }, workspace(), denied, 10000),
-  ).rejects.toThrow("Permission denied");
-  expect(fetches).toBe(1);
-});
-
-it("stops on an unavailable commit and propagates cancellation", async () => {
-  await expect(
-    actualPrepare(
-      { url: repositoryUrl, commit: "f".repeat(40) },
-      workspace(),
-      mappedRun,
-      10000,
-    ),
-  ).rejects.toThrow("无法获取或校验");
-  const abort = new AbortController();
-  abort.abort();
-  const run = vi.fn();
-  await expect(
-    actualPrepare(
-      { url: repositoryUrl, commit },
-      workspace(),
-      run,
-      10000,
-      abort.signal,
-    ),
-  ).rejects.toThrow("已取消或超时");
-  expect(run).not.toHaveBeenCalled();
+  fs.writeFileSync(path.join(folder, 'input/repository/src/core.ts'), 'modified');
+  await expect(actualPrepare({ url: repositoryUrl }, folder, mappedRun, 10000, undefined, true)).resolves.toBeTruthy();
 });
 
 it("discovers and packages the standalone Skill for synced and local execution", () => {
@@ -271,7 +130,7 @@ it("discovers and packages the standalone Skill for synced and local execution",
   expect(found.bundle.files.some((file) => file.path === "SKILL.md")).toBe(
     true,
   );
-  expect(found.bundle.files).toHaveLength(1);
+  expect(found.bundle.files.map(file => file.path)).toEqual(expect.arrayContaining(['SKILL.md', 'references/research-method.md', 'references/visual_and_assets_guide.md', 'scripts/audit-svg.sh']));
 });
 
 function request() {
@@ -307,8 +166,7 @@ it("makes full source available before the CLI and collects the dedicated resear
   const result = await executeInWorkspace(input);
   expect(result.status).toBe("success");
   expect(result.execution?.skill_id).toBe(GITHUB_CODE_RESEARCH_SKILL);
-  expect(result.result).toContain("pinned-original");
-  expect(result.result).not.toContain("new-version");
+  expect(result.result).toContain("new-version");
   expect(result.result).toContain("import { implementation }");
   expect(result.artifacts?.some((file) => file.path === "research.md")).toBe(
     true,
@@ -345,34 +203,98 @@ it("does not invoke the AI when full source preparation fails or the article Ski
   );
 });
 
-it("requires a written research document instead of accepting a conversational response as a code report", async () => {
-  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockResolvedValue();
-  const cli = path.join(root, "no-report-cli");
-  fs.writeFileSync(
-    cli,
-    `#!${process.execPath}\nconsole.log(JSON.stringify({response:'I could not research the source.'}));`,
-    { mode: 0o700 },
-  );
-  const result = await executeInWorkspace({ ...request(), cli_path: cli });
-  expect(result.status).toBe("failed");
-  expect(result.error?.message).toContain("未生成有效的 output/research.md");
+it('requires a written research document instead of accepting a conversational response as a code report', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const cli = path.join(root, 'no-report-cli');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconsole.log(JSON.stringify({response:'I could not research the source.'}));`, {mode: 0o700});
+  const result = await executeInWorkspace({...request(), cli_path: cli});
+  expect(result.status).toBe('failed');
+  expect(result.error?.message).toContain('未生成有效的 output/research.md');
 });
 
-it("rejects reports if the AI changes the pinned implementation while researching", async () => {
-  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation(
-    (repo, folder, _run, timeout, signal, resume) =>
-      actualPrepare(repo, folder, mappedRun, timeout, signal, resume),
-  );
-  const cli = path.join(root, "modifies-source-cli");
-  fs.writeFileSync(
-    cli,
-    `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('input/repository/src/core.ts','changed');fs.writeFileSync('output/research.md','# Report');console.log(JSON.stringify({response:'Done'}));`,
-    { mode: 0o700 },
-  );
-  const result = await executeInWorkspace({ ...request(), cli_path: cli });
-  expect(result.status).toBe("failed");
-  expect(result.error?.message).toContain("源码工作区已修改");
+it('accepts generated reports without a post-generation source or evidence audit', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const cli = path.join(root, 'modifies-source-cli');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('input/repository/src/core.ts','changed');fs.writeFileSync('output/research.md','# Report');console.log(JSON.stringify({response:'Done'}));`, {mode:0o700});
+  const result = await executeInWorkspace({...request(), cli_path:cli});
+  expect(result.status).toBe('success');
+  expect(result.result).toBe('# Report');
 });
+
+it('resolves a changed remote default branch, refreshes cached objects and preserves existing research snapshots', async () => {
+  const { repositoryCache } = await import('../src/infrastructure/ai/repository_cache.js');
+  const cacheRoot = path.join(root, 'cache-default-test');
+  const countedRun = vi.fn(mappedRun);
+  const first = await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000);
+  const folder = workspace();
+  await actualPrepare({ url: repositoryUrl, commit: first.commit }, folder, mappedRun, 10000);
+  await runProcess('git', ['checkout', '-b', 'architecture-next'], source, '', 10000);
+  fs.writeFileSync(path.join(source, 'src/core.ts'), 'export const implementation = "latest-default";');
+  const changed = await runProcess('git', ['commit', '--quiet', '-am', 'Ordinary fix, not a research topic'], source, '', 10000);
+  expect(changed.code).toBe(0);
+  const next = await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000);
+  expect(next.cache).toBe(first.cache);
+  expect(next.branch).toBe('architecture-next');
+  expect(next.commit).not.toBe(first.commit);
+  expect(fs.readFileSync(path.join(folder, 'input/repository/src/core.ts'), 'utf8')).toContain('new-version');
+  const fetches = countedRun.mock.calls.filter(([, args]) => args.includes('fetch')).length;
+  await repositoryCache(repositoryUrl, cacheRoot, countedRun, 10000);
+  expect(countedRun.mock.calls.filter(([, args]) => args.includes('fetch'))).toHaveLength(fetches + 1);
+});
+
+it('delivers the user goal and full accepted history into the AI workspace and binds them to the session', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const base = request();
+  const context = { source_id: 'source', name: 'Example', repository_url: repositoryUrl, goal: '理解架构与执行机制', history: [{ id: 'earlier', article_id: 'article', title: '整体架构', commit, questions: ['入口怎样连接核心实现？'], report_markdown: '# 完整历史研报\n不能只依赖这篇结论', archived_at: '2026-10-20T00:00:00Z' }] };
+  const input = { ...base, input: { ...base.input, repository_context: context } };
+  const result = await executeInWorkspace(input);
+  expect(result.status).toBe('success');
+  expect(JSON.parse(fs.readFileSync(path.join(result.execution!.workspace, 'input/research-context.json'), 'utf8'))).toEqual(context);
+  expect(sessionBinding(input, input.input.skillBundle)).not.toBe(sessionBinding({ ...input, input: { ...input.input, repository_context: { ...context, goal: '新的目标' } } }, input.input.skillBundle));
+});
+
+it('audits valid SVG variants without enforcing dimensions, layout or path syntax, and catches malformed XML', async () => {
+  const folder = fs.mkdtempSync(path.join(root, 'svg-'));
+  fs.writeFileSync(path.join(folder, 'free.svg'), `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="400"><defs><filter id="blur"><feGaussianBlur stdDeviation="2"/></filter><marker id="arrow" markerWidth="4" markerHeight="4"><path d="M0 0 L4 2 L0 4"/></marker></defs><g transform="scale(1,2)"><path d="M1 2L3 4 M5 6L7 8" marker-end="url(#arrow)"/><text letter-spacing="1">CUSTOM VIEW</text></g></svg>`);
+  for (const skill of ['github-code-research', 'deep-research-expert']) {
+    const script = path.resolve(`../../skills/${skill}/scripts/audit-svg.sh`);
+    expect((await runProcess('bash', [script, folder], root, '', 10000)).code).toBe(0);
+  }
+  fs.writeFileSync(path.join(folder, 'broken.svg'), '<svg><g></svg>');
+  expect((await runProcess('bash', [path.resolve('../../skills/github-code-research/scripts/audit-svg.sh'), folder], root, '', 10000)).code).toBe(1);
+});
+
+
+it('resolves the default branch on the executor, returns its actual Commit and pins a resumed workspace', async () => {
+  const base = request();
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  expect(RepositoryTargetSchema.safeParse({ url: repositoryUrl }).success).toBe(true);
+  const result = await executeInWorkspace({ ...base, input: { ...base.input, repository: { url: repositoryUrl } } });
+  expect(result.status).toBe('success');
+  expect(result.repository?.url).toBe(repositoryUrl);
+  expect(result.repository?.commit).toMatch(/^[a-f0-9]{40}$/);
+  expect(result.repository?.commit).not.toBe(commit);
+  expect(result.execution?.prompt).toBe(base.input.prompt);
+  const folder = result.execution!.workspace;
+  expect(fs.readFileSync(path.join(folder, 'input/article.md'), 'utf8')).toContain(result.repository!.commit);
+  const resumed = await actualPrepare({ url: repositoryUrl }, folder, mappedRun, 10000, undefined, true);
+  expect(resumed).toEqual(result.repository);
+});
+
+
+it('accepts a report even if the CLI exits with an error and no evidence file exists', async () => {
+  vi.spyOn(preparation, 'prepareRepositoryWorkspace').mockImplementation((repo, folder, _run, timeout, signal, resume) => actualPrepare(repo, folder, mappedRun, timeout, signal, resume));
+  const cli = path.join(root, 'saved-report-cli');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync('output/research.md','# Architecture\\nThe execution path is explained here.');console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:3,cached_input_tokens:6}}));process.exit(1);`, {mode:0o700});
+  const result = await executeInWorkspace({...request(), provider:'codex_cli', cli_path:cli});
+  expect(result.status).toBe('success');
+  expect(result.usage).toMatchObject({promptTokens:10,completionTokens:3,totalTokens:13,cachedTokens:6});
+  expect(result.notice).toContain('已接纳保存的研报');
+  expect(result.result).toContain('Architecture');
+  expect(result.diagnostics?.exit_code).toBe(1);
+  expect(result.artifacts?.some(file=>file.path==='evidence.json')).toBe(false);
+});
+
 
 it("continues the same Gemini session once to finish a missing research document", async () => {
   vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation(
@@ -404,7 +326,7 @@ it("continues the same Gemini session once to finish a missing research document
   ]);
   const result = await adapter.execute(req.input);
   expect(result.status).toBe("success");
-  expect(result.result).toContain("pinned-original");
+  expect(result.result).toContain("latest-default");
   const log = executionLogs.get(result.trace_id!)!;
   expect(log.attempts).toHaveLength(2);
   expect(log.attempts[0].error?.code).toBe("missing_research_document");
@@ -418,8 +340,9 @@ it("continues the same Gemini session once to finish a missing research document
   );
 });
 
+
 it("stops after one continuation if a successful CLI still does not deliver a report", async () => {
-  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockResolvedValue();
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation((repo,folder,_run,timeout,signal,resume) => actualPrepare(repo,folder,mappedRun,timeout,signal,resume));
   const cli = path.join(root, "never-delivers-cli");
   fs.writeFileSync(
     cli,

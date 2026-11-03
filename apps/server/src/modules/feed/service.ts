@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { desc, eq } from "drizzle-orm";
-import type { DailyFeedArticle, Group } from "@openlore/contracts";
+import { repositoryStudy, type DailyFeedArticle, type Group } from "@openlore/contracts";
 import {
   getDb,
   getSqliteDatabase,
@@ -10,6 +10,7 @@ import {
   runsTable,
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { groupsService } from "../groups/service.js";
+import { repositoryProcessingService } from "../processing/repository.js";
 import { researchService } from "../research/service.js";
 import { deliveryService } from "../delivery/service.js";
 import {
@@ -19,6 +20,7 @@ import {
 import { settingsService } from "../settings/service.js";
 import { getPublishedWikiLinks, wikiLinkKey } from "../delivery/wiki-links.js";
 import { listPoolCandidates } from "../processing/candidates.js";
+import { getArticleReviews } from "../processing/article-reviews.js";
 
 export interface DailyFeedResponse {
   group: Group | null;
@@ -102,6 +104,7 @@ export class FeedService {
       (item) => !item.processed && !item.busy,
     ).length;
     const tasks = (await researchService.listResearchTasks(group?.id))
+      .reverse() // Prefer the most recent version when archive timestamps match.
       .filter(
         (task) =>
           groupsById.has(task.group_id) &&
@@ -144,6 +147,9 @@ export class FeedService {
             entry.summary,
           );
     }
+    const reviews = getArticleReviews([
+      ...new Set(dated.map((task) => task.article_id)),
+    ]);
     for (const task of dated) {
       const group = groupsById.get(task.group_id)!;
       const article = getDb()
@@ -164,17 +170,12 @@ export class FeedService {
         )
         .get(group.id, `research_${task.id}`, article.id) as
         { commit_sha: string | null; commit_url: string | null } | undefined;
-      const assessment = db
-        .prepare(
-          "SELECT r.result_json FROM article_reviews r JOIN articles a ON a.id=r.article_id AND a.latest_revision=r.revision_hash WHERE r.article_id=? AND r.status='succeeded'",
-        )
-        .get(article.id) as { result_json: string } | undefined;
-      let summary = summaries.get(wikiLinkKey(group.id, article.id)) || "";
-      if (assessment) {
-        try {
-          summary = JSON.parse(assessment.result_json).positioning || "";
-        } catch {}
-      }
+      const review = reviews.get(article.id) || null;
+      const summary =
+        review?.status === "succeeded"
+          ? review.result?.positioning || ""
+          : summaries.get(wikiLinkKey(group.id, article.id)) ||
+            (group.task_type === 'repository_research' ? task.repository_study?.focus || repositoryStudy(JSON.parse(article.dateEvidenceJson))?.focus || '研读源码，解释工作原理与设计取舍' : '');
       const sources = db
         .prepare(
           `
@@ -186,6 +187,8 @@ export class FeedService {
         .all(article.id) as Array<{ id: string; name: string }>;
       response.deep_articles.push({
         id: article.id,
+        created_at: article.createdAt,
+        review,
         task_type: group.task_type,
         title: article.title || "Untitled",
         slug: task.article_slug,
@@ -208,6 +211,8 @@ export class FeedService {
           wiki_url: wiki?.research_url,
           questions: task.questions,
           evidence: task.evidence,
+          finished_at: task.finished_at,
+          archived_at: task.archived_at,
         },
         delivery: delivery?.commit_url
           ? { commit_sha: delivery.commit_sha, commit_url: delivery.commit_url }
@@ -221,18 +226,33 @@ export class FeedService {
   async researchArticle(groupId: string, articleId: string) {
     const group = await groupsService.getGroup(groupId);
     if (!group) throw new Error("流水线任务不存在");
+    if (!listPoolCandidates(group.source_ids, group.task_type).some(item => item.id === articleId))
+      throw Object.assign(new Error('研究材料不属于当前任务类型或来源范围'), { statusCode: 400 });
     const owner = `manual_${crypto.randomUUID()}`;
     if (!claimResearchArticle(articleId, groupId, owner, true))
       throw Object.assign(new Error("文章正在调研，请稍候"), {
         statusCode: 409,
       });
     try {
+      if (group.task_type === 'repository_research') {
+        const latest = getSqliteDatabase().prepare("SELECT id,status,archived_at FROM research_tasks WHERE group_id=? AND article_id=? ORDER BY rowid DESC LIMIT 1").get(groupId, articleId) as { id: string; status: string; archived_at: string | null } | undefined;
+        const reusable = latest && !latest.archived_at && latest.status !== 'running' ? await researchService.recoverRepositoryReport(latest.id) : null;
+        if (reusable?.status === 'succeeded') {
+          const archive = await deliveryService.deliverResearchReport(group, reusable);
+          if (!['updated', 'unchanged'].includes(archive.status)) throw Object.assign(new Error('研报已保留，归档失败，请重试交付'), { statusCode: 502 });
+          return (await researchService.listResearchTasks(groupId)).find(task => task.id === reusable.id)!;
+        }
+      }
+      const target = group.task_type === 'repository_research'
+        ? await repositoryProcessingService.prepareManualResearch(group, articleId)
+        : articleId;
       const task = await researchService.runResearchOnArticle(
         groupId,
-        articleId,
+        target,
         group.research_instructions,
         undefined,
         owner,
+        true,
       );
       if (task.status !== "succeeded") return task;
       const archive = await deliveryService.deliverResearchReport(group, task);
@@ -249,7 +269,7 @@ export class FeedService {
       getDb()
         .update(articlesTable)
         .set({ userInterested: true, updatedAt: new Date().toISOString() })
-        .where(eq(articlesTable.id, articleId))
+        .where(eq(articlesTable.id, task.article_id))
         .run();
       return (await researchService.listResearchTasks(groupId)).find(
         (item) => item.id === task.id,

@@ -222,3 +222,33 @@ it("shows a compact review preview while reserving detailed evidence and logs fo
   expect(none).toContain("待初审");
   expect(none).not.toContain("内容质量");
 });
+
+
+it('places content type above discovery filters and removes publication and review filters for repositories', async () => {
+  const html = renderToStaticMarkup(<LibraryFilters value={{...DEFAULT_LIBRARY_FILTERS,task_type:'repository_research'}} timezone="UTC" onChange={()=>{}} />);
+  expect(html.indexOf('内容类型')).toBeLessThan(html.indexOf('发现时间'));
+  expect(html).toContain('文章调研');
+  expect(html).toContain('仓库研读');
+  expect(html).not.toContain('发布时间');
+  expect(html).not.toContain('未审核');
+  expect(html).not.toContain('已评分');
+  const fetch = vi.fn().mockResolvedValue({ok:true,json:async()=>({})});
+  vi.stubGlobal('fetch',fetch);
+  await api.listLibrary({task_type:'repository_research',time_range:'today',page:2});
+  const url = new URL(fetch.mock.calls[0][0],'http://localhost');
+  expect(url.searchParams.get('task_type')).toBe('repository_research');
+  expect(url.searchParams.get('time_range')).toBe('today');
+  expect(url.searchParams.get('page')).toBe('2');
+});
+
+it('shows repository research status and source links without article review or publication controls', async () => {
+  const {LibraryArticleCard} = await import('../features/library/LibraryArticleCard.js');
+  const {LibraryArticleSchema} = await import('@openlore/contracts');
+  const article = LibraryArticleSchema.parse({id:'study',task_type:'repository_research',title:'stablyai/orca · 深入研读',created_at:'2026-10-20T11:29:00Z',published_at:'2026-10-20T00:00:00Z',canonical_url:'https://github.com/stablyai/orca?openlore-study=study',date_evidence:{repository_study:{repository_url:'https://github.com/stablyai/orca',directory:'stablyai@orca',day:'2026-10-20',focus:'了解架构'}},research:{id:'report',status:'cancelled'}});
+  const html = renderToStaticMarkup(<LibraryArticleCard article={article} timezone="UTC" sourcesMap={new Map()} reviewPending={false} onToggleInterest={()=>{}} onReview={()=>{}} onResearch={()=>{}} onViewReport={()=>{}} />);
+  expect(html).toContain('仓库研读');
+  expect(html).toContain('已取消');
+  expect(html).toContain('仓库地址');
+  expect(html).toContain('发起研读');
+  for (const text of ['首发：','待初审','发起初审','未审核','原文链接']) expect(html).not.toContain(text);
+});

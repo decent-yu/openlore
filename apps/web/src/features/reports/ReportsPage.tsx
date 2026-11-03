@@ -17,6 +17,7 @@ const statuses: Record<string, string> = {
   partial: '部分失败',
   not_run: '今天尚未运行',
   missing: '任务已删除',
+  cancelled: '已取消',
 };
 type Draft = Omit<ReportPlan, 'id'> & { id?: string };
 const empty: Draft = {
@@ -249,7 +250,11 @@ export function ReportsPage() {
             <div>
               <h3 className="font-semibold">{selectedPlan.name} · 汇报预览</h3>
               <p className="mt-1 text-xs text-neutral-500">
-                {preview?.message || '正在加载任务结果…'}
+                {preview
+                  ? preview.state === 'invalid_config'
+                    ? preview.message
+                    : `${preview.message}。手动推送允许重复发送。`
+                  : '正在加载任务结果…'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -257,7 +262,7 @@ export function ReportsPage() {
                 刷新
               </Button>
               <Button
-                disabled={preview?.state !== 'ready' || send.isPending}
+                disabled={!preview || preview.state === 'invalid_config' || send.isPending}
                 onClick={() => send.mutate(selectedPlan.id)}
               >
                 <Send className="mr-1 h-4 w-4" />
@@ -373,7 +378,7 @@ export function ReportsPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-neutral-500">
-                  支持多个任务。所选任务今天全部成功归档后发送，未就绪则等待；相同文章自动去重。
+                  到点先发送已归档研报，部分失败或仍在运行不阻塞。无产物或发送失败时当天继续重试；每个方案当天自动发送一次。
                 </p>
               </section>
               <section className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">

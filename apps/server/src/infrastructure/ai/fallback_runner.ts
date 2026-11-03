@@ -45,6 +45,7 @@ export class FallbackAIAdapter implements AIAdapter {
     options.onStart?.(traceId);
     const attempts: AIExecutionAttempt[] = [];
     let corrected = false;
+    let lastResult: AIResult | undefined;
     let repairData:
       { result: unknown; issues: AIValidationIssue[] } | undefined;
     const finish = (result: AIResult): AIResult => {
@@ -76,6 +77,7 @@ export class FallbackAIAdapter implements AIAdapter {
         status: 'running',
         phase,
         resumed: Boolean(task.session),
+        context_reports: task.repository_context?.history.length,
         correction_of: correctionOf,
         session_id: task.session?.id,
       };
@@ -130,6 +132,8 @@ export class FallbackAIAdapter implements AIAdapter {
           result.queue_duration_ms ?? attempt.queue_duration_ms,
         execution: result.execution || attempt.execution,
         diagnostics: result.diagnostics || attempt.diagnostics,
+        notice: result.notice,
+        report_reused: result.report_reused,
         session_id: result.session?.id || attempt.session_id,
         output:
           typeof result.result === 'string'
@@ -200,6 +204,7 @@ export class FallbackAIAdapter implements AIAdapter {
           attempt.index,
         );
       }
+      lastResult = result;
       if (result.status === 'success') return finish(result);
       console.warn(
         redactExecutionText(
@@ -208,6 +213,7 @@ export class FallbackAIAdapter implements AIAdapter {
       );
     }
     return finish({
+      ...lastResult,
       status: 'failed',
       provider: this.targets[0]?.target.provider || 'none',
       model: input.model || 'unknown',

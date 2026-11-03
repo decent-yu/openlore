@@ -1,7 +1,8 @@
+import { RepositoryHistory } from './RepositoryHistory.js';
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, ExternalLink, Github, Globe, Pencil, Plus, RefreshCw, Rss, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { parseGitHubRepository, sourceSupportsTask } from '@openlore/contracts';
 import type { Source } from '@openlore/contracts';
 import { Badge } from '../../components/ui/badge.js';
@@ -19,6 +20,7 @@ import { useDialog } from '../../lib/useDialog.js';
 
 export function SourcesPage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: sources, isLoading, error: sourcesError } = useQuery({
     queryKey: ['sources'],
     queryFn: api.listSources,
@@ -27,11 +29,8 @@ export function SourcesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeType, setActiveType] = useState('web_feed');
   const [sourceType, setSourceType] = useState('web_feed');
-  const [githubRef, setGithubRef] = useState('');
-  const [githubConnection, setGithubConnection] = useState('');
   const [researchFocus, setResearchFocus] = useState('');
   const { data: groups } = useQuery({ queryKey: ['groups'], queryFn: api.listGroups });
-  const { data: repositories } = useQuery({ queryKey: ['repos'], queryFn: api.listRepos });
   const isRepository = sourceType === 'github_repository';
   useDialog(isModalOpen, () => setIsModalOpen(false));
   const [editingSource, setEditingSource] = useState<Source | null>(null);
@@ -58,7 +57,7 @@ export function SourcesPage() {
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        if (data.entity_type === 'source') {
+        if (data.entity_type === 'source' || data.entity_type === 'run') {
           queryClient.invalidateQueries({ queryKey: ['sources'] });
         }
       } catch {}
@@ -78,13 +77,13 @@ export function SourcesPage() {
 
   const pollMutation = useMutation({
     mutationFn: (id: string) => api.pollSource(id),
-    onSuccess: (res, id) => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['sources'] });
       queryClient.invalidateQueries({ queryKey: ['library'] });
       queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       setPollMsg({
         type: res.status === 'failed' ? 'error' : 'success',
-        text: res.status === 'failed' ? res.errors?.[0]?.message || '采集失败' : sources?.find(source => source.id === id)?.capability_id === 'github_repository' ? `仓库同步完成：新增 ${res.stats?.items_new ?? 0} 份研读材料。请在关联流水线中运行调研并归档。` : `同步完成：新增可读 ${res.stats?.items_new ?? 0} 篇，待补抓 ${res.stats?.queued ?? 0} 篇。未通过准入的内容不会进入内容池。`,
+        text: res.status === 'failed' ? res.errors?.[0]?.message || '采集失败' : `同步完成：新增可读 ${res.stats?.items_new ?? 0} 篇，待补抓 ${res.stats?.queued ?? 0} 篇。未通过准入的内容不会进入内容池。`,
       });
       setTimeout(() => setPollMsg(null), 4000);
     },
@@ -101,8 +100,8 @@ export function SourcesPage() {
       queryClient.invalidateQueries({ queryKey: ['library'] });
       queryClient.invalidateQueries({ queryKey: ['daily-feed'] });
       setPollMsg({
-        type: res.polled_sources.length === sources?.filter(source => source.enabled).length ? 'success' : 'error',
-        text: `已同步 ${res.polled_sources.length} / ${sources?.filter(source => source.enabled).length || 0} 个启用来源。${res.polled_sources.length < (sources?.filter(source => source.enabled).length || 0) ? '部分来源失败，请查看卡片中的异常信息。' : '内容池已更新。'}`,
+        type: res.polled_sources.length === sources?.filter(source => source.enabled && source.capability_id !== 'github_repository').length ? 'success' : 'error',
+        text: `已同步 ${res.polled_sources.length} / ${sources?.filter(source => source.enabled && source.capability_id !== 'github_repository').length || 0} 个启用来源。${res.polled_sources.length < (sources?.filter(source => source.enabled && source.capability_id !== 'github_repository').length || 0) ? '部分来源失败，请查看卡片中的异常信息。' : '内容池已更新。'}`,
       });
       setTimeout(() => setPollMsg(null), 4000);
     },
@@ -134,8 +133,6 @@ export function SourcesPage() {
 
   const handleOpenCreate = () => {
     setSourceType(activeType);
-    setGithubRef('');
-    setGithubConnection('');
     setResearchFocus('');
     setEditingSource(null);
     saveMutation.reset();
@@ -153,8 +150,6 @@ export function SourcesPage() {
 
   const handleOpenEdit = (source: Source) => {
     setSourceType(source.capability_id);
-    setGithubRef(source.options.github_ref);
-    setGithubConnection(source.options.github_connection_id);
     setResearchFocus(source.options.research_focus);
     setEditingSource(source);
     saveMutation.reset();
@@ -172,6 +167,12 @@ export function SourcesPage() {
     setIsModalOpen(true);
   };
 
+  useEffect(() => {
+    const id = searchParams.get('edit');
+    const source = sources?.find(item => item.id === id);
+    if (source) { setActiveType(source.capability_id); handleOpenEdit(source); setSearchParams({}, { replace: true }); }
+  }, [sources, searchParams]);
+
   const handleSave = () => {
     if (!name.trim() || !url.trim()) return;
     saveMutation.mutate({
@@ -180,7 +181,7 @@ export function SourcesPage() {
       url: url.trim(),
       description: description.trim(),
       capability_id: sourceType,
-      options: { github_connection_id: githubConnection, github_ref: githubRef, research_focus: researchFocus, max_age_days:maxAgeDays, current_year_only:currentYearOnly, verify_publication_date:verifyDate, keyword_policy:keywordPolicy, excluded_categories:excludedCategories.split(/[,，]/).map(x=>x.trim()).filter(Boolean), poll_interval_mins: pollInterval, keywords: keywords.split(/[,，]/).map((x) => x.trim()).filter(Boolean), excluded_keywords: excludedKeywords.split(/[,，]/).map((x) => x.trim()).filter(Boolean), keyword_mode: keywordMode },
+      options: { research_focus: researchFocus, max_age_days:maxAgeDays, current_year_only:currentYearOnly, verify_publication_date:verifyDate, keyword_policy:keywordPolicy, excluded_categories:excludedCategories.split(/[,，]/).map(x=>x.trim()).filter(Boolean), poll_interval_mins: pollInterval, keywords: keywords.split(/[,，]/).map((x) => x.trim()).filter(Boolean), excluded_keywords: excludedKeywords.split(/[,，]/).map((x) => x.trim()).filter(Boolean), keyword_mode: keywordMode },
       enabled,
     });
   };
@@ -197,7 +198,7 @@ export function SourcesPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button
+          {activeType !== 'github_repository' && <Button
             variant="outline"
             onClick={() => pollAllMutation.mutate()}
             disabled={pollAllMutation.isPending}
@@ -210,7 +211,7 @@ export function SourcesPage() {
               )}
             />
             {pollAllMutation.isPending ? '正在批量抓取...' : '立即同步全部源'}
-          </Button>
+          </Button>}
           <Button onClick={handleOpenCreate} className="shrink-0 text-xs">
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             新增信息源
@@ -247,7 +248,7 @@ export function SourcesPage() {
           </button>
         ))}
       </div>
-      {activeType === 'github_repository' && <p className="rounded-lg border bg-neutral-50 p-3 text-xs text-neutral-600">每天从指定仓库探索一个新主题，结合历史研报深入分析代码。在<Link to="/pipelines" className="underline">流水线</Link>中关联来源、设置每天运行及归档目录；研报按“目录/owner@repo/01-主题.md”连续归档。</p>}
+      {activeType === 'github_repository' && <p className="rounded-lg border bg-neutral-50 p-3 text-xs text-neutral-600">按目标研读源码，结合历史研报持续深入。在<Link to="/pipelines" className="underline">流水线</Link>中设置运行时间与归档目录。</p>}
 
       {/* Responsive Multi-column Cards Grid */}
       {isLoading ? <p role="status" className="p-12 text-center text-sm text-neutral-500">正在加载信息源…</p> : visibleSources.length === 0 ? (
@@ -340,7 +341,7 @@ export function SourcesPage() {
                   </div>
 
                   {/* Polling & Sync Status Bar */}
-                  <div className="mt-2.5 flex items-center justify-between text-[11px] text-neutral-500 px-0.5 flex-wrap gap-1">
+                  {s.capability_id !== 'github_repository' && <div className="mt-2.5 flex items-center justify-between text-[11px] text-neutral-500 px-0.5 flex-wrap gap-1">
                     <div className="flex items-center space-x-1.5">
                       <Clock className="h-3.5 w-3.5 text-neutral-400" />
                       <span>
@@ -357,11 +358,11 @@ export function SourcesPage() {
                     <span className="text-neutral-400 font-mono text-[10px] bg-neutral-100 px-1.5 py-0.5 rounded">
                       每 {s.options.poll_interval_mins} 分钟采集
                     </span>
-                  </div>
+                  </div>}
 
-                  {s.capability_id === 'github_repository' ? <p className="mt-2 text-xs text-neutral-500">研读重点：{s.options.research_focus || '架构设计、核心机制与可复用思想'}<br />分支：{s.options.github_ref || '默认分支'}</p> : <p className="mt-2 text-[11px] text-neutral-500 break-words">主题关键词：{s.options.keywords.join('、') || '不限'} · {s.options.keyword_mode === 'all' ? '全部命中' : '任一命中'}</p>}
+                  {s.capability_id === 'github_repository' ? <div className="mt-2"><RepositoryHistory source={s} compact /></div> : <p className="mt-2 text-[11px] text-neutral-500 break-words">主题关键词：{s.options.keywords.join('、') || '不限'} · {s.options.keyword_mode === 'all' ? '全部命中' : '任一命中'}</p>}
                   {s.options.excluded_keywords.length > 0 && <p className="mt-1 text-[11px] text-neutral-500">排除：{s.options.excluded_keywords.join('、')}</p>}
-                  {s.last_error && (
+                  {s.capability_id !== 'github_repository' && s.last_error && (
                     <div className="mt-2 p-2 bg-red-50 text-red-700 rounded text-[11px] border border-red-200/80">
                       <strong>同步异常:</strong> {s.last_error}
                     </div>
@@ -372,8 +373,6 @@ export function SourcesPage() {
               {/* Actions Footer */}
               <div className="px-4 pb-3 text-xs text-neutral-600 space-y-2">
                 {s.capability_id === 'github_repository' ? <>
-                  <p>每日一个研读主题 · 不要求仓库有新提交</p>
-                  {(groups || []).filter(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))).map(group => <p key={group.id} className="break-all">{group.name} · {group.schedule_cron}（{group.timezone}）<br />归档：{group.route.base_path}/{parseGitHubRepository(s.url)?.directory}/01-主题.md</p>)}
                   {!groups?.some(group => sourceSupportsTask(s.capability_id, group.task_type) && (!group.source_ids.length || group.source_ids.includes(s.id))) && <Link to="/pipelines" className="underline">关联流水线并设置归档目录</Link>}
                 </> : <>
                 <p>最近 {s.options.max_age_days} 天{s.options.current_year_only ? ' · 仅今年' : ''} · {s.options.verify_publication_date ? '核验原文日期' : '采用来源日期'} · {s.options.keyword_policy==='assist' ? '关键词辅助' : '关键词严格'}</p>
@@ -387,7 +386,7 @@ export function SourcesPage() {
                   来源 ID: <span className="text-neutral-700 font-semibold">{s.id}</span>
                 </span>
                 <div className="flex items-center space-x-2">
-                  <Button
+                  {s.capability_id !== 'github_repository' && <Button
                     variant="outline"
                     size="sm"
                     className="bg-white hover:bg-neutral-50 text-neutral-700 text-xs h-8 px-2.5 shadow-2xs"
@@ -402,7 +401,7 @@ export function SourcesPage() {
                       )}
                     />
                     立即同步
-                  </Button>
+                  </Button>}
                   <Button
                     variant="outline"
                     size="sm"
@@ -461,32 +460,26 @@ export function SourcesPage() {
               <div className="space-y-1.5">
                 <label htmlFor="source-url" className="text-xs font-medium text-neutral-700">{isRepository ? 'GitHub 仓库地址 *' : 'Feed URL *'}</label>
                 <Input
-                  id="source-url" type="url" required placeholder={isRepository ? 'https://github.com/stablyai/orca' : 'https://example.com/feed.xml'}
+                  id="source-url" type="url" required disabled={Boolean(editingSource && isRepository)} placeholder={isRepository ? 'https://github.com/stablyai/orca' : 'https://example.com/feed.xml'}
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                 />
               </div>
-              <div className="space-y-1.5">
+              {!isRepository && <div className="space-y-1.5">
                 <label className="text-xs font-medium text-neutral-700">内容定位与说明</label>
                 <Input
                   placeholder="简述该来源的内容特点与定位"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
-              </div>
-              <label className="block space-y-1 text-xs">采集间隔（分钟）
+              </div>}
+              {!isRepository && <label className="block space-y-1 text-xs">采集间隔（分钟）
                 <Input type="number" min={1} max={10080} value={pollInterval} onChange={(e) => setPollInterval(Number(e.target.value))} />
-              </label>
+              </label>}
               {isRepository ? <>
-                <label className="block space-y-1 text-xs">GitHub 读取凭据
-                  <select className="w-full rounded border p-2" value={githubConnection} onChange={event => setGithubConnection(event.target.value)}>
-                    <option value="">匿名读取（仅公开仓库，额度较低）</option>
-                    {repositories?.map(repository => <option key={repository.id} value={repository.id}>{repository.name}</option>)}
-                  </select>
-                </label>
-                <label className="block space-y-1 text-xs">分支 / Tag（留空使用默认分支）<Input value={githubRef} onChange={event => setGithubRef(event.target.value)} placeholder="默认分支" /></label>
-                <label className="block space-y-1 text-xs">研读重点<textarea className="w-full rounded border p-2 min-h-24" maxLength={4000} value={researchFocus} onChange={event => setResearchFocus(event.target.value)} placeholder="例如：多 Agent 编排、工作区隔离、核心架构与设计取舍" /></label>
-                <p className="text-xs text-neutral-500">公开仓库可匿名读取；选择已有 GitHub 连接可提高读取额度，也可读取凭据有权限的私有仓库。每天准备一份代码研读材料。保存后在流水线中设置每日调研时间、AI 执行器、目标归档仓库和自定义目录。</p>
+                <label className="block space-y-1 text-xs">研读目标<textarea className="w-full rounded border p-2 min-h-24" maxLength={4000} value={researchFocus} onChange={event => setResearchFocus(event.target.value)} placeholder="例如：理解核心执行链路、工作区隔离、状态恢复与设计取舍" /></label>
+                <p className="text-xs text-neutral-500">每次新研读读取仓库真实默认分支的最新源码，结合目标和历史研报选择深入方向。目标由你填写，历史记录自动关联；修改目标保留已有报告。</p>
+                {editingSource && <RepositoryHistory source={sources?.find(source => source.id === editingSource.id) || editingSource} showGoal={false} />}
                 <p className="break-all text-xs text-neutral-500">归档示例：docs/xxx/{parseGitHubRepository(url)?.directory || 'stablyai@orca'}/01-主题.md</p>
               </> : <>
               <label className="block space-y-1 text-xs">自动采集范围（最近几天首发）
@@ -524,7 +517,7 @@ export function SourcesPage() {
                   htmlFor="source-enabled"
                   className="text-xs font-medium text-neutral-700 cursor-pointer select-none"
                 >
-                  启用此信息源（独立定时采集入池）
+                  {isRepository ? '启用此仓库来源（参与流水线研读）' : '启用此信息源（独立定时采集入池）'}
                 </label>
               </div>
             </div>

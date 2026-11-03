@@ -1,8 +1,9 @@
 ---
 name: deep-research-expert
 description: 对单篇技术文章开展深入调研，核验关键论点，用具体例子和清楚的原理解释写成易读的中文文章，按需提供对比、实践建议与 SVG 配图。
-version: 4.0.0
-type: research
+metadata:
+  type: research
+  version: 5.0.0
 ---
 
 # 技术文章深度调研
@@ -33,17 +34,17 @@ type: research
 
 ## 配图与排版
 
-只有能帮助理解时才配图，不设数量下限，也不强制集齐图表类型。简单对比优先使用 Markdown 表格，避免重复展示相同内容。
+交付与本篇关键问题相称的 SVG 配图，让读者看见正文不易说清的关系、过程或差异。图型、数量和展开方式由实际内容决定，不固定架构图、卡片布局或模板；无需视觉化的简单比较可用表格，避免重复展示。
 
-生成配图前阅读 [SVG 规范](references/visual_and_assets_guide.md)：一图解释一个核心问题，优先中文标签，术语与正文一致，说明阅读顺序和箭头含义。图表保存为独立 SVG，通过 `![说明](./assets/name.svg)` 引用，不交付 Mermaid 代码块或 ASCII 图。
+绘图前按需阅读 [图形表达参考](references/visual_and_assets_guide.md)。根据内容自主选择合适的视图、画布、风格、配色和 SVG 技法；以事实准确、关系清楚和实际渲染效果判断质量，不用固定尺寸、字体、箭头写法或视觉红线限制表达。可以使用任何合适的工具和绘制方法，最终交付独立 SVG，并通过 `![说明](./assets/name.svg)` 引用。
 
 正文用标题与留白组织，不使用独立的 `---` 分割线。
 
 ## 交付
 
 - `output/research.md`：完整中文文章，包含原文与实际查阅资料的链接。
-- `output/assets/*.svg`：按需生成的配图。引用的文件必须存在。
+- `output/assets/*.svg`：能帮助读者理解的配图。引用的文件必须存在。
 - 最终回复返回与 `output/research.md` 完全相同的 Markdown 正文，不交付计划、临时草稿或执行汇报。
 - 新增文件只写入 `output/`，不得修改 `input/` 原始材料。
 
-可用 `scripts/audit-dividers.sh output` 检查分割线，有 SVG 时用 `scripts/audit-svg.sh output/assets` 检查基础格式。这些脚本不判断事实正确性或读者能否看懂，不能替代通读自查。
+可用 `scripts/audit-dividers.sh output` 检查分割线，有 SVG 时用 `scripts/audit-svg.sh output/assets` 检查 XML 基础格式，不限制画风、布局或 SVG 实现方式。这些脚本不判断事实正确性或读者能否看懂，不能替代通读自查。

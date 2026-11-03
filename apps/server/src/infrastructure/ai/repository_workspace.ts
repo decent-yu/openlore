@@ -1,41 +1,34 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import {
   RepositoryCheckoutSchema,
+  RepositoryTargetSchema,
   parseGitHubRepository,
   type RepositoryCheckout,
+  type RepositoryTarget,
 } from "@openlore/contracts";
+import { repositoryCache } from "./repository_cache.js";
+import { getAppPaths } from "../config/paths.js";
 import type { runProcess } from "./workspace_runner.js";
 
-/** Fetch the complete tracked source tree at a pinned commit before the AI starts. */
+/** Prepare readable default-branch source on the execution machine before research. */
 export async function prepareRepositoryWorkspace(
-  repository: RepositoryCheckout,
+  repository: RepositoryTarget,
   workspace: string,
   run: typeof runProcess,
   timeoutMs: number,
   signal?: AbortSignal,
   resume = false,
-  cacheDir?: string,
-): Promise<void> {
-  const checked = RepositoryCheckoutSchema.parse(repository);
+): Promise<RepositoryCheckout> {
+  const checked = RepositoryTargetSchema.parse(repository);
+  let prepared: RepositoryCheckout;
   const url = parseGitHubRepository(checked.url)!.url;
   const target = path.join(workspace, "input", "repository");
   const metadataPath = path.join(workspace, "input", "repository.json");
   const deadline = Date.now() + timeoutMs;
   const hooks = path.join(workspace, ".disabled-git-hooks");
-  const cache = cacheDir
-    ? path.join(
-        cacheDir,
-        crypto
-          .createHash("sha256")
-          .update(url + checked.commit)
-          .digest("hex"),
-      )
-    : undefined;
-  let cached = false;
   fs.mkdirSync(hooks, { recursive: true });
-  const git = async (args: string[], limit = deadline - Date.now()) => {
+  const git = async (args: string[]) => {
     if (signal?.aborted || Date.now() >= deadline)
       throw new Error("源码准备已取消或超时");
     const result = await run(
@@ -45,34 +38,20 @@ export async function prepareRepositoryWorkspace(
         `core.hooksPath=${hooks}`,
         "-c",
         "advice.detachedHead=false",
-        "-c",
-        "http.lowSpeedLimit=1000",
-        "-c",
-        "http.lowSpeedTime=30",
         ...args,
       ],
       target,
       "",
-      Math.max(1, Math.min(limit, deadline - Date.now())),
+      Math.max(1, deadline - Date.now()),
       signal,
       {
         env: { GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" },
       },
     );
     if (result.code !== 0 || result.timedOut)
-      throw Object.assign(
-        new Error(
-          `无法获取或校验固定 Commit 的完整源码（git ${args.find((arg) => ["init", "fetch", "checkout", "rev-parse", "status", "clone"].includes(arg))}${result.timedOut ? " 超时" : ` 退出码 ${result.code}`}）：${result.stderr.trim().slice(-1500) || "命令未完成"}；请检查执行机 Git、网络与读取权限`,
-        ),
-        {
-          code: "repository_prepare_failed",
-          retryable:
-            result.timedOut ||
-            /timed out|timeout|connection|resolve host|remote end hung up|early EOF|RPC failed|HTTP (?:429|5\d\d)/i.test(
-              result.stderr,
-            ),
-        },
-      );
+      throw Object.assign(new Error(
+        `无法准备仓库源码（${result.timedOut ? 'Git 超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(-1500) || '命令未完成'}；请检查执行机 Git、网络与仓库读取权限`,
+      ), { code: 'repository_prepare_failed' });
     return result.stdout.trim();
   };
   if (resume) {
@@ -83,57 +62,37 @@ export async function prepareRepositoryWorkspace(
     )
       throw new Error("会话源码目录缺失或无效");
     const saved = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-    if (saved.url !== url || saved.commit !== checked.commit)
-      throw new Error("会话仓库或 Commit 已变化");
+    if (saved.url !== url)
+      throw new Error("会话仓库与当前任务不一致");
+    prepared = RepositoryCheckoutSchema.parse(saved);
   } else {
-    fs.mkdirSync(target);
-    await git(["init", "--quiet"]);
-    if (
-      cache &&
-      fs.existsSync(cache) &&
-      !fs.lstatSync(cache).isSymbolicLink()
-    ) {
-      try {
-        await git([
-          "fetch",
-          "--quiet",
-          "--depth=1",
-          "--update-shallow",
-          "--no-tags",
-          "--no-recurse-submodules",
-          cache,
-          checked.commit,
-        ]);
-        cached = true;
-      } catch {
-        // A damaged cache must not strand the task; fetch the pinned source again.
-      }
-    }
-    const fetchArgs = [
-      "fetch",
-      "--quiet",
-      "--depth=1",
-      "--no-tags",
-      "--no-recurse-submodules",
+    const cached = await repositoryCache(
       url,
-      checked.commit,
-    ];
-    if (!cached) {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await git(fetchArgs, 60000);
-          break;
-        } catch (error: any) {
-          if (
-            !error.retryable ||
-            attempt >= 2 ||
-            signal?.aborted ||
-            Date.now() >= deadline
-          )
-            throw error;
-        }
-      }
-    }
+      path.join(getAppPaths().dataDir, "repository-cache"),
+      run,
+      Math.max(1, deadline - Date.now()),
+      signal,
+    );
+    prepared = RepositoryCheckoutSchema.parse({ url, commit: cached.commit, branch: cached.branch });
+    const cloned = await run(
+      "git",
+      [
+        "-c",
+        `core.hooksPath=${hooks}`,
+        "clone",
+        "--quiet",
+        "--no-checkout",
+        "--local",
+        cached.cache,
+        target,
+      ],
+      workspace,
+      "",
+      Math.max(1, deadline - Date.now()),
+      signal,
+    );
+    if (cloned.code !== 0 || cloned.timedOut)
+      throw new Error("无法创建源码快照");
     await git([
       "-c",
       "filter.lfs.smudge=",
@@ -142,39 +101,18 @@ export async function prepareRepositoryWorkspace(
       "checkout",
       "--quiet",
       "--detach",
-      "FETCH_HEAD",
+      cached.commit,
     ]);
   }
-  if ((await git(["rev-parse", "HEAD"])) !== checked.commit)
-    throw new Error("源码 Commit 与调研任务不匹配");
-  if (await git(["status", "--porcelain", "--untracked-files=no"]))
-    throw new Error("源码工作区已修改，拒绝使用非固定版本的代码");
-  if (cache && !cached && !fs.existsSync(cache)) {
-    fs.mkdirSync(cacheDir!, { recursive: true, mode: 0o700 });
-    const temporary = `${cache}-${crypto.randomUUID()}.tmp`;
-    try {
-      await git([
-        "clone",
-        "--quiet",
-        "--bare",
-        "--no-hardlinks",
-        target,
-        temporary,
-      ]);
-      // Concurrent attempts may have already published the same fixed snapshot.
-      if (!fs.existsSync(cache)) fs.renameSync(temporary, cache);
-    } catch {
-      // Cache failure must not reject a source tree that has already passed validation.
-    } finally {
-      fs.rmSync(temporary, { recursive: true, force: true });
-    }
-  }
+  fs.accessSync(target, fs.constants.R_OK);
+  fs.readdirSync(target);
   fs.writeFileSync(
     metadataPath,
     JSON.stringify(
       {
         url,
-        commit: checked.commit,
+        commit: prepared.commit,
+        branch: prepared.branch,
         directory: "input/repository",
         submodules_fetched: false,
         lfs_fetched: false,
@@ -184,4 +122,13 @@ export async function prepareRepositoryWorkspace(
     ),
     { mode: 0o600 },
   );
+  return prepared;
+}
+
+/** Build source context on the execution machine, never on the control service. */
+export function repositoryMaterial(workspace: string, repository: RepositoryCheckout, material: string): string {
+  const root = path.join(workspace, "input/repository");
+  const readme = fs.readdirSync(root).find(file => /^readme(?:\.md|\.rst|\.txt)?$/i.test(file) && fs.lstatSync(path.join(root, file)).isFile());
+  const contents = readme && fs.statSync(path.join(root, readme)).size <= 1024 * 1024 ? fs.readFileSync(path.join(root, readme), "utf8") : "请在源码目录中查阅项目文档。";
+  return `${material}\n\n默认分支：${repository.branch || "固定版本"}\nCommit：${repository.commit}\n完整源码：input/repository/\n\n## README\n${contents}`;
 }

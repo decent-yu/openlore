@@ -67,16 +67,16 @@ it.each([
     "",
   ),
 ])(
-  "rejects translations that change protected content or omit structure",
+  "accepts formatting, image-description, URL and code differences without a structural gate",
   (markdown) => {
-    expect(() => validateTranslation(source, { markdown })).toThrow("译文改变");
+    expect(validateTranslation(source, { markdown })).toBe(markdown);
   },
 );
 
 it.each([null, {}, { markdown: "" }, { markdown: 123 }])(
   "rejects invalid translation output: %j",
   (result) => {
-    expect(() => validateTranslation(source, result)).toThrow("未返回完整译文");
+    expect(() => validateTranslation(source, result)).toThrow("未返回可用译文");
   },
 );
 
@@ -100,4 +100,9 @@ it('escapes Markdown from translated prose and rejects missing, duplicate or mul
   expect(translationSegmentIssues(segments, {segments:[]})).not.toEqual([]);
   expect(translationSegmentIssues(segments, {segments:[result.segments[0],result.segments[0]]})).not.toEqual([]);
   expect(translationSegmentIssues(segments, {segments:segments.map(s=>({id:s.id,text:'换\n行'}))})).not.toEqual([]);
+});
+
+it('accepts a saved Markdown string or JSON envelope as well as structured output', () => {
+  expect(validateTranslation(source, translated)).toBe(translated);
+  expect(validateTranslation(source, JSON.stringify({markdown:translated}))).toBe(translated);
 });

@@ -50,6 +50,8 @@ export const api = {
     }),
 
 
+  setDefaultGitHubToken: (id: string) => request<WorkspaceSettings>(`/settings/connections/repository/${id}/default-token`, { method: 'POST' }),
+
   listRepos: () => request<RepositoryConnection[]>('/settings/connections/repository'),
   saveRepo: (data: any) =>
     request<RepositoryConnection>('/settings/connections/repository', {
@@ -159,6 +161,7 @@ export const api = {
   // Runs
   listRuns: (groupId?: string) =>
     request<Run[]>(groupId ? `/runs?group_id=${groupId}` : '/runs'),
+  retryRunDelivery: (id: string) => request<Run>(`/runs/${id}/retry-delivery`, { method: 'POST' }),
   getRun: (id: string) => request<Run>(`/runs/${id}`),
   listPushDeliveries: () => request<PushDeliveryRecord[]>('/runs/pushes'),
 
@@ -172,7 +175,7 @@ export const api = {
   }),
   listLibrary: (params?: LibraryFilterParams) => {
     const q = new URLSearchParams();
-    for (const key of ['time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
+    for (const key of ['task_type', 'time_range', 'published_range', 'status_filter', 'discovered_from', 'discovered_to', 'published_from', 'published_to'] as const) {
       const value = params?.[key];
       if (value && value !== 'all') q.set(key, value);
     }

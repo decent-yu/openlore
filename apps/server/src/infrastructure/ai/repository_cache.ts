@@ -1,0 +1,119 @@
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { parseGitHubRepository } from "@openlore/contracts";
+import { gitHubAuthentication } from "../repositories/github/credentials.js";
+import type { runProcess } from "./workspace_runner.js";
+
+/** Git's immutable objects are shared locally; each research workspace has its own checkout. */
+export async function repositoryCache(
+  url: string,
+  root: string,
+  run: typeof runProcess,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ cache: string; commit: string; branch?: string }> {
+  if (!parseGitHubRepository(url)) throw new Error("请输入 GitHub 仓库根地址");
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  const cache = path.join(
+    root,
+    crypto.createHash("sha256").update(url).digest("hex"),
+  );
+  const lock = `${cache}.lock`;
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (signal?.aborted || Date.now() >= deadline)
+      throw new Error("源码准备已取消或超时");
+    try {
+      fs.mkdirSync(lock);
+      fs.writeFileSync(path.join(lock, "owner"), String(process.pid));
+      break;
+    } catch (error: any) {
+      if (error.code !== "EEXIST") throw error;
+      try {
+        const owner = Number(fs.readFileSync(path.join(lock, "owner"), "utf8"));
+        if (!Number.isInteger(owner) || owner <= 0)
+          throw new Error("Invalid cache lock");
+        try {
+          process.kill(owner, 0);
+        } catch (error: any) {
+          if (error.code === "ESRCH")
+            fs.rmSync(lock, { recursive: true, force: true });
+        }
+      } catch (error: any) {
+        if (
+          error.code === "ENOENT" &&
+          fs.existsSync(lock) &&
+          Date.now() - fs.statSync(lock).mtimeMs > 10000
+        )
+          fs.rmSync(lock, { recursive: true, force: true });
+      }
+      await delay(50, undefined, { signal });
+    }
+  }
+  const authentication = gitHubAuthentication(url);
+  const git = async (args: string[], cwd = cache) => {
+    if (signal?.aborted || Date.now() >= deadline)
+      throw new Error("源码准备已取消或超时");
+    const result = await run(
+      "git",
+      ["-c", "core.hooksPath=/dev/null", ...args],
+      cwd,
+      "",
+      Math.max(1, deadline - Date.now()),
+      signal,
+      { env: { ...authentication, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } },
+    );
+    if (result.code !== 0 || result.timedOut) {
+      const reason = result.timedOut
+        ? "下载超时"
+        : /could not resolve|failed to connect|timed out|connection.*(?:closed|reset|refused)/i.test(
+              result.stderr,
+            )
+          ? "网络连接失败"
+          : /permission denied|authentication|not found|could not read/i.test(
+                result.stderr,
+              )
+            ? "仓库读取权限不足或地址不存在"
+            : "Git 操作失败";
+      throw new Error(
+        `无法获取源码（${reason}），请检查 Git、网络与仓库读取权限；私有仓库使用执行机自身的 Git 凭据`,
+      );
+    }
+    return result.stdout.trim();
+  };
+  try {
+    if (!fs.existsSync(path.join(cache, "HEAD"))) {
+      fs.mkdirSync(cache, { recursive: true });
+      await git(["init", "--bare", "--quiet"]);
+    }
+    // Resolve remote HEAD on every new investigation, including default-branch changes.
+    const head = await git(["ls-remote", "--symref", url, "HEAD"]);
+    const branch = /^ref: refs\/heads\/(.+)\tHEAD$/m.exec(head)?.[1];
+    if (!branch) throw new Error("无法确定仓库真实默认分支");
+    await git([
+      "fetch",
+      "--quiet",
+      "--depth=1",
+      "--no-tags",
+      "--no-recurse-submodules",
+      url,
+      `+refs/heads/${branch}:refs/heads/openlore-default`,
+    ]);
+    const sha = await git([
+      "rev-parse",
+      "refs/heads/openlore-default^{commit}",
+    ]);
+    return { cache, commit: sha, branch };
+  } finally {
+    // A terminated Git process can leave an incomplete pack; never accumulate it on retries.
+    const packs = path.join(cache, "objects", "pack");
+    if (fs.existsSync(packs))
+      for (const file of fs.readdirSync(packs)) {
+        if (file.startsWith("tmp_pack_"))
+          fs.rmSync(path.join(packs, file), { force: true });
+      }
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+}

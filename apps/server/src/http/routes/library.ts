@@ -36,6 +36,9 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const deep = completedResearchSql("a.id");
     const scope: string[] = [];
     const scopeParams: string[] = [];
+    const repositoryRow = "json_extract(a.date_evidence_json,'$.repository_study') IS NOT NULL";
+    if (query.task_type !== 'all') scope.push(query.task_type === 'repository_research' ? repositoryRow : `NOT (${repositoryRow})`);
+
     if (sourceId) {
       scope.push(
         "EXISTS (SELECT 1 FROM source_items si WHERE si.article_id=a.id AND si.source_id=?)",
@@ -54,6 +57,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const scopedPool = `WITH pool AS (
       SELECT a.*, ${deep} AS deep_flag,
+        CASE WHEN ${repositoryRow} THEN 1 ELSE 0 END AS repository_flag,
+        CASE WHEN ${repositoryRow} THEN NULL ELSE a.published_at END AS publication_time,
         CASE WHEN review.status='succeeded' THEN 1 ELSE 0 END AS assessed_flag
       FROM articles a ${CURRENT_REVIEW_JOIN}
     ), scoped AS (SELECT * FROM pool a ${scope.length ? "WHERE " + scope.join(" AND ") : ""})`;
@@ -88,7 +93,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       query.discovered_to,
     );
     addTime(
-      "a.published_at",
+      "a.publication_time",
       query.published_range,
       query.published_from,
       query.published_to,
@@ -101,8 +106,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
         `${scopedPool} SELECT COUNT(*) AS total_count,
       COUNT(CASE WHEN julianday(a.created_at)>=julianday(?) AND julianday(a.created_at)<julianday(?) THEN 1 END) AS today_count,
       COUNT(CASE WHEN julianday(a.created_at)>=julianday(?) AND julianday(a.created_at)<julianday(?) THEN 1 END) AS three_days_count,
-      COUNT(CASE WHEN julianday(a.published_at)>=julianday(?) AND julianday(a.published_at)<julianday(?) THEN 1 END) AS published_today_count,
-      COUNT(CASE WHEN julianday(a.published_at)>=julianday(?) AND julianday(a.published_at)<julianday(?) THEN 1 END) AS published_three_days_count
+      COUNT(CASE WHEN julianday(a.publication_time)>=julianday(?) AND julianday(a.publication_time)<julianday(?) THEN 1 END) AS published_today_count,
+      COUNT(CASE WHEN julianday(a.publication_time)>=julianday(?) AND julianday(a.publication_time)<julianday(?) THEN 1 END) AS published_three_days_count
       FROM scoped a`,
       )
       .get(
@@ -126,8 +131,8 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const stateCounts = sqlite
       .prepare(
         `${scopedPool} SELECT
-      COUNT(CASE WHEN NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
-      COUNT(CASE WHEN a.assessed_flag THEN 1 END) AS scored_count,
+      COUNT(CASE WHEN NOT a.repository_flag AND NOT a.assessed_flag THEN 1 END) AS unreviewed_count,
+      COUNT(CASE WHEN NOT a.repository_flag AND a.assessed_flag THEN 1 END) AS scored_count,
       COUNT(CASE WHEN a.deep_flag THEN 1 END) AS deep_count,
       COUNT(CASE WHEN a.user_interested=1 THEN 1 END) AS interested_count
       FROM scoped a ${timeWhere}`,
@@ -141,9 +146,9 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
     const filterMeta = { ...timeCounts, ...stateCounts };
     const clauses = [...timeClauses];
     if (query.status_filter === "unreviewed")
-      clauses.push("NOT a.assessed_flag");
+      clauses.push("NOT a.repository_flag AND NOT a.assessed_flag");
     if (query.status_filter === "scored")
-      clauses.push("a.assessed_flag");
+      clauses.push("NOT a.repository_flag AND a.assessed_flag");
     if (query.status_filter === "deep") clauses.push("a.deep_flag");
     if (query.interested_only) clauses.push("a.user_interested=1");
     const whereSql = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
@@ -161,7 +166,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
         `${scopedPool} SELECT a.*,
       a.deep_flag AS is_deep_analyzed
       FROM scoped a ${whereSql}
-      ORDER BY julianday(a.published_at) DESC, julianday(a.created_at) DESC, a.id LIMIT ? OFFSET ?
+      ORDER BY julianday(COALESCE(a.publication_time,a.created_at)) DESC, julianday(a.created_at) DESC, a.id LIMIT ? OFFSET ?
     `,
       )
       .all(...params, pageSize, offset) as Array<{
@@ -366,7 +371,7 @@ export const libraryRoutes: FastifyPluginAsync = async (fastify) => {
       title: r.title || "Untitled",
       author: r.author,
       canonical_url: r.canonical_url,
-      published_at: r.published_at,
+      published_at: JSON.parse(r.date_evidence_json || '{}').repository_study ? null : r.published_at,
       created_at: r.created_at,
       updated_at: r.updated_at,
       latest_revision: r.latest_revision,

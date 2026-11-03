@@ -25,6 +25,7 @@ import {
 } from "../../infrastructure/persistence/sqlite/schema.js";
 import { articleReviewsService } from "../processing/article-reviews.js";
 import { collectionService } from "../collection/service.js";
+import { retryRunDelivery } from "../delivery/retry.js";
 import { deliveryService } from "../delivery/service.js";
 import { groupsService } from "../groups/service.js";
 import {
@@ -100,7 +101,7 @@ export class AppScheduler {
 
   private async pollSources(force: boolean): Promise<string[]> {
     const sources = (await sourcesService.listSources()).filter(
-      (source) => source.enabled,
+      (source) => source.enabled && source.capability_id !== "github_repository",
     );
     const ids: string[] = [];
     for (const source of sources) {
@@ -180,7 +181,7 @@ export class AppScheduler {
             .run();
           const sending = (async () => {
             const result = await reportService.send(plan.id);
-            if (result.state !== "waiting") {
+            if (result.state === "sent" || result.state === "invalid_config") {
               db.update(reportPlansTable)
                 .set({ pendingDate: null })
                 .where(eq(reportPlansTable.id, plan.id))
@@ -200,6 +201,26 @@ export class AppScheduler {
     } finally {
       this.isProcessing = false;
     }
+  }
+
+  async retryDelivery(runId: string): Promise<Run> {
+    const db = getSqliteDatabase();
+    const run = db.prepare('SELECT group_id,status,stage,snapshot_json,ai_logs_json,error_message FROM runs WHERE id=?').get(runId) as { group_id: string; status: string; stage: string; snapshot_json: string; ai_logs_json: string; error_message: string | null } | undefined;
+    if (!run) throw Object.assign(new Error('运行记录不存在'), { statusCode: 404 });
+    if (run.status === 'running' && run.stage === 'delivery') return (await this.getRun(runId))!;
+    if (run.stage !== 'delivery' || !['failed', 'partial'].includes(run.status)) throw Object.assign(new Error('只有归档阶段失败的任务可以重试交付'), { statusCode: 400 });
+    if (db.prepare("SELECT 1 FROM runs WHERE group_id=? AND status='running'").get(run.group_id)) throw Object.assign(new Error('流水线正在运行，请稍后重试交付'), { statusCode: 409 });
+    const savedGroup = JSON.parse(run.snapshot_json).group as Group | undefined;
+    const group = savedGroup || await groupsService.getGroup(run.group_id);
+    if (!group) throw new Error('流水线不存在');
+    const retryLogs = JSON.parse(run.ai_logs_json);
+    if (run.error_message) retryLogs.push({ timestamp: new Date().toISOString(), task_type: 'delivery', prompt_preview: '', response_preview: `此前交付失败：${run.error_message}；本次仅重试交付，保留已有研报。`, status: 'failed' });
+    db.prepare("UPDATE runs SET status='running',finished_at=NULL,error_message=NULL,ai_logs_json=? WHERE id=?").run(JSON.stringify(retryLogs), runId);
+    this.notifySse('run', runId, 'delivery');
+    retryRunDelivery(runId, group).then(async () => this.notifySse('run', runId, (await this.getRun(runId))!.status)).catch(error => {
+      db.prepare("UPDATE runs SET status='failed',error_message=?,finished_at=? WHERE id=?").run(String(error), new Date().toISOString(), runId);
+    });
+    return (await this.getRun(runId))!;
   }
 
   async triggerAllEnabledGroups(): Promise<Run[]> {
@@ -316,8 +337,11 @@ export class AppScheduler {
           })
           .where(eq(runsTable.id, runId))
           .run();
+      const savedSnapshot = JSON.parse((getSqliteDatabase().prepare('SELECT snapshot_json FROM runs WHERE id=?').get(runId) as { snapshot_json: string }).snapshot_json);
+      db.update(runsTable).set({ snapshotJson: JSON.stringify({ ...savedSnapshot, processed_entries: result.entries }) }).where(eq(runsTable.id, runId)).run();
       save();
       const researchTasks: ResearchTask[] = [];
+      let failure: unknown;
       if (result.entries.length) {
         setStage("research");
         const adapter = getAIAdapterWithFallback(
@@ -331,15 +355,15 @@ export class AppScheduler {
           ),
         );
         let next = 0;
-        let failure: unknown;
         await Promise.all(
           Array.from(
             { length: Math.min(concurrency, result.entries.length) },
             async () => {
               while (!failure && next < result.entries.length) {
                 const entry = result.entries[next++];
+                let task: ResearchTask | undefined;
                 try {
-                  const task = await researchService.runResearchOnArticle(
+                  task = await researchService.runResearchOnArticle(
                     group.id,
                     entry.article_id,
                     group.research_instructions,
@@ -372,17 +396,22 @@ export class AppScheduler {
                   save();
                 } catch (error) {
                   failure = error;
+                  logs.push({ timestamp: new Date().toISOString(), article_id: entry.article_id,
+                    article_title: entry.title, task_type: 'research', skill_id: task?.skill_id || group.research_skill_id,
+                    execution: task?.execution, prompt_preview: task?.execution?.prompt || '',
+                    response_preview: error instanceof Error ? error.message : String(error), status: 'failed' });
+                  save();
                 }
               }
             },
           ),
         );
-        if (failure) throw failure;
+        if (failure && !researchTasks.length) throw failure;
         setStage("delivery");
         const delivery = await deliveryService.buildAndDeliverBatch({
           group,
           runId,
-          entries: result.entries,
+          entries: result.entries.filter(entry => researchTasks.some(task => task.article_id === entry.article_id)),
           researchTasks,
         });
         if (!["updated", "unchanged"].includes(delivery.syncResult.status))
@@ -404,6 +433,7 @@ export class AppScheduler {
           )
           .get();
         for (const entry of output.entries) {
+          if (!researchTasks.some(task => task.article_id === entry.article_id)) continue;
           entry.is_deep_analyzed = true;
           const location = delivery.bundle.entries.find(
             (item) => item.article_id === entry.article_id,
@@ -414,8 +444,8 @@ export class AppScheduler {
       }
       db.update(runsTable)
         .set({
-          status: "succeeded",
-          errorMessage: null,
+          status: failure ? "partial" : "succeeded",
+          errorMessage: failure instanceof Error ? failure.message : failure ? String(failure) : null,
           stage: "completed",
           finishedAt: new Date().toISOString(),
           aiLogsJson: JSON.stringify(logs),
@@ -423,7 +453,7 @@ export class AppScheduler {
         })
         .where(eq(runsTable.id, runId))
         .run();
-      this.notifySse("run", runId, "succeeded");
+      this.notifySse("run", runId, failure ? "partial" : "succeeded");
     } finally {
       releaseResearchClaims(runId);
     }
@@ -459,6 +489,8 @@ export class AppScheduler {
         total_count: meta.total_count ?? 0,
         deep_count: meta.deep_count ?? 0,
         candidate_count: meta.candidate_count ?? 0,
+        trigger: meta.trigger,
+        partial: meta.partial,
         platform_response: meta.platform_response,
         error_message: r.errorMessage || undefined,
         created_at: r.createdAt,

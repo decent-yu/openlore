@@ -10,7 +10,7 @@ import type {
   ResearchTask,
   StructuredEntry,
 } from "@openlore/contracts";
-import { getDb } from "../../infrastructure/persistence/sqlite/db.js";
+import { getDb, getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import {
   loadManifest,
   publishArchive,
@@ -26,6 +26,7 @@ import {
   navigationFiles,
   finalizeManifest,
   batchNavigationFile,
+  researchWithArticleHeader,
 } from "./archive-layout.js";
 import {
   articlesTable,
@@ -107,7 +108,7 @@ export class DeliveryService {
 
     const manifest = loadManifest(group);
 
-    // Complete and validate every translation before allocating archive locations or publishing.
+    // Reuse available translations before allocating archive locations or publishing.
     const articles: Array<{ original: string; chinese: string }> = [];
     for (const entry of entries) {
       const original = buildArticleMarkdown(
@@ -217,19 +218,10 @@ export class DeliveryService {
       }
 
       if (research) {
-        bundleFiles.push({
-          path: `${articleFullPath}/research.md`,
-          content_bytes: Buffer.from(
-            research.report_markdown,
-            "utf-8",
-          ).toString("base64"),
-          encoding: "utf-8",
-          sha256: crypto
-            .createHash("sha256")
-            .update(research.report_markdown)
-            .digest("hex"),
-          media_type: "text/markdown",
-        });
+        bundleFiles.push(markdownFile(
+          `${articleFullPath}/research.md`,
+          researchWithArticleHeader(research.report_markdown, entry, true, group.timezone),
+        ));
       }
 
       // Assets for this article
@@ -354,6 +346,7 @@ export class DeliveryService {
       .get();
     if (group.task_type === "repository_research" || !loc) {
       if (!article) throw new Error("归档失败：研究材料不存在");
+      const researchRevision = (getSqliteDatabase().prepare('SELECT revision_hash FROM research_tasks WHERE id=?').get(task.id) as { revision_hash: string } | undefined)?.revision_hash || article.latestRevision || '';
       const revision = db
         .select()
         .from(articleRevisionsTable)
@@ -362,7 +355,7 @@ export class DeliveryService {
             eq(articleRevisionsTable.articleId, article.id),
             eq(
               articleRevisionsTable.revisionHash,
-              article.latestRevision || "",
+              researchRevision,
             ),
           ),
         )
@@ -377,9 +370,9 @@ export class DeliveryService {
           entries: [
             {
               article_id: article.id,
-              revision: article.latestRevision || "",
+              revision: researchRevision,
               slug: task.article_slug,
-              title: article.title || task.article_title,
+              title: task.article_title,
               original_url: article.canonicalUrl,
               author: article.author,
               published_at: article.publishedAt,
@@ -412,6 +405,9 @@ export class DeliveryService {
     item.has_research = true;
     manifest.article_locations[task.article_id] = item;
     const researchPath = `${base}/${loc.directory}/research.md`;
+    const hasChinese = !!manifest.managed_files[
+      `${base}/${loc.directory}/${CHINESE_ARTICLE_FILENAME}`
+    ];
     const batchId = `research_${task.id}`;
     const bundle: ArtifactBundle = {
       group_id: group.id,
@@ -430,7 +426,15 @@ export class DeliveryService {
         },
       ],
       assets: [],
-      files: [markdownFile(researchPath, task.report_markdown)],
+      files: [markdownFile(
+        researchPath,
+        researchWithArticleHeader(task.report_markdown, {
+          title: task.article_title,
+          original_url: article?.canonicalUrl || item.original_url,
+          author: article?.author,
+          published_at: article?.publishedAt,
+        }, hasChinese, group.timezone),
+      )],
     };
     for (const asset of db
       .select()
@@ -449,12 +453,7 @@ export class DeliveryService {
     bundle.files.push(
       markdownFile(
         `${base}/${loc.directory}/README.md`,
-        articleOverview(
-          item,
-          !!manifest.managed_files[
-            `${base}/${loc.directory}/${CHINESE_ARTICLE_FILENAME}`
-          ],
-        ),
+        articleOverview(item, hasChinese),
       ),
       ...navigationFiles(group, manifest),
     );

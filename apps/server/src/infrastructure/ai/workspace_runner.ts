@@ -10,9 +10,10 @@ import {
   type SkillBundle,
   type ExecutionProgress,
   GITHUB_CODE_RESEARCH_SKILL,
+  type RepositoryCheckout,
 } from '@openlore/contracts';
-import { prepareRepositoryWorkspace } from './repository_workspace.js';
-import { classifyProcessFailure, parseGeminiOutput } from './cli_output.js';
+import { prepareRepositoryWorkspace, repositoryMaterial } from './repository_workspace.js';
+import { classifyProcessFailure, parseGeminiOutput, parseCodexUsage } from './cli_output.js';
 import {
   sessionBinding,
   resolveSessionWorkspace,
@@ -39,7 +40,7 @@ export async function runProcess(
   timeout: number,
   signal?: AbortSignal,
   options: {
-    env?: Record<string, string>;
+    env?: Record<string, string | undefined>;
     onOutput?: (stdout: string, stderr: string) => void;
     shouldStop?: (stdout: string, stderr: string) => boolean;
     onStdoutChunk?: (chunk: string) => void;
@@ -221,6 +222,8 @@ export async function executeInWorkspace(
   let execution: ExecutionResult['execution'];
   let usage: ExecutionResult['usage'];
   let session: ExecutionResult['session'];
+  let repository: RepositoryCheckout | undefined;
+  let material = input.material;
   const root = expand(
     config.workspace_root ||
       path.join(os.homedir(), '.openlore', 'executor-workspace'),
@@ -302,18 +305,26 @@ export async function executeInWorkspace(
       }
     }
     const binding = sessionBinding(request, bundle);
-    if (input.session)
-      verifySession(workspace, input.session, binding, input.material);
     if (input.repository || input.skillId === GITHUB_CODE_RESEARCH_SKILL) {
-      if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定仓库和固定 Commit');
-      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(180000, config.timeout_seconds * 1000), signal, Boolean(input.session), path.join(root, 'repository-cache'));
+      if (!input.repository || input.skillId !== GITHUB_CODE_RESEARCH_SKILL || input.taskType !== 'research_report') throw new Error('代码深研必须使用 github-code-research 并指定 GitHub 仓库');
+      repository = await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.min(600000, config.timeout_seconds * 1000), signal, Boolean(input.session));
+      material = repositoryMaterial(workspace, repository, input.material);
+    }
+    if (input.session) verifySession(workspace, input.session, binding, material);
+    if (input.repository_context) {
+      if (!input.repository) throw new Error('仓库研究上下文缺少源码快照');
+      const file = path.join(workspace, 'input', 'research-context.json');
+      const text = JSON.stringify(input.repository_context, null, 2);
+      if (input.session) {
+        if (fs.lstatSync(file).isSymbolicLink() || fs.readFileSync(file, 'utf8') !== text) throw new Error('会话仓库目标或历史已变化');
+      } else fs.writeFileSync(file, text, { mode: 0o600 });
     }
     const mode = request.provider === 'codex_cli' ? 'native' : 'explicit-path';
     const prompt = input.prompt;
     if (!input.session)
       fs.writeFileSync(
         path.join(workspace, 'input', 'article.md'),
-        input.material,
+        material,
       );
     fs.writeFileSync(
       path.join(
@@ -471,6 +482,7 @@ export async function executeInWorkspace(
           ),
       },
     );
+    if (request.provider === 'codex_cli') usage = parseCodexUsage(res.stdout);
     const diagnosticLimit = 512 * 1024;
     diagnostics = {
       stdout: res.stdout.slice(-diagnosticLimit),
@@ -496,80 +508,71 @@ export async function executeInWorkspace(
       }
     }
     fs.writeFileSync(path.join(workspace, 'events.log'), res.stdout);
+    const savedReport = input.repository ? readRepositoryReport(workspace) : undefined;
     const knownFailure =
       res.code !== 0 || res.timedOut
         ? classifyProcessFailure(res.stdout, res.stderr)
         : undefined;
-    if (knownFailure)
+    if (knownFailure && !savedReport)
       return {
         ...knownFailure,
         provider: request.provider,
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
+        usage,
       };
-    if (res.timedOut)
+    if (res.timedOut && !savedReport)
       return {
         status: 'timeout',
         provider: request.provider,
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
+        usage,
         error: {
           code: 'timeout',
           message: `AI 执行达到 ${config.timeout_seconds} 秒上限，CLI 尚未结束，已终止本次执行${diagnostics.partial_document ? '；已保留生成文件供核查' : ''}`,
         },
       };
-    if (res.code !== 0)
+    if (res.code !== 0 && !savedReport)
       return {
         status: 'failed',
         provider: request.provider,
         model,
         durationMs: Date.now() - started,
         execution,
+        repository,
         session,
         diagnostics,
+        usage,
         error: {
           code: 'cli_failed',
           message: `AI CLI 执行失败（退出码 ${res.code}），请查看本次尝试的标准输出与错误日志`,
         },
       };
-    let result: any;
+    let result: any = savedReport;
+    let reportNotice: string | undefined;
     if (request.provider === 'codex_cli') {
-      if (
+      if (!savedReport && (
         !fs.existsSync(resultFile) ||
         fs.lstatSync(resultFile).isSymbolicLink()
-      )
+      ))
         throw new Error('CLI 未生成有效结果文件');
-      const text = fs.readFileSync(resultFile, 'utf8').trim();
-      result = input.outputSchema ? JSON.parse(text) : text;
-      for (const line of res.stdout.split('\n')) {
-        try {
-          const event = JSON.parse(line);
-          if (event.type === 'turn.completed' && event.usage) {
-            usage ||= {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              cachedTokens: 0,
-            };
-            usage.promptTokens! += event.usage.input_tokens || 0;
-            usage.completionTokens! += event.usage.output_tokens || 0;
-            usage.cachedTokens! += event.usage.cached_input_tokens || 0;
-            usage.totalTokens! +=
-              (event.usage.input_tokens || 0) +
-              (event.usage.output_tokens || 0);
-          }
-        } catch {
-          /* Non-JSON CLI lines are retained in diagnostics. */
-        }
+      if (!savedReport) {
+        const text = fs.readFileSync(resultFile, 'utf8').trim();
+        result = input.outputSchema ? JSON.parse(text) : text;
       }
     } else {
-      const envelope = parseGeminiOutput(res.stdout);
+      let envelope: ReturnType<typeof parseGeminiOutput>;
+      try { envelope = parseGeminiOutput(res.stdout); }
+      catch (error) { if (!savedReport) throw error; envelope = {}; reportNotice = 'CLI 缺少正常完成事件，已接纳保存的研报文件。'; }
       const models = Object.entries(envelope.stats?.models || {}) as Array<
         [string, any]
       >;
@@ -597,9 +600,9 @@ export async function executeInWorkspace(
             usage[key] = values.reduce((sum, value) => sum + value, 0);
         }
       }
-      if (envelope.error) throw new Error('Gemini CLI returned an error');
+      if (envelope.error && !savedReport) throw new Error('Gemini CLI returned an error');
       const response = envelope.response ?? envelope.text ?? envelope;
-      result =
+      if (!savedReport) result =
         input.outputSchema && typeof response === 'string'
           ? JSON.parse(response.replace(/^```json\s*|\s*```$/g, ''))
           : response;
@@ -614,8 +617,6 @@ export async function executeInWorkspace(
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
       throw Object.assign(new Error('代码深研未生成有效的 output/research.md'), { code: 'missing_research_document' });
-    if (input.repository)
-      await prepareRepositoryWorkspace(input.repository, workspace, runProcess, Math.max(1, Math.min(10000, config.timeout_seconds * 1000 - (Date.now() - started))), signal, true);
     if (
       !input.outputSchema &&
       document &&
@@ -626,15 +627,17 @@ export async function executeInWorkspace(
     if (!result) throw new Error('AI 返回空结果');
     return {
       status: 'success',
+      notice: reportNotice || (savedReport && (res.code !== 0 || res.timedOut) ? 'CLI 未正常结束，已接纳保存的研报文件，未重新生成。' : undefined),
       result,
       provider: request.provider,
       model,
       durationMs: Date.now() - started,
       execution,
+      repository,
       session,
       diagnostics,
       usage,
-      artifacts: collectArtifacts(path.join(workspace, 'output')),
+      artifacts: input.repository ? collectResearchArtifacts(path.join(workspace, 'output')) : collectArtifacts(path.join(workspace, 'output')),
     };
   } catch (error: any) {
     return {
@@ -643,8 +646,10 @@ export async function executeInWorkspace(
       model,
       durationMs: Date.now() - started,
       execution,
+      repository,
       session,
       diagnostics,
+      usage,
       error: { code: error.code || 'execution_failed', message: error.message },
     };
   } finally {
@@ -654,4 +659,34 @@ export async function executeInWorkspace(
       release();
     }
   }
+}
+
+
+export function readRepositoryReport(workspace: string): string | undefined {
+  const output = path.join(workspace, 'output');
+  const file = path.join(output, 'research.md');
+  if (!fs.existsSync(file) || fs.lstatSync(output).isSymbolicLink() || fs.lstatSync(file).isSymbolicLink() || !fs.statSync(file).isFile()) return undefined;
+  return fs.readFileSync(file, 'utf8').trim() || undefined;
+}
+
+
+export function collectResearchArtifacts(folder: string): NonNullable<ExecutionResult['artifacts']> {
+  const files: NonNullable<ExecutionResult['artifacts']> = [];
+  let bytes = 0;
+  const walk = (directory: string, prefix = '') => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const relative = prefix + entry.name;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory() && (relative === 'assets' || relative.startsWith('assets/'))) walk(full, relative + '/');
+      else if (entry.isFile() && (relative === 'research.md' || /^assets\/.*\.(svg|png|jpe?g|webp)$/i.test(relative))) {
+        const size = fs.statSync(full).size;
+        if (bytes + size > MAX_BUNDLE_BYTES || files.length >= 200) continue;
+        bytes += size;
+        files.push({ path: relative, content: fs.readFileSync(full).toString('base64'), executable: false });
+      }
+    }
+  };
+  walk(folder);
+  return files;
 }

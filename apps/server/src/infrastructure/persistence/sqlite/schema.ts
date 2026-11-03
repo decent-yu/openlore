@@ -215,6 +215,7 @@ export const researchTasksTable = sqliteTable('research_tasks', {
   status: text('status').notNull().default('queued'),
   questionsJson: text('questions_json').notNull().default('[]'),
   evidenceJson: text('evidence_json').notNull().default('[]'),
+  repositoryStudyJson: text('repository_study_json').notNull().default('{}'),
   executionJson: text('execution_json').notNull().default('{}'),
   model: text('model'),
   archivedAt: text('archived_at'),

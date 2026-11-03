@@ -70,8 +70,10 @@ export class ArticleReviewsService {
     // Validate the entire request before modifying any row.
     const articles = ids.map((id) => {
       const article = db
-        .prepare("SELECT id,latest_revision FROM articles WHERE id=?")
-        .get(id) as { id: string; latest_revision: string | null } | undefined;
+        .prepare("SELECT id,latest_revision,date_evidence_json FROM articles WHERE id=?")
+        .get(id) as { id: string; latest_revision: string | null; date_evidence_json: string } | undefined;
+      if (article && JSON.parse(article.date_evidence_json || '{}').repository_study)
+        throw Object.assign(new Error('仓库研读无需初审，请直接运行研读任务'), { statusCode: 400 });
       if (!article?.latest_revision)
         throw new Error(`文章 ${id} 缺少正文版本，无法初审`);
       return article;

@@ -35,21 +35,21 @@ it("shows validation instead of an unsafe clickable preview", () => {
   expect(html).not.toContain("<a ");
 });
 
-it("keeps the report and article reading destinations separate and omits absent links", () => {
+it("shows only original and research reading destinations and omits absent links", () => {
   const html = renderToStaticMarkup(
     <WikiReadingLinks
-      articleUrl={`${base}/article`}
+      originalUrl={`${base}/original`}
       researchUrl={`${base}/research`}
     />,
   );
   expect(html).toContain(`href="${base}/research"`);
-  expect(html).toContain(`href="${base}/article"`);
+  expect(html).toContain(`href="${base}/original"`);
   expect(html).toContain("Wiki 研报");
-  expect(html).toContain("Wiki 正文");
+  expect(html).not.toContain("Wiki 正文");
   expect(renderToStaticMarkup(<WikiReadingLinks />)).toBe("");
 });
 
-it("links research titles directly to Wiki and moves secondary links into the card menu", () => {
+it("uses the content pool card reading links and actions on the daily feed", () => {
   const client = new QueryClient();
   const article = DailyFeedArticleSchema.parse({
     id: "article",
@@ -88,9 +88,9 @@ it("links research titles directly to Wiki and moves secondary links into the ca
     </QueryClientProvider>,
   );
   expect(html.match(new RegExp(`href="${base}/research"`, "g"))).toHaveLength(
-    2,
+    3,
   );
-  expect(html).toContain("更多链接：Wiki research title");
+  expect(html).toContain("更多操作：Wiki research title");
   expect(html).not.toContain(`href="${base}/article"`);
   expect(html).not.toMatch(/<a\b[^>]*>\s*<a\b/);
   client.clear();

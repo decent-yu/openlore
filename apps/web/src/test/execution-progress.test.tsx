@@ -121,3 +121,16 @@ it("groups evidence correction under the same task and distinguishes it from exe
   expect(html).not.toContain("（备用接管）");
   client.clear();
 });
+
+
+it('offers delivery-only retry for an archive failure', async () => {
+  const { PipelineRunCard } = await import('../features/runs/PipelineRunCard.js');
+  const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+  const { RunSchema } = await import('@openlore/contracts');
+  const client=new QueryClient();
+  const run=RunSchema.parse({id:'failed-delivery',group_id:'task',group_name:'Task',status:'failed',stage:'delivery',started_at:'2026-10-21T00:00:00Z',error_message:'翻译失败',counts:{}});
+  const html=renderToStaticMarkup(<QueryClientProvider client={client}><PipelineRunCard run={run} initiallyOpen={false} onOpenLog={()=>{}} onReport={()=>{}} onError={()=>{}} /></QueryClientProvider>);
+  expect(html).toContain('仅重试交付');
+  expect(html).toContain('不重新选文或调研');
+  client.clear();
+});

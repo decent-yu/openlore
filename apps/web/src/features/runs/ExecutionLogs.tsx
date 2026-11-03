@@ -21,6 +21,7 @@ const statusNames: Record<string, string> = {
   timeout: "超时",
   failed: "失败",
   interrupted: "服务中断",
+  cancelled: "已取消",
   invalid_output: "输出无效",
   auth_required: "需要登录",
   quota_exceeded: "额度不足",
@@ -41,7 +42,7 @@ const color = (status: string) =>
     ? "text-emerald-700 bg-emerald-50"
     : status === "running"
       ? "text-blue-700 bg-blue-50"
-      : "text-red-700 bg-red-50";
+      : status === "cancelled" ? "text-neutral-600 bg-neutral-100" : "text-red-700 bg-red-50";
 
 export function ExecutionLogs({
   runId = "",
@@ -191,7 +192,8 @@ export function ExecutionLogs({
                   : duration(log.duration_ms)}
               </span>
               <span>
-                {log.attempts.length} 次尝试
+                {log.attempts.filter(attempt => attempt.phase !== "recovery").length} 次执行
+                {log.attempts.some(attempt => attempt.phase === "recovery") ? " · 已复用产物" : ""}
                 {new Set(log.attempts.map((attempt) => attempt.profile_id))
                   .size > 1
                   ? " · 含主备切换"
@@ -201,8 +203,7 @@ export function ExecutionLogs({
                   : ""}
               </span>
               <span>
-                {log.attempts.at(-1)?.executor_name || "正在准备"} · 时限{" "}
-                {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒
+                {log.attempts.at(-1)?.phase === 'recovery' ? '复用已有产物，未调用 AI' : <>{log.attempts.at(-1)?.executor_name || "正在准备"} · 时限 {log.attempts.at(-1)?.timeout_seconds ?? "—"} 秒</>}
                 {log.status === "running" &&
                 log.attempts.at(-1)?.progress_state === "queued"
                   ? " · 等待执行槽位"
