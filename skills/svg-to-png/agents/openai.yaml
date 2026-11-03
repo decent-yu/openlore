@@ -1,0 +1,4 @@
+interface:
+  display_name: "SVG 绘图与 PNG 导出"
+  short_description: "按内容绘制独立 SVG，渲染为可直接用于文章与报告的 PNG 配图"
+  default_prompt: "使用 $svg-to-png 为当前内容绘制 SVG 配图，导出 PNG 并检查实际渲染效果。"
