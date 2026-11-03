@@ -64,6 +64,7 @@ node <skill-dir>/scripts/render-svg.mjs output/assets/figure.svg \
 | 中文缺字、方框、字宽变化 | 加载覆盖对应字符的中文字体，检查 SVG 的 family name，重新排版并查看 PNG |
 | 设置粗体后没有变粗，或中英文字重差异明显 | 核对实际加载的 Regular／Bold 字体与 family name；变量字体或字体集合的名称匹配也需试渲染，不只检查 `font-weight` 数值 |
 | 阴影、箭头、描边被裁切 | 检查 `viewBox`、留白与 filter 区域，修改源 SVG 后重渲染 |
+| 箭头位置正确但方向没有跟随线段 | 对比原预览，检查 marker 的 `orient` 与实际切线。本次 resvg 2.6.2 对 `auto-start-reverse` 出现朝向错误，见 [评审架构案例](examples/raven-harness-assessment.md)。仅用于 `marker-end` 时可另存兼容副本改为 `auto` 并目视核对；若还用于 `marker-start`，需分别定义起点／终点标记并验证反向，不能全局替换后假定等价 |
 | 文字挤在一起、超出节点 | 为 SVG 文字显式换行、调整文字位置或节点空间；不要只增加导出像素 |
 | 图片缺失或提示外部图片 | 把图片嵌入 data URI；脚本拒绝未解析的外部图像，不主动联网取图 |
 | 内嵌 SVG 图标在 PNG 中空白 | 单独渲染该图标，检查其内部的图片、裁剪与渐变；必要时只将这个图标转成 PNG 再内嵌，保留整张图的文字与图形为 SVG |

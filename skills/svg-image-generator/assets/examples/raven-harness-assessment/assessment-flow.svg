@@ -1,0 +1,315 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3600" height="1920" viewBox="0 0 3600 1920" role="img" aria-labelledby="title desc">
+<title id="title">Raven Better Harness：分层金字塔与 Web / API / Skill 评审协作</title>
+<desc id="desc">横版方案图。左侧是上窄下宽的三层梯形金字塔：AI 层、抽象事实层、事实层，以及两栏展示的完整建议 JSON 任务目录。右侧以图标、用户消息气泡和三泳道呈现 Web 配置 CBG 软件工程分级指标组及 Prompt、API 保存标准、用户通过插件发起评审、Skill 首先调用 API 获取版本快照、采集抽象数据、逐项分析、校验同步、Web 经 API 展示与追溯的完整流程。report 与 index 形式待定，HTML 仅为可选本地预览；本图为设计方案，不声明已实现。</desc>
+<defs>
+<marker id="a8F9FB8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#8F9FB8" stroke-width="1.7" stroke-linejoin="round"/></marker>
+<marker id="a816AB1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#816AB1" stroke-width="1.7" stroke-linejoin="round"/></marker>
+<marker id="a4B978A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#4B978A" stroke-width="1.7" stroke-linejoin="round"/></marker>
+<marker id="a5C7FAE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#5C7FAE" stroke-width="1.7" stroke-linejoin="round"/></marker>
+<linearGradient id="bg" x2="1" y2="1"><stop stop-color="#F8F9FC"/><stop offset="1" stop-color="#F0F5F9"/></linearGradient>
+<linearGradient id="bubble" x2="1" y2="1"><stop stop-color="#F3EEFC"/><stop offset="1" stop-color="#EAEFFB"/></linearGradient>
+<filter id="shadow" x="-10%" y="-20%" width="120%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="9" flood-color="#293C5A" flood-opacity=".045"/></filter>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif}.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono","PingFang SC",monospace}</style></defs>
+<rect x="0" y="0" width="3600" height="1920" rx="0" fill="url(#bg)" stroke="none" />
+<rect x="64" y="44" width="8" height="80" rx="4" fill="#816AB1" stroke="none" />
+<text x="100" y="70" font-size="19" fill="#8A76AC" font-weight="700" letter-spacing="2.7">RAVEN BETTER HARNESS</text>
+<text x="98" y="123" font-size="42" fill="#23344D" font-weight="700" >从指标标准到证据驱动的项目评审</text>
+<rect x="3180" y="49" width="356" height="32" rx="16.0" fill="#EEEAF7" stroke="none" />
+<text x="3358.0" y="71.3" font-size="18" fill="#7A6A9D" font-weight="600" text-anchor="middle">方案示意 · 接口与产物待定</text>
+<text x="3536" y="120" font-size="18" fill="#99A6BA" font-weight="600" text-anchor="end" letter-spacing="1.9">CONFIGURE → EVALUATE → TRACE</text>
+<path d="M64 161 H3536" fill="none" stroke="#DDE5F0" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M1296 203 V1828" fill="none" stroke="#D5DFEC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 10"/>
+<text x="64" y="221" font-size="30" fill="#2B3F59" font-weight="700" >01  分层架构与本地产物</text>
+<text x="64" y="257" font-size="21" fill="#8897AC" font-weight="400" >由事实支撑抽象，由证据支撑判断</text>
+<text x="1352" y="221" font-size="30" fill="#2B3F59" font-weight="700" >02  Web × API × Skill 协作流程</text>
+<text x="1352" y="257" font-size="21" fill="#8897AC" font-weight="400" >用户配置标准，再用插件发起评审；任务与证据统一经 API 协作</text>
+<g id="architecture-view">
+<g id="layer-pyramid">
+<polygon points="418,300 894,300 982,438 330,438" fill="#EEE8F7" stroke="#816AB1" stroke-opacity=".3" stroke-width="1.5" stroke-linejoin="round" filter="url(#shadow)"/>
+<text x="656.0" y="340" font-size="28" fill="#816AB1" font-weight="700" text-anchor="middle">AI 层</text>
+<text x="656.0" y="377" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">Skill 编排 × 模型判断</text>
+<text x="656.0" y="410" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">按指标 Prompt 推理、引用证据、生成结论</text>
+<path d="M656 465 V447" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<text x="684" y="461" font-size="16" fill="#9B89B4" font-weight="400" >证据支撑判断</text>
+<polygon points="311,468 1001,468 1089,606 223,606" fill="#E7F3EF" stroke="#4B978A" stroke-opacity=".3" stroke-width="1.5" stroke-linejoin="round" filter="url(#shadow)"/>
+<text x="656.0" y="508" font-size="28" fill="#4B978A" font-weight="700" text-anchor="middle">抽象事实层</text>
+<text x="656.0" y="545" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">snippets.json · bug-list.json · evidence.json</text>
+<text x="656.0" y="578" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">AI 整理语义，脚本维护结构、来源与证据 ID</text>
+<path d="M656 633 V615" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<text x="684" y="629" font-size="16" fill="#81A499" font-weight="400" >采集 → 清洗 → 抽象</text>
+<polygon points="204,636 1108,636 1196,774 116,774" fill="#E9F0FA" stroke="#5C7FAE" stroke-opacity=".3" stroke-width="1.5" stroke-linejoin="round" filter="url(#shadow)"/>
+<text x="656.0" y="676" font-size="28" fill="#5C7FAE" font-weight="700" text-anchor="middle">事实层</text>
+<text x="656.0" y="713" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">Git · Workspace · Meegle · Test</text>
+<text x="656.0" y="746" font-size="21" fill="#6E809A" font-weight="400" text-anchor="middle">Skill 调度脚本 / 数据接口采集，保留原始记录与来源</text>
+</g>
+<rect x="64" y="812" width="1184" height="122" rx="16" fill="#EDF1F8" stroke="#E0E7F1" />
+<g transform="translate(88 832) scale(0.85)" fill="none" stroke="#5C7FAE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="1" y="3" width="26" height="22" rx="4"/><path d="M1 10h26 M6 7h.1 M10 7h.1 M7 16h8 M7 20h14"/>
+</g>
+<text x="126" y="852" font-size="22" fill="#5C7FAE" font-weight="650" >Web</text>
+<text x="88" y="883" font-size="19" fill="#8393AA" font-weight="400" >配置指标 / Prompt</text>
+<text x="88" y="910" font-size="19" fill="#8393AA" font-weight="400" >展示任务 / 结论 / 证据</text>
+<g transform="translate(480 832) scale(0.85)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="518" y="852" font-size="22" fill="#4B978A" font-weight="650" >API</text>
+<text x="480" y="883" font-size="19" fill="#8393AA" font-weight="400" >发布标准 / 固定版本</text>
+<text x="480" y="910" font-size="19" fill="#8393AA" font-weight="400" >保存任务 / 状态 / 产物</text>
+<g transform="translate(872 832) scale(0.85)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="3" y="8" width="22" height="17" rx="5"/><path d="M14 3v5 M9 16h.1 M19 16h.1 M10 21h8 M0 13v7 M28 13v7"/><circle cx="14" cy="2" r="1"/>
+</g>
+<text x="910" y="852" font-size="22" fill="#816AB1" font-weight="650" >Skill</text>
+<text x="872" y="883" font-size="19" fill="#8393AA" font-weight="400" >编排采集 / 抽象 / 分析</text>
+<text x="872" y="910" font-size="19" fill="#8393AA" font-weight="400" >校验 JSON / 同步结果</text>
+<rect x="64" y="966" width="1184" height="862" rx="18" fill="#FFFFFF" stroke="#DFE6F0" filter="url(#shadow)"/>
+<g transform="translate(88 990) scale(1.05)" fill="none" stroke="#7188A7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M1 8V4h10l4 4h12v17H1z"/>
+</g>
+<text x="130" y="1014" font-size="27" fill="#38516E" font-weight="650" >完整任务目录</text>
+<rect x="996" y="983" width="227" height="32" rx="16.0" fill="#EDF4F9" stroke="none" />
+<text x="1109.5" y="1004.95" font-size="17" fill="#627F99" font-weight="600" text-anchor="middle">建议结构 · JSON 优先</text>
+<text x="88" y="1055" font-size="23" fill="#7C8FA9" font-weight="500" class="mono">&lt;workspace&gt;/.raven-output/&lt;taskId&gt;/</text>
+<rect x="88" y="1080" width="544" height="589" rx="12" fill="#F7F8FC" stroke="#E9EDF5" />
+<rect x="656" y="1080" width="568" height="589" rx="12" fill="#F5F9F9" stroke="#E4EEEB" />
+<text x="108" y="1118" font-size="21" fill="#7D6A9E" font-weight="650" >标准快照与分析结果</text>
+<text x="676" y="1118" font-size="21" fill="#568F84" font-weight="650" >采集数据与抽象事实</text>
+<text x="108" y="1164" font-size="21" fill="#71849E" font-weight="400" class="mono">├─ task.json</text>
+<text x="108" y="1196" font-size="21" fill="#816AB1" font-weight="600" class="mono">├─ list/</text>
+<text x="108" y="1228" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ group.json</text>
+<text x="108" y="1260" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ index.json</text>
+<text x="108" y="1292" font-size="21" fill="#71849E" font-weight="400" class="mono">│  └─ indicators/</text>
+<text x="108" y="1324" font-size="21" fill="#71849E" font-weight="400" class="mono">│     ├─ L1-001.json</text>
+<text x="108" y="1356" font-size="21" fill="#71849E" font-weight="400" class="mono">│     └─ L2-001.json</text>
+<text x="108" y="1388" font-size="21" fill="#5C7FAE" font-weight="600" class="mono">├─ report/</text>
+<text x="108" y="1420" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ summary.json</text>
+<text x="108" y="1452" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ index.json</text>
+<text x="108" y="1484" font-size="21" fill="#71849E" font-weight="400" class="mono">│  └─ indicators/</text>
+<text x="108" y="1516" font-size="21" fill="#71849E" font-weight="400" class="mono">│     ├─ L1-001.json</text>
+<text x="108" y="1548" font-size="21" fill="#71849E" font-weight="400" class="mono">│     └─ L2-001.json</text>
+<text x="108" y="1580" font-size="21" fill="#71849E" font-weight="400" class="mono">└─ index.html</text>
+<text x="676" y="1164" font-size="21" fill="#4B978A" font-weight="600" class="mono">├─ base-data/</text>
+<text x="676" y="1196" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ index.json</text>
+<text x="676" y="1228" font-size="21" fill="#71849E" font-weight="400" class="mono">│  ├─ raw/</text>
+<text x="676" y="1260" font-size="21" fill="#71849E" font-weight="400" class="mono">│  │  ├─ git-log.json</text>
+<text x="676" y="1292" font-size="21" fill="#71849E" font-weight="400" class="mono">│  │  ├─ workspace.json</text>
+<text x="676" y="1324" font-size="21" fill="#71849E" font-weight="400" class="mono">│  │  ├─ meegle.json</text>
+<text x="676" y="1356" font-size="21" fill="#71849E" font-weight="400" class="mono">│  │  └─ tests.json</text>
+<text x="676" y="1388" font-size="21" fill="#71849E" font-weight="400" class="mono">│  └─ facts/</text>
+<text x="676" y="1420" font-size="21" fill="#71849E" font-weight="400" class="mono">│     ├─ snippets.json</text>
+<text x="676" y="1452" font-size="21" fill="#71849E" font-weight="400" class="mono">│     ├─ bug-list.json</text>
+<text x="676" y="1484" font-size="21" fill="#71849E" font-weight="400" class="mono">│     └─ evidence.json</text>
+<text x="676" y="1566" font-size="19" fill="#88A099" font-weight="400" >raw/ 保留原始事实与来源。</text>
+<text x="676" y="1598" font-size="19" fill="#88A099" font-weight="400" >facts/ 用 evidenceId 串联抽象与原始证据。</text>
+<path d="M88 1694 H1224" fill="none" stroke="#E6EBF4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<text x="88" y="1733" font-size="19" fill="#8796AC" font-weight="400" >list/：指标组、标准版本、Prompt 与判断口径；report/：逐项结论、理由与证据引用。</text>
+<text x="88" y="1764" font-size="19" fill="#8796AC" font-weight="400" >report 命名、index.json 清单暂定；index.html 仅为可选本地预览。</text>
+<text x="88" y="1795" font-size="19" fill="#8796AC" font-weight="400" >taskId = raven-better-harness-&lt;日期&gt;-&lt;唯一标识&gt;；任务、标准、证据与结果保持关联。</text>
+</g>
+<g id="execution-view">
+<rect x="1376" y="292" width="620" height="76" rx="15" fill="#EBF1FA" stroke="none" />
+<rect x="1394" y="308" width="44" height="44" rx="12" fill="#FFFFFF" stroke="none" />
+<g transform="translate(1402 316) scale(1)" fill="none" stroke="#5C7FAE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="1" y="3" width="26" height="22" rx="4"/><path d="M1 10h26 M6 7h.1 M10 7h.1 M7 16h8 M7 20h14"/>
+</g>
+<text x="1455" y="325" font-size="25" fill="#5C7FAE" font-weight="650" >Web</text>
+<text x="1455" y="353" font-size="18" fill="#8B9AB0" font-weight="400" >配置标准 · 查看结果</text>
+<path d="M1686.0 388 V1780" fill="none" stroke="#E2E8F2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 10"/>
+<rect x="2070" y="292" width="620" height="76" rx="15" fill="#E8F3EF" stroke="none" />
+<rect x="2088" y="308" width="44" height="44" rx="12" fill="#FFFFFF" stroke="none" />
+<g transform="translate(2096 316) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2149" y="325" font-size="25" fill="#4B978A" font-weight="650" >API</text>
+<text x="2149" y="353" font-size="18" fill="#8B9AB0" font-weight="400" >标准版本 · 任务数据</text>
+<path d="M2380.0 388 V1780" fill="none" stroke="#E2E8F2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 10"/>
+<rect x="2764" y="292" width="748" height="76" rx="15" fill="#EFEAF8" stroke="none" />
+<rect x="2782" y="308" width="44" height="44" rx="12" fill="#FFFFFF" stroke="none" />
+<g transform="translate(2790 316) scale(1)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="3" y="8" width="22" height="17" rx="5"/><path d="M14 3v5 M9 16h.1 M19 16h.1 M10 21h8 M0 13v7 M28 13v7"/><circle cx="14" cy="2" r="1"/>
+</g>
+<text x="2843" y="325" font-size="25" fill="#816AB1" font-weight="650" >Skill / 插件</text>
+<text x="2843" y="353" font-size="18" fill="#8B9AB0" font-weight="400" >编排执行 · JSON 产物</text>
+<path d="M3138.0 388 V1780" fill="none" stroke="#E2E8F2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 10"/>
+<rect x="1392" y="400" width="588" height="188" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<g transform="translate(1416 422) scale(1)" fill="none" stroke="#5C7FAE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="1" y="3" width="26" height="22" rx="4"/><path d="M1 10h26 M6 7h.1 M10 7h.1 M7 16h8 M7 20h14"/>
+</g>
+<text x="1461" y="447" font-size="25" fill="#5C7FAE" font-weight="650" >配置并发布指标组</text>
+<rect x="1913" y="422" width="43" height="32" rx="16.0" fill="#F0F4FA" stroke="none" />
+<text x="1934.5" y="443.6" font-size="16" fill="#5C7FAE" font-weight="600" text-anchor="middle">01</text>
+<text x="1416" y="489" font-size="24" fill="#3C526E" font-weight="600" >CBG 软件工程分级指标</text>
+<rect x="1416" y="514" width="76" height="32" rx="16.0" fill="#EDF3FA" stroke="none" />
+<text x="1454.0" y="535.95" font-size="17" fill="#6687B1" font-weight="600" text-anchor="middle">L1</text>
+<rect x="1502" y="514" width="76" height="32" rx="16.0" fill="#EDF3FA" stroke="none" />
+<text x="1540.0" y="535.95" font-size="17" fill="#6687B1" font-weight="600" text-anchor="middle">L2</text>
+<rect x="1588" y="514" width="162" height="32" rx="16.0" fill="#EDF3FA" stroke="none" />
+<text x="1669.0" y="535.95" font-size="17" fill="#6687B1" font-weight="600" text-anchor="middle">判断 Prompt</text>
+<rect x="1760" y="514" width="116" height="32" rx="16.0" fill="#EDF3FA" stroke="none" />
+<text x="1818.0" y="535.95" font-size="17" fill="#6687B1" font-weight="600" text-anchor="middle">判断标准</text>
+<text x="1416" y="568" font-size="19" fill="#8A9AB0" font-weight="400" >一个指标组包含多项指标与各自的评审口径。</text>
+<rect x="2086" y="435" width="588" height="140" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2106" y="455" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2114 463) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2165" y="484" font-size="25" fill="#4B978A" font-weight="650" >保存指标组与发布版本</text>
+<text x="2110" y="527" font-size="21" fill="#7A8BA3" font-weight="400" >groupId + version · 草稿 / 已发布</text>
+<path d="M1983 493 H2081" fill="none" stroke="#5C7FAE" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a5C7FAE)"/>
+<text x="2033" y="478" font-size="17" fill="#7791B2" font-weight="500" text-anchor="middle">发布</text>
+<path d="M2380 587 V775" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<rect x="2287" y="659" width="186" height="32" rx="16.0" fill="#EFF6F3" stroke="none" />
+<text x="2380.0" y="681.3" font-size="18" fill="#75A196" font-weight="600" text-anchor="middle">已发布标准</text>
+<circle cx="2784" cy="636" r="26" fill="#E6E2F1" stroke="none"/>
+<g transform="translate(2770 621) scale(1)" fill="none" stroke="#8976A7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="14" cy="8" r="5"/><path d="M4 26v-3c0-11 20-11 20 0v3"/>
+</g>
+<path d="M2840 604 H3470 Q3492 604 3492 626 V731 Q3492 753 3470 753 H2840 Q2818 753 2818 731 V663 L2804 651 L2818 645 V626 Q2818 604 2840 604 Z" fill="url(#bubble)" stroke="#DED9EF" filter="url(#shadow)"/>
+<text x="2844" y="637" font-size="21" fill="#8B75AA" font-weight="600" >用户 · 在编码工具中发送 Prompt</text>
+<rect x="3425" y="617" width="43" height="32" rx="16.0" fill="#FFFFFF" stroke="none" />
+<text x="3446.5" y="638.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">02</text>
+<text x="2844" y="680" font-size="23" fill="#6B5796" font-weight="600" class="mono">/raven-better-harness</text>
+<text x="2844" y="719" font-size="22" fill="#6F7E99" font-weight="400" >请按「CBG 软件工程分级指标」评审当前项目。</text>
+<path d="M3138 762 V778" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<rect x="2780" y="790" width="712" height="145" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2800" y="810" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2808 818) scale(1)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="3" y="8" width="22" height="17" rx="5"/><path d="M14 3v5 M9 16h.1 M19 16h.1 M10 21h8 M0 13v7 M28 13v7"/><circle cx="14" cy="2" r="1"/>
+</g>
+<text x="2859" y="839" font-size="25" fill="#816AB1" font-weight="650" >获取标准并创建任务</text>
+<rect x="3427" y="813" width="43" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3448.5" y="834.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">03</text>
+<text x="2804" y="882" font-size="21" fill="#7A8BA3" font-weight="400" >Skill 首先调用 API，获取选定指标组的已发布标准。</text>
+<text x="2804" y="913" font-size="21" fill="#7A8BA3" font-weight="400" >固定 groupVersion → 保存 list/ 与 task.json</text>
+<rect x="2086" y="790" width="588" height="145" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2106" y="810" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2114 818) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2165" y="839" font-size="25" fill="#4B978A" font-weight="650" >返回指标标准快照</text>
+<text x="2110" y="882" font-size="21" fill="#7A8BA3" font-weight="400" >组信息、版本、L1 / L2 指标</text>
+<text x="2110" y="913" font-size="21" fill="#7A8BA3" font-weight="400" >每项指标的 Prompt 与判断口径</text>
+<path d="M2777 835 H2679" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<text x="2727" y="820" font-size="17" fill="#967FAF" font-weight="500" text-anchor="middle">获取标准</text>
+<path d="M2677 900 H2775" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<text x="2727" y="885" font-size="17" fill="#7AA195" font-weight="500" text-anchor="middle">JSON</text>
+<path d="M3138 945 V984" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<rect x="2780" y="998" width="712" height="158" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2800" y="1018" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2808 1026) scale(1)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M1 8V4h10l4 4h12v17H1z"/>
+</g>
+<text x="2859" y="1047" font-size="25" fill="#816AB1" font-weight="650" >采集事实与抽象证据</text>
+<rect x="3427" y="1021" width="43" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3448.5" y="1042.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">04</text>
+<text x="2804" y="1090" font-size="21" fill="#7A8BA3" font-weight="400" >Skill 调度脚本采集 raw/；AI + 脚本整理 facts/。</text>
+<rect x="2804" y="1111" width="154" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="2881.0" y="1132.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">base-data/</text>
+<rect x="2968" y="1111" width="118" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3027.0" y="1132.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">脚本采集</text>
+<rect x="3096" y="1111" width="114" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3153.0" y="1132.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">AI 抽象</text>
+<rect x="2086" y="1025" width="588" height="131" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2106" y="1045" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2114 1053) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2165" y="1074" font-size="25" fill="#4B978A" font-weight="650" >接收阶段状态</text>
+<text x="2110" y="1117" font-size="21" fill="#7A8BA3" font-weight="400" >taskId + 阶段 + 状态，供 Web 查询进度</text>
+<path d="M2777 1090 H2679" fill="none" stroke="#8F9FB8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a8F9FB8)" stroke-dasharray="7 8"/>
+<text x="2727" y="1075" font-size="17" fill="#8C9BB1" font-weight="500" text-anchor="middle">状态</text>
+<path d="M3138 1167 V1194" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<rect x="2780" y="1208" width="712" height="158" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2800" y="1228" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2808 1236) scale(1)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M14 1l4 9 9 4-9 4-4 9-4-9-9-4 9-4z"/>
+</g>
+<text x="2859" y="1257" font-size="25" fill="#816AB1" font-weight="650" >按指标逐项分析</text>
+<rect x="3427" y="1231" width="43" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3448.5" y="1252.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">05</text>
+<text x="2804" y="1300" font-size="21" fill="#7A8BA3" font-weight="400" >AI 按 Prompt 判断并引用证据；脚本校验 JSON 与引用。</text>
+<rect x="2804" y="1321" width="194" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="2901.0" y="1342.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">report/（暂定）</text>
+<rect x="3008" y="1321" width="112" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3064.0" y="1342.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">AI 判断</text>
+<rect x="3130" y="1321" width="118" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3189.0" y="1342.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">脚本校验</text>
+<path d="M3138 1377 V1404" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<rect x="2780" y="1418" width="712" height="145" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2800" y="1438" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2808 1446) scale(1)" fill="none" stroke="#816AB1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="14" cy="14" r="12"/><path d="M8 14l4 4 8-9"/>
+</g>
+<text x="2859" y="1467" font-size="25" fill="#816AB1" font-weight="650" >校验并同步评审产物</text>
+<rect x="3427" y="1441" width="43" height="32" rx="16.0" fill="#F1F4F9" stroke="none" />
+<text x="3448.5" y="1462.6" font-size="16" fill="#816AB1" font-weight="600" text-anchor="middle">06</text>
+<text x="2804" y="1510" font-size="21" fill="#7A8BA3" font-weight="400" >提交任务、结果与证据引用；本地 JSON 保留。</text>
+<text x="2804" y="1541" font-size="21" fill="#7A8BA3" font-weight="400" >同步失败可重试，返回任务 ID / 访问入口。</text>
+<rect x="2086" y="1418" width="588" height="145" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2106" y="1438" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2114 1446) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2165" y="1467" font-size="25" fill="#4B978A" font-weight="650" >接收并保存评审结果</text>
+<text x="2110" y="1510" font-size="21" fill="#7A8BA3" font-weight="400" >按 taskId 关联标准快照、结论与证据。</text>
+<text x="2110" y="1541" font-size="21" fill="#7A8BA3" font-weight="400" >统一保存任务状态与结果数据。</text>
+<path d="M2777 1464 H2679" fill="none" stroke="#816AB1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a816AB1)"/>
+<text x="2727" y="1449" font-size="17" fill="#967FAF" font-weight="500" text-anchor="middle">同步</text>
+<path d="M2677 1535 H2775" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<text x="2727" y="1520" font-size="17" fill="#7AA195" font-weight="500" text-anchor="middle">回执</text>
+<path d="M2380 1575 V1627" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<rect x="2086" y="1642" width="588" height="132" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<rect x="2106" y="1662" width="43" height="43" rx="12" fill="#F1F4F9" stroke="none" />
+<g transform="translate(2114 1670) scale(1)" fill="none" stroke="#4B978A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="14" cy="6" rx="12" ry="4"/><path d="M2 6v15c0 6 24 6 24 0V6 M2 13c0 6 24 6 24 0"/>
+</g>
+<text x="2165" y="1691" font-size="25" fill="#4B978A" font-weight="650" >按 taskId 提供查询</text>
+<text x="2110" y="1734" font-size="21" fill="#7A8BA3" font-weight="400" >状态 · 标准版本 · 逐项结论 · 证据来源</text>
+<rect x="1392" y="1642" width="588" height="132" rx="18" fill="#FFFFFF" stroke="#DDE5F0" filter="url(#shadow)"/>
+<g transform="translate(1416 1664) scale(1)" fill="none" stroke="#5C7FAE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<rect x="1" y="3" width="26" height="22" rx="4"/><path d="M1 10h26 M6 7h.1 M10 7h.1 M7 16h8 M7 20h14"/>
+</g>
+<text x="1461" y="1689" font-size="25" fill="#5C7FAE" font-weight="650" >Web 展示与追溯</text>
+<rect x="1913" y="1664" width="43" height="32" rx="16.0" fill="#F0F4FA" stroke="none" />
+<text x="1934.5" y="1685.6" font-size="16" fill="#5C7FAE" font-weight="600" text-anchor="middle">07</text>
+<rect x="1416" y="1712" width="148" height="32" rx="16.0" fill="#EFF4FB" stroke="none" />
+<text x="1490.0" y="1734.3" font-size="18" fill="#6C8BAD" font-weight="600" text-anchor="middle">任务进度</text>
+<rect x="1576" y="1712" width="148" height="32" rx="16.0" fill="#EFF4FB" stroke="none" />
+<text x="1650.0" y="1734.3" font-size="18" fill="#6C8BAD" font-weight="600" text-anchor="middle">指标结论</text>
+<rect x="1736" y="1712" width="148" height="32" rx="16.0" fill="#EFF4FB" stroke="none" />
+<text x="1810.0" y="1734.3" font-size="18" fill="#6C8BAD" font-weight="600" text-anchor="middle">证据来源</text>
+<path d="M1983 1684 H2081" fill="none" stroke="#5C7FAE" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a5C7FAE)"/>
+<text x="2033" y="1669" font-size="17" fill="#7791B2" font-weight="500" text-anchor="middle">查询</text>
+<path d="M2083 1745 H1985" fill="none" stroke="#4B978A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a4B978A)"/>
+<text x="2033" y="1730" font-size="17" fill="#7AA195" font-weight="500" text-anchor="middle">JSON</text>
+<rect x="1392" y="815" width="588" height="501" rx="18" fill="#F0F4FA" stroke="#E2EAF4" />
+<g transform="translate(1418 840) scale(1.0)" fill="none" stroke="#7D93AE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M11 18l-2 2a6 6 0 01-8-8l6-6a6 6 0 018 0 M17 10l2-2a6 6 0 018 8l-6 6a6 6 0 01-8 0 M9 19l10-10"/>
+</g>
+<text x="1464" y="865" font-size="25" fill="#6983A4" font-weight="650" >一条连续的证据链</text>
+<text x="1418" y="914" font-size="22" fill="#8597AF" font-weight="400" >Web 配置标准 → API 发布版本</text>
+<text x="1418" y="953" font-size="22" fill="#8597AF" font-weight="400" >Skill 获取快照 → 采集 / 抽象 / 分析</text>
+<text x="1418" y="992" font-size="22" fill="#8597AF" font-weight="400" >API 保存任务 → Web 展示与追溯</text>
+<path d="M1418 1020 H1954" fill="none" stroke="#DEE7F2" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<text x="1418" y="1060" font-size="21" fill="#6F87A6" font-weight="650" >三阶段，三类 JSON 产物</text>
+<rect x="1418" y="1084" width="138" height="36" rx="18.0" fill="#EEEAF7" stroke="none" />
+<text x="1487.0" y="1108.3" font-size="18" fill="#816AB1" font-weight="600" text-anchor="middle">获取标准</text>
+<text x="1590" y="1110" font-size="23" fill="#A3AFC1" font-weight="400" >→</text>
+<text x="1636" y="1109" font-size="21" fill="#816AB1" font-weight="500" class="mono">list/</text>
+<rect x="1418" y="1144" width="138" height="36" rx="18.0" fill="#E6F1EC" stroke="none" />
+<text x="1487.0" y="1168.3" font-size="18" fill="#4B978A" font-weight="600" text-anchor="middle">提取抽象</text>
+<text x="1590" y="1170" font-size="23" fill="#A3AFC1" font-weight="400" >→</text>
+<text x="1636" y="1169" font-size="21" fill="#4B978A" font-weight="500" class="mono">base-data/</text>
+<rect x="1418" y="1204" width="138" height="36" rx="18.0" fill="#E8EFF9" stroke="none" />
+<text x="1487.0" y="1228.3" font-size="18" fill="#5C7FAE" font-weight="600" text-anchor="middle">逐项分析</text>
+<text x="1590" y="1230" font-size="23" fill="#A3AFC1" font-weight="400" >→</text>
+<text x="1636" y="1229" font-size="21" fill="#5C7FAE" font-weight="500" class="mono">report/（暂定）</text>
+<rect x="1352" y="1800" width="2184" height="44" rx="12" fill="#EAF0F7" stroke="none" />
+<g transform="translate(1368 1809) scale(0.8)" fill="none" stroke="#879CB4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M11 18l-2 2a6 6 0 01-8-8l6-6a6 6 0 018 0 M17 10l2-2a6 6 0 018 8l-6 6a6 6 0 01-8 0 M9 19l10-10"/>
+</g>
+<text x="1406" y="1829" font-size="20" fill="#8497B0" font-weight="400" >taskId 贯穿全流程  ·  groupVersion 固定评审口径  ·  indicatorId 关联标准与结果  ·  evidenceIds 指向证据与原始来源</text>
+</g>
+<path d="M64 1870 H3536" fill="none" stroke="#DCE5F0" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+<text x="64" y="1901" font-size="18" fill="#8D9CB1" font-weight="400" >待确认：目录命名、index 形式、API 路由与同步范围。Web 经 API 获取数据；index.html 仅为可选预览。</text>
+<text x="3536" y="1901" font-size="16" fill="#A0ACBD" font-weight="600" text-anchor="end" letter-spacing="1.6">RAVEN · ARCHITECTURE &amp; COLLABORATION</text>
+</svg>
