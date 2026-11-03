@@ -5,12 +5,14 @@
 | 案例 | 适合参考 | 说明 | 图稿 |
 | --- | --- | --- | --- |
 | Raven 产品生态图 | 单一产品核心、多端入口、按模块聚合的能力、自然散布的功能节点 | [设计取舍与调整过程](raven-product-ecosystem.md) | [SVG](../../assets/examples/raven-product-ecosystem/ecosystem.svg) · [PNG](../../assets/examples/raven-product-ecosystem/ecosystem.png) |
+| Raven Wiki 功能设计图 | 资料加工、功能索引、同一数据的两种读取视图、更新发布与冲突分支 | [功能表达与构图取舍](raven-wiki-feature.md) | [SVG](../../assets/examples/raven-wiki-feature/wiki-design.svg) · [PNG](../../assets/examples/raven-wiki-feature/wiki-design.png) |
 
 ## 目录分工
 
 ```text
 SKILL.md                               工作入口与按需路由
 references/ecosystem-composition.md     可复用方法
+references/feature-design-composition.md 功能主线、视图与状态表达
 references/examples/index.md           案例选择与收录约定
 references/examples/<case-id>.md        单案例的语义、取舍和来源
 assets/examples/<case-id>/              与说明配套的实际图稿
