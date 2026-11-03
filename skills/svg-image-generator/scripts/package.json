@@ -1,5 +1,5 @@
 {
-  "name": "svg-to-png-scripts",
+  "name": "svg-image-generator-scripts",
   "private": true,
   "type": "module",
   "engines": {
