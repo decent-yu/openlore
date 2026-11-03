@@ -1,4 +1,4 @@
 interface:
   display_name: "SVG 图片生成"
   short_description: "根据文字或素材绘制 SVG，生成可直接用于文章、报告和演示的 PNG 图片"
-  default_prompt: "使用 $svg-image-generator，根据当前内容设计并绘制 SVG，生成 PNG 图片并检查效果。"
+  default_prompt: "使用 $svg-image-generator，根据当前内容设计并绘制 SVG，生成 PNG 图片，实际查看图片并修正后交付。"
