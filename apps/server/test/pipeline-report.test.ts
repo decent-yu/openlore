@@ -168,6 +168,20 @@ describe('Task execution and independent multi-task reports', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('catches up daily pipelines and reports when the service starts after their schedule', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T02:00:00Z')); // 10:00 in Asia/Shanghai; 08:00 is missed.
+    const scheduler = new AppScheduler();
+    const trigger = vi.spyOn(scheduler, 'triggerGroupRun').mockResolvedValue({} as any);
+    vi.spyOn(reportService, 'listPlans').mockResolvedValue([]);
+    vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+    await scheduler.tick();
+    expect(trigger).toHaveBeenCalledWith('task');
+    expect(trigger).toHaveBeenCalledWith('agent');
+    expect(trigger).toHaveBeenCalledWith('frontend');
+    vi.useRealTimers();
+  });
+
   it('marks a GitHub failure as failed rather than reporting the task complete', async () => {
     const scheduler = new AppScheduler();
     vi.spyOn(processingService, 'runProcessingForGroup').mockResolvedValue({
