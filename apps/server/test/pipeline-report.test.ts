@@ -179,7 +179,28 @@ describe('Task execution and independent multi-task reports', () => {
     expect(trigger).toHaveBeenCalledWith('task');
     expect(trigger).toHaveBeenCalledWith('agent');
     expect(trigger).toHaveBeenCalledWith('frontend');
+    vi.setSystemTime(new Date('2026-10-20T02:01:00Z'));
+    await scheduler.tick();
+    expect(trigger).toHaveBeenCalledTimes(3);
     vi.useRealTimers();
+  });
+
+  it('does not catch up before today’s scheduled time or repeat a persisted run after restart', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-20T23:30:00Z')); // Next local day, before 08:00.
+      const scheduler = new AppScheduler();
+      const trigger = vi.spyOn(scheduler, 'triggerGroupRun').mockResolvedValue({} as any);
+      vi.spyOn(reportService, 'listPlans').mockResolvedValue([]);
+      vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+      await scheduler.tick();
+      expect(trigger).not.toHaveBeenCalled();
+      getSqliteDatabase().prepare("INSERT INTO runs(id,group_id,snapshot_json,status,stage,started_at) VALUES ('already-ran','task','{}','failed','research',?)").run('2026-10-21T00:00:00Z');
+      vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+      await scheduler.tick();
+      expect(trigger).not.toHaveBeenCalledWith('task');
+      expect(trigger).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
   });
 
   it('marks a GitHub failure as failed rather than reporting the task complete', async () => {
