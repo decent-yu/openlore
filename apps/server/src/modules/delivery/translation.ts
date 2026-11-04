@@ -6,6 +6,7 @@ import { getAIAdapterWithFallback } from "../../infrastructure/ai/fallback_runne
 import { executionLogs } from "../../infrastructure/ai/execution_logs.js";
 import { getSqliteDatabase } from "../../infrastructure/persistence/sqlite/db.js";
 import { getAppPaths } from "../../infrastructure/config/paths.js";
+import { translationSegments, translationSegmentIssues, renderTranslation } from './translation-segments.js';
 
 export const CHINESE_ARTICLE_FILENAME = "article-zh-CN.md";
 
@@ -19,6 +20,16 @@ export function validateTranslation(_source: string, result: unknown): string {
   if (typeof markdown !== 'string' || !markdown.trim())
     throw new Error('中文翻译失败：未返回可用译文');
   return markdown;
+}
+
+function translatedMarkdown(source: string, result: unknown): string {
+  let value = result;
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { /* A saved Markdown document needs no JSON decoding. */ }
+  }
+  if (value && typeof value === 'object' && 'segments' in value)
+    return renderTranslation(source, value);
+  return validateTranslation(source, value);
 }
 
 export class ArticleTranslationService {
@@ -51,10 +62,12 @@ export class ArticleTranslationService {
       ORDER BY started_at DESC,rowid DESC`).all(articleId) as { id: string }[];
     for (const row of logs) {
       const log = executionLogs.get(row.id)!;
-      if (log.input.material !== markdown) continue;
+      let source = log.input.material;
+      try { source = JSON.parse(source).markdown || source; } catch { /* Earlier logs stored Markdown directly. */ }
+      if (source !== markdown) continue;
       if (log.status === 'success' && log.input.prompt !== prompt) continue;
       try {
-        const translated = validateTranslation(markdown, log.output);
+        const translated = translatedMarkdown(markdown, log.output);
         fs.writeFileSync(cache, JSON.stringify({ markdown: translated }));
         if (log.status !== 'success') {
           const attempt = [...log.attempts].reverse().find(attempt => attempt.status === 'success');
@@ -70,6 +83,8 @@ export class ArticleTranslationService {
 
     const adapter = getAIAdapterWithFallback(profileId);
     if (!adapter) throw new Error("中文翻译失败：请先配置可用的 AI 执行器");
+    const segments = translationSegments(markdown);
+    if (!segments.length) return markdown;
     const response = await adapter.execute({
       jobId: `translation_${crypto.randomUUID()}`,
       runId,
@@ -79,21 +94,30 @@ export class ArticleTranslationService {
       profileId: profileId || "default",
       taskType: "translate",
       prompt,
-      material: markdown,
+      material: JSON.stringify({ markdown, segments: segments.map(({ id, text }) => ({ id, text })) }),
       outputSchema: {
         type: "object",
         additionalProperties: false,
-        properties: { markdown: { type: "string" } },
-        required: ["markdown"],
+        properties: {
+          segments: { type: 'array', items: {
+            type: 'object', additionalProperties: false,
+            properties: { id: { type: 'string' }, text: { type: 'string' } },
+            required: ['id', 'text'],
+          } },
+        },
+        required: ["segments"],
       },
-    });
+    }, undefined, { validateResult: (result) => {
+      try { translatedMarkdown(markdown, result); return []; }
+      catch { return translationSegmentIssues(segments, result); }
+    } });
     if (response.status !== "success" && !response.result)
       throw new Error(
         `中文翻译失败：${response.error?.message || "AI 执行失败"}`,
       );
     let translated: string;
     try {
-      translated = validateTranslation(markdown, response.result);
+      translated = translatedMarkdown(markdown, response.result);
     } catch (error) {
       executionLogs.invalidate(response.trace_id, (error as Error).message);
       throw error;

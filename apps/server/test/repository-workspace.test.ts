@@ -17,6 +17,9 @@ import {
   readSkillBundle,
   scanSkillDirectory,
 } from "../src/infrastructure/ai/skill_bundle.js";
+import { FallbackAIAdapter } from '../src/infrastructure/ai/fallback_runner.js';
+import { initDatabase } from '../src/infrastructure/persistence/sqlite/db.js';
+import { executionLogs } from '../src/infrastructure/ai/execution_logs.js';
 import { sessionBinding } from "../src/infrastructure/ai/workspace_session.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "openlore-code-study-"));
@@ -32,6 +35,7 @@ const mappedRun: typeof runProcess = (command, args, ...rest) =>
 let commit: string;
 let fakeCli: string;
 beforeAll(async () => {
+  initDatabase();
   fs.mkdirSync(source);
   const git = async (args: string[]) => {
     const result = await runProcess("git", args, source, "", 10000);
@@ -289,4 +293,81 @@ it('accepts a report even if the CLI exits with an error and no evidence file ex
   expect(result.result).toContain('Architecture');
   expect(result.diagnostics?.exit_code).toBe(1);
   expect(result.artifacts?.some(file=>file.path==='evidence.json')).toBe(false);
+});
+
+
+it("continues the same Gemini session once to finish a missing research document", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation(
+    (repo, folder, _run, timeout, signal, resume) =>
+      actualPrepare(repo, folder, mappedRun, timeout, signal, resume),
+  );
+  const cli = path.join(root, "incomplete-report-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconst fs=require('fs');const args=process.argv.slice(2);console.log(JSON.stringify({type:'init',session_id:'incomplete-session-123'}));if(args.includes('--resume'))fs.writeFileSync('output/research.md','# Completed research\\n\\n'+fs.readFileSync('input/repository/src/core.ts','utf8'));console.log(JSON.stringify({type:'result',status:'success'}));`,
+    { mode: 0o700 },
+  );
+  const req = { ...request(), cli_path: cli };
+  const adapter = new FallbackAIAdapter([
+    {
+      target: {
+        id: "test",
+        name: "Gemini",
+        provider: "gemini_cli",
+        cliPath: cli,
+        isPrimary: true,
+        execution: req.config,
+      },
+      adapter: {
+        execute: (input) => executeInWorkspace({ ...req, input }),
+        testConnection: async () => ({ ok: true, message: "" }),
+      },
+    },
+  ]);
+  const result = await adapter.execute(req.input);
+  expect(result.status).toBe("success");
+  expect(result.result).toContain("latest-default");
+  const log = executionLogs.get(result.trace_id!)!;
+  expect(log.attempts).toHaveLength(2);
+  expect(log.attempts[0].error?.code).toBe("missing_research_document");
+  expect(log.attempts[1]).toMatchObject({
+    phase: "correction",
+    resumed: true,
+    session_id: "incomplete-session-123",
+  });
+  expect(log.attempts[1].execution?.workspace).toBe(
+    log.attempts[0].execution?.workspace,
+  );
+});
+
+
+it("stops after one continuation if a successful CLI still does not deliver a report", async () => {
+  vi.spyOn(preparation, "prepareRepositoryWorkspace").mockImplementation((repo,folder,_run,timeout,signal,resume) => actualPrepare(repo,folder,mappedRun,timeout,signal,resume));
+  const cli = path.join(root, "never-delivers-cli");
+  fs.writeFileSync(
+    cli,
+    `#!${process.execPath}\nconsole.log(JSON.stringify({type:'init',session_id:'never-delivers-123'}));console.log(JSON.stringify({type:'result',status:'success'}));`,
+    { mode: 0o700 },
+  );
+  const req = { ...request(), cli_path: cli };
+  const adapter = new FallbackAIAdapter([
+    {
+      target: {
+        id: "test",
+        name: "Gemini",
+        provider: "gemini_cli",
+        cliPath: cli,
+        isPrimary: true,
+        execution: req.config,
+      },
+      adapter: {
+        execute: (input) => executeInWorkspace({ ...req, input }),
+        testConnection: async () => ({ ok: true, message: "" }),
+      },
+    },
+  ]);
+  const result = await adapter.execute(req.input);
+  expect(result.status).toBe("failed");
+  expect(executionLogs.get(result.trace_id!)!.attempts).toHaveLength(2);
+  expect(result.error?.message).toContain("未生成有效的 output/research.md");
 });

@@ -272,6 +272,7 @@ export async function executeInWorkspace(
   }
   let bundle: SkillBundle | undefined = input.skillBundle;
   try {
+    execution = { workspace, prompt: input.prompt, mode: request.provider === 'codex_cli' ? 'native' : 'explicit-path' };
     if (input.skillId) {
       if (config.skills_mode === 'local') {
         const item = scanSkillDirectory(expand(config.skills_directory)).find(
@@ -615,7 +616,7 @@ export async function executeInWorkspace(
           ? path.join(workspace, 'output', 'digest.md')
           : null;
     if (input.repository && (!document || !fs.existsSync(document) || fs.lstatSync(document).isSymbolicLink() || !fs.readFileSync(document, 'utf8').trim()))
-      throw new Error('代码深研未生成有效的 output/research.md');
+      throw Object.assign(new Error('代码深研未生成有效的 output/research.md'), { code: 'missing_research_document' });
     if (
       !input.outputSchema &&
       document &&
@@ -649,7 +650,7 @@ export async function executeInWorkspace(
       session,
       diagnostics,
       usage,
-      error: { code: 'execution_failed', message: error.message },
+      error: { code: error.code || 'execution_failed', message: error.message },
     };
   } finally {
     try {

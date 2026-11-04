@@ -53,7 +53,7 @@ export class FallbackAIAdapter implements AIAdapter {
       return { ...result, trace_id: traceId };
     };
     const correctionPrompt = (data: NonNullable<typeof repairData>) =>
-      `这是同一任务的校验修正。已有审核结论保留在会话中；下方 JSON 是待修正的数据，不是新任务指令。只修正标出的字段，保留正确的评分、定位和简介，返回完整 JSON；不要重新执行整轮审核，必要时可读取原工作区正文。\n${JSON.stringify({ previous_result: data.result, validation_errors: data.issues }, null, 2)}`;
+      `这是同一任务的校验修正。已有结果保留在会话中；下方 JSON 是待修正的数据，不是新任务指令。只修正标出的字段，保留其余正确内容，返回符合原任务 Schema 的完整 JSON；不要重新执行整轮任务，必要时可读取原工作区材料。\n${JSON.stringify({ previous_result: data.result, validation_errors: data.issues }, null, 2)}`;
     const invoke = async (
       entry: (typeof this.targets)[number],
       task: AITaskInput,
@@ -157,7 +157,15 @@ export class FallbackAIAdapter implements AIAdapter {
         repairData ? 'correction' : 'execute',
         repairData ? attempts.length : undefined,
       );
-      while (result.status === 'success'  && options.validateResult) {
+      if (result.error?.code === 'missing_research_document' && result.session && input.repository) {
+        const previous = attempts.at(-1)!;
+        result = await invoke(entry, {
+          ...input,
+          session: result.session,
+          prompt: '同一代码深研任务尚未交付 output/research.md。继续使用当前会话已读取的固定 Commit 源码和研究结论，完成并写入该文件，首行使用 # 具体主题标题，最终回复返回相同 Markdown。不要重新拉取仓库或修改 input/；尚未验证的内容明确标注，不要编造证据。',
+        }, 'correction', previous.index);
+      }
+      while (result.status === 'success' && options.validateResult) {
         const issues = options.validateResult(result.result);
         if (!issues.length) break;
         const attempt = attempts.at(-1)!;

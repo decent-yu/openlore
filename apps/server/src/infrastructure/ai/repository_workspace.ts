@@ -49,9 +49,9 @@ export async function prepareRepositoryWorkspace(
       },
     );
     if (result.code !== 0 || result.timedOut)
-      throw new Error(
-        "无法准备仓库源码，请检查执行机 Git、网络与仓库读取权限",
-      );
+      throw Object.assign(new Error(
+        `无法准备仓库源码（${result.timedOut ? 'Git 超时' : `退出码 ${result.code}`}）：${result.stderr.trim().slice(-1500) || '命令未完成'}；请检查执行机 Git、网络与仓库读取权限`,
+      ), { code: 'repository_prepare_failed' });
     return result.stdout.trim();
   };
   if (resume) {

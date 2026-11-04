@@ -500,14 +500,12 @@ export class SettingsService {
     // 3. Python environment
     try {
       const runner = new PythonWorkerRunner();
+      await runner.checkEnvironment();
       const pythonPath = runner.getPythonPath();
-      const pythonExists = fs.existsSync(pythonPath);
       checks.push({
         name: 'Python Environment',
-        status: pythonExists ? 'pass' : 'warn',
-        message: pythonExists
-          ? `Python worker available at ${pythonPath}`
-          : `Python binary not found at ${pythonPath}`,
+        status: 'pass',
+        message: `Python 及采集依赖已验证：${pythonPath}`,
       });
     } catch (e: any) {
       checks.push({

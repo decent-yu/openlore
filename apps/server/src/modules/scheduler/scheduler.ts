@@ -56,7 +56,35 @@ export class AppScheduler {
   private sourcePolling: Promise<string[]> | null = null;
   private reportSending = new Map<string, Promise<void>>();
   private lastPipelineMinutes = new Map<string, string>();
+  private lastPipelineCatchup = new Map<string, { day: string; cron: string }>();
   private lastReportMinutes = new Map<string, string>();
+
+  private localDay(value: Date, timezone: string): string {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(value);
+  }
+
+  /** A late-started service must still run a daily schedule that already passed. */
+  private scheduleOccurredToday(cron: string, now: Date, timezone: string): boolean {
+    const day = this.localDay(now, timezone);
+    for (let minutes = 0; minutes <= 24 * 60; minutes++) {
+      const candidate = new Date(now.getTime() - minutes * 60_000);
+      if (this.localDay(candidate, timezone) === day && matchesCron(cron, candidate, timezone)) return true;
+    }
+    return false;
+  }
+
+  private hasRunToday(groupId: string, now: Date, timezone: string): boolean {
+    const rows = getSqliteDatabase()
+      .prepare("SELECT started_at FROM runs WHERE group_id=?")
+      .all(groupId) as Array<{ started_at: string }>;
+    const day = this.localDay(now, timezone);
+    return rows.some((row) => this.localDay(new Date(row.started_at), timezone) === day);
+  }
 
   addSseListener(fn: SseListener): () => void {
     this.sseListeners.push(fn);
@@ -146,11 +174,24 @@ export class AppScheduler {
       const minute = now.toISOString().slice(0, 16);
       const groups = await groupsService.listGroups();
       for (const group of groups.filter((item) => item.enabled)) {
+        const dueNow = matchesCron(group.schedule_cron, now, group.timezone);
+        const missedAfterLateStart =
+          !this.hasRunToday(group.id, now, group.timezone) &&
+          this.scheduleOccurredToday(group.schedule_cron, now, group.timezone) &&
+          (() => {
+            const prior = this.lastPipelineCatchup.get(group.id);
+            return !prior || prior.day !== this.localDay(now, group.timezone) || prior.cron !== group.schedule_cron;
+          })();
         if (
-          matchesCron(group.schedule_cron, now, group.timezone) &&
+          (dueNow || missedAfterLateStart) &&
           this.lastPipelineMinutes.get(group.id) !== minute
         ) {
           this.lastPipelineMinutes.set(group.id, minute);
+          if (missedAfterLateStart)
+            this.lastPipelineCatchup.set(group.id, {
+              day: this.localDay(now, group.timezone),
+              cron: group.schedule_cron,
+            });
           await this.triggerGroupRun(group.id);
         }
       }
@@ -162,6 +203,11 @@ export class AppScheduler {
           month: "2-digit",
           day: "2-digit",
         }).format(now);
+        const scheduledToday = this.scheduleOccurredToday(
+          plan.schedule_cron,
+          now,
+          plan.timezone,
+        );
         const pending = db
           .select()
           .from(reportPlansTable)
@@ -169,7 +215,7 @@ export class AppScheduler {
           .get()?.pendingDate;
         if (
           plan.enabled &&
-          (matchesCron(plan.schedule_cron, now, plan.timezone) ||
+          (scheduledToday ||
             pending === day) &&
           this.lastReportMinutes.get(plan.id) !== minute &&
           !this.reportSending.has(plan.id)

@@ -168,6 +168,58 @@ describe('Task execution and independent multi-task reports', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('catches up daily pipelines and reports when the service starts after their schedule', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T02:00:00Z')); // 10:00 in Asia/Shanghai; 08:00 is missed.
+    const scheduler = new AppScheduler();
+    const trigger = vi.spyOn(scheduler, 'triggerGroupRun').mockResolvedValue({} as any);
+    vi.spyOn(reportService, 'listPlans').mockResolvedValue([]);
+    vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+    await scheduler.tick();
+    expect(trigger).toHaveBeenCalledWith('task');
+    expect(trigger).toHaveBeenCalledWith('agent');
+    expect(trigger).toHaveBeenCalledWith('frontend');
+    vi.setSystemTime(new Date('2026-10-20T02:01:00Z'));
+    await scheduler.tick();
+    expect(trigger).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it('does not catch up before today’s scheduled time or repeat a persisted run after restart', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-20T23:30:00Z')); // Next local day, before 08:00.
+      const scheduler = new AppScheduler();
+      const trigger = vi.spyOn(scheduler, 'triggerGroupRun').mockResolvedValue({} as any);
+      vi.spyOn(reportService, 'listPlans').mockResolvedValue([]);
+      vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+      await scheduler.tick();
+      expect(trigger).not.toHaveBeenCalled();
+      getSqliteDatabase().prepare("INSERT INTO runs(id,group_id,snapshot_json,status,stage,started_at) VALUES ('already-ran','task','{}','failed','research',?)").run('2026-10-21T00:00:00Z');
+      vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+      await scheduler.tick();
+      expect(trigger).not.toHaveBeenCalledWith('task');
+      expect(trigger).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('reopens an overdue report after startup even when its pending date is yesterday', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-21T02:00:00Z'));
+      const scheduler = new AppScheduler();
+      vi.spyOn(scheduler, 'triggerGroupRun').mockResolvedValue({} as any);
+      vi.spyOn(scheduler, 'pollDueSources').mockResolvedValue([]);
+      const plan = await reportService.getPlan('daily');
+      vi.spyOn(reportService, 'listPlans').mockResolvedValue([{...plan,schedule_cron:'0 9 * * *'}]);
+      getSqliteDatabase().prepare("UPDATE report_plans SET pending_date='2026-10-20' WHERE id='daily'").run();
+      const send = vi.spyOn(reportService, 'send').mockResolvedValue({ok:true,state:'sent',message:'delivered'});
+      await scheduler.tick();
+      await vi.waitFor(()=>expect(send).toHaveBeenCalledWith('daily'));
+      expect(getSqliteDatabase().prepare("SELECT pending_date FROM report_plans WHERE id='daily'").get()).toEqual({pending_date:null});
+    } finally { vi.useRealTimers(); }
+  });
+
   it('marks a GitHub failure as failed rather than reporting the task complete', async () => {
     const scheduler = new AppScheduler();
     vi.spyOn(processingService, 'runProcessingForGroup').mockResolvedValue({
@@ -652,7 +704,7 @@ describe('Task execution and independent multi-task reports', () => {
     vi.spyOn(aiAdapters, 'getAIAdapterWithFallback').mockReturnValue({
       execute: async (input) => ({
         status: 'success', provider: 'mock', model: 'mock', durationMs: 1,
-        result: {markdown: input.material.replaceAll('Article body', '文章正文')},
+        result: {segments: JSON.parse(input.material).segments.map((segment: any) => ({...segment,text:segment.text.replaceAll('Article body', '文章正文')}))},
       }),
       testConnection: async () => ({ok: true, message: 'mock'}),
     });

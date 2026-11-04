@@ -516,7 +516,7 @@ it("feeds both task types into the same daily feed, report preview and webhook p
   );
   execute.mockImplementation(async input => input.repository ? reportResult(input) : ({
     status: 'success', provider: 'mock', model: 'mock',
-    result: input.taskType === 'select' ? { selected: [{ article_id: articleId, reason: 'Concrete mechanism' }] } : input.taskType === 'translate' ? { markdown: input.material } : '# 中文研报\n\n解释源码实现与适用条件。',
+    result: input.taskType === 'select' ? { selected: [{ article_id: articleId, reason: 'Concrete mechanism' }] } : input.taskType === 'translate' ? { segments: JSON.parse(input.material).segments } : '# 中文研报\n\n解释源码实现与适用条件。',
   }));
   const repositoryRun = await run();
   const scheduler = new AppScheduler();

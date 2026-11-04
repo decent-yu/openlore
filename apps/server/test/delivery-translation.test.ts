@@ -40,14 +40,15 @@ const translate = (markdown: string) =>
     .replace("Durable recovery", "持久化恢复")
     .replace("Retry safely.", "安全地重试。")
     .replace("# Mechanism", "# 工作机制")
+    .replace("Mechanism", "工作机制")
     .replace("Save state.", "保存状态。")
-    .replace("[Guide]", "[指南]");
+    .replace("Guide", "指南");
 const execute = vi.fn(async (input: any) => ({
   status: "success" as const,
   provider: "mock",
   model: "mock",
   durationMs: 1,
-  result: { markdown: translate(input.material) },
+  result: { segments: JSON.parse(input.material).segments.map((segment: {id:string;text:string}) => ({...segment,text:translate(segment.text)})) },
 }));
 
 beforeAll(async () => {
@@ -180,24 +181,22 @@ it("regenerates a cached translation after its writing prompt changes", async ()
   expect(execute).toHaveBeenCalledTimes(2);
 });
 
-it("publishes a usable translation despite formatting or image-reference differences", async () => {
+it("stops before creating archive records or publishing if translation segments are missing", async () => {
   execute.mockImplementationOnce(async (input) => ({
     status: "success",
     provider: "mock",
     model: "mock",
     durationMs: 1,
     result: {
-      markdown: translate(input.material).replace(
-        "./assets/original.svg",
-        "./assets/new.svg",
-      ),
+      segments: JSON.parse(input.material).segments.slice(1),
     },
   }));
-  const result = await deliver();
-  expect(result.syncResult.status).toBe('updated');
-  expect(GitHubClient.syncFiles).toHaveBeenCalledOnce();
-  const chinese = result.bundle.files.find(file=>file.path.endsWith('/article-zh-CN.md'))!;
-  expect(Buffer.from(chinese.content_bytes!, 'base64').toString()).toContain('./assets/new.svg');
+  await expect(deliver()).rejects.toThrow("必须返回全部");
+  expect(GitHubClient.syncFiles).not.toHaveBeenCalled();
+  for (const table of ["collections", "article_locations", "artifact_bundles"])
+    expect(
+      getSqliteDatabase().prepare(`SELECT count(*) n FROM ${table}`).get(),
+    ).toEqual({ n: 0 });
 });
 
 it("reports an unavailable executor and does not publish an English copy as Chinese", async () => {
@@ -218,7 +217,7 @@ it('recovers previously rejected translations without calling AI again and repai
   execute.mockImplementationOnce(async input => {
     trace = executionLogs.start(input);
     executionLogs.attempts(trace, [{index:1,profile_id:'mock',executor_name:'Mock',provider:'mock',transport:'local',model:'mock',timeout_seconds:30,queue_timeout_seconds:30,started_at:new Date().toISOString(),status:'success',usage:{totalTokens:15}}]);
-    const result = {status:'success' as const,provider:'mock',model:'mock',durationMs:1,result:{markdown:translate(input.material).replace('# 工作机制','## 工作机制')}};
+    const result = {status:'success' as const,provider:'mock',model:'mock',durationMs:1,result:{markdown:translate(JSON.parse(input.material).markdown).replace('# 工作机制','## 工作机制')}};
     executionLogs.finish(trace,result,1);
     executionLogs.invalidate(trace,'中文翻译失败：译文改变了原文结构、图片、链接或代码');
     throw new Error('old pipeline rejected the translation');
@@ -234,5 +233,23 @@ it('recovers previously rejected translations without calling AI again and repai
   expect(log.usage_summary?.total_attempts).toBe(1);
   expect(log.usage_summary?.usage.totalTokens).toBe(15);
   await deliver();
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it('recovers a saved text-segment translation using its original Markdown context', async () => {
+  execute.mockImplementationOnce(async input => {
+    const trace = executionLogs.start(input);
+    const result = {
+      status: 'success' as const, provider: 'mock', model: 'mock', durationMs: 1,
+      result: {segments: JSON.parse(input.material).segments.map((segment: {id:string;text:string}) => ({...segment,text:translate(segment.text)}))},
+    };
+    executionLogs.finish(trace, result, 1);
+    executionLogs.invalidate(trace, 'Interrupted before publication');
+    throw new Error('interrupted after translation');
+  });
+  await expect(deliver()).rejects.toThrow('interrupted after translation');
+  const {bundle} = await deliver();
+  const chinese = bundle.files.find(file=>file.path.endsWith('/article-zh-CN.md'))!;
+  expect(Buffer.from(chinese.content_bytes!, 'base64').toString()).toContain('# 工作机制');
   expect(execute).toHaveBeenCalledTimes(1);
 });

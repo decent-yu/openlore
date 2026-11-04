@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { validateTranslation } from "../src/modules/delivery/translation.js";
+import { renderTranslation, translationSegments, translationSegmentIssues } from '../src/modules/delivery/translation-segments.js';
 
 const source = `# Recovery
 
@@ -78,6 +79,28 @@ it.each([null, {}, { markdown: "" }, { markdown: 123 }])(
     expect(() => validateTranslation(source, result)).toThrow("未返回可用译文");
   },
 );
+
+it('translates only text while preserving punctuation-sensitive emphasis, links, images, code and HTML', () => {
+  const markdown = 'Text. **Important.** Next.\n\n[Guide](https://example.com)\n\n![Alt](missing.png)\n\n```ts\nconst text = "English";\n```\n\n<img src="missing.png">';
+  const segments = translationSegments(markdown);
+  expect(segments.map((segment) => segment.text)).toEqual(['Text.', 'Important.', 'Next.', 'Guide']);
+  const result = {segments: segments.map((segment, index) => ({id:segment.id,text:['正文。','很重要。','下一步。','指南'][index]}))};
+  const translated = renderTranslation(markdown, result);
+  expect(validateTranslation(markdown, {markdown:translated})).toBe(translated);
+  expect(translated).toContain('**很重要。** 下一步。');
+  expect(translated).toContain('![Alt](missing.png)');
+  expect(translated).toContain('const text = "English";');
+});
+
+it('escapes Markdown from translated prose and rejects missing, duplicate or multiline segments', () => {
+  const markdown = '# Heading\n\nBody';
+  const segments = translationSegments(markdown);
+  const result = {segments: segments.map((segment) => ({id:segment.id,text:'文字 **强调** [链接](missing.png) | <img>'}))};
+  expect(() => validateTranslation(markdown, {markdown:renderTranslation(markdown,result)})).not.toThrow();
+  expect(translationSegmentIssues(segments, {segments:[]})).not.toEqual([]);
+  expect(translationSegmentIssues(segments, {segments:[result.segments[0],result.segments[0]]})).not.toEqual([]);
+  expect(translationSegmentIssues(segments, {segments:segments.map(s=>({id:s.id,text:'换\n行'}))})).not.toEqual([]);
+});
 
 it('accepts a saved Markdown string or JSON envelope as well as structured output', () => {
   expect(validateTranslation(source, translated)).toBe(translated);

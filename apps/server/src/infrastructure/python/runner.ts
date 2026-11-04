@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,29 +12,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class PythonWorkerRunner {
-  private pythonPath: string;
   private pythonProjectDir: string;
 
-  constructor(customPythonPath?: string) {
+  constructor(private customPythonPath?: string, projectDir?: string) {
     // Resolve project directory: repo_root/workers/python
     // from apps/server/src/infrastructure/python -> up 4 levels to root
     const repoRoot = path.resolve(__dirname, '../../../../../');
-    this.pythonProjectDir = path.join(repoRoot, 'workers/python');
-
-    if (customPythonPath && fs.existsSync(customPythonPath)) {
-      this.pythonPath = customPythonPath;
-    } else {
-      const venvPython = path.join(this.pythonProjectDir, '.venv/bin/python');
-      if (fs.existsSync(venvPython)) {
-        this.pythonPath = venvPython;
-      } else {
-        this.pythonPath = 'python3';
-      }
-    }
+    this.pythonProjectDir = projectDir || path.join(repoRoot, 'workers/python');
   }
 
   getPythonPath(): string {
-    return this.pythonPath;
+    if (this.customPythonPath) return this.customPythonPath;
+    const venvPython = path.join(this.pythonProjectDir, '.venv/bin/python');
+    // Resolve each time so installing dependencies repairs a running server too.
+    return fs.existsSync(venvPython) ? venvPython : 'python3';
+  }
+
+  async checkEnvironment(): Promise<void> {
+    try {
+      await promisify(execFile)(this.getPythonPath(), ['-c', 'import feedparser, trafilatura, jsonschema'], {
+        timeout: 10000,
+      });
+    } catch {
+      throw new Error(`Python 采集环境不可用（${this.getPythonPath()}），请执行 uv sync --project workers/python --python 3.12 --locked`);
+    }
   }
 
   async run(
@@ -42,7 +44,7 @@ export class PythonWorkerRunner {
   ): Promise<PythonWorkerResponse> {
     return new Promise((resolve, reject) => {
       const args = ['-m', 'openlore_collectors'];
-      const child = spawn(this.pythonPath, args, {
+      const child = spawn(this.getPythonPath(), args, {
         cwd: this.pythonProjectDir,
         shell: false,
         env: {
@@ -90,6 +92,9 @@ export class PythonWorkerRunner {
       child.on('close', (code) => {
         clearTimeout(timer);
         if (code !== 0) {
+          if (/ModuleNotFoundError/.test(stderrData)) {
+            return reject(new Error('Python 采集依赖缺失，请执行 uv sync --project workers/python --python 3.12 --locked'));
+          }
           return reject(
             new Error(
               `Python worker exited with code ${code}. Stderr: ${stderrData}`,
