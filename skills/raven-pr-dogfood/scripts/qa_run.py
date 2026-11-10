@@ -18,6 +18,8 @@ import tempfile
 import uuid
 
 from pr_workspace import QAError, snapshot
+from report_model import build_report
+from report_renderer import write_views
 
 STATUSES = {'pass', 'fail', 'flaky', 'observed', 'blocked', 'skipped'}
 KINDS = {'screenshot', 'video', 'log'}
@@ -415,73 +417,11 @@ def validate(root, state):
             'counts': counts, 'errors': errors, 'gaps': gaps, 'scope': 'declared PR test scope only', 'suite': suite['id'] if suite else None}
 
 
-def cell(value):
-    return str(value).replace('|', '\\|').replace('\n', '<br>')
-
-
 def render(root, state):
     check = validate(root, state)
-    identity = state['context']['identity']
-    lines = ['# Raven PR Dogfood 报告', '', f"结论：**{check['verdict']}**（仅限本报告声明的范围）", '',
-             f"PR / 比较：{identity.get('url') or cell(identity)}", f"代码：`{state['code']['head']}`；指纹：`{state['code']['fingerprint']}`；轮次：{state['epoch']}",
-             f"模式：{state['mode']}；更新：{state['updated_at']}", '', '## 用户旅程', '']
-    for f in (state['plan'] or {}).get('flows', []):
-        lines += [f"### {f['id']} · {f['title']}", '', *[f'{n}. {s}' for n, s in enumerate(f['steps'], 1)], '', '终态：' + f['expected_end'], '']
-    lines += ['## 测试结果', '', '| 场景 | 优先级 | 状态 | 预期与依据 | 实际结果 |', '| --- | --- | --- | --- | --- |']
-    for s in (state['plan'] or {}).get('scenarios', []):
-        r = state['results'].get(s['id'])
-        status = r['status'] if r and fresh(r, state) else 'pending'
-        lines.append(f"| {cell(s['id'] + ' ' + s['title'])} | {s['priority']} | {status} | {cell(s['expected'] + '；' + s['oracle'])} | {cell(r['summary'] if r and fresh(r, state) else '未验证或旧结果已失效')} |")
-    lines += ['', '## 复现与证据', '']
-    for ident, r in state['results'].items():
-        s = r.get('scenario_snapshot') or scenario(state, ident)
-        lines += [f"### {ident} · {r['status']}" + ('' if fresh(r, state) else '（旧版本记录，不计本轮通过）'), '', r['summary'],
-                  '归属：' + r.get('attribution', 'unknown') + '；严重度：' + r.get('severity', 'n/a'), '']
-        lines += ['前提：' + '；'.join(s.get('preconditions', [])), '', '操作步骤：', '']
-        lines += [f'{n}. {step}' for n, step in enumerate(s['steps'], 1)]
-        lines += ['', '预期：' + s['expected'], '']
-        if r.get('reason'):
-            lines += ['原因：' + r['reason'], '']
-        for n, a in enumerate(r.get('attempts', []), 1):
-            lines += [f"尝试 {n}：{a['outcome']} · {a['actual']}", '']
-            for eid in a['evidence']:
-                e = state['evidence'][eid]
-                lines += [f"- [{eid}]({e['path']}) · {e['kind']} · 步骤 {e.get('step') or '整体'} · {e['note']}"]
-        for g in r.get('evidence_gaps', []):
-            lines.append(f"- 证据缺口：{g['kind']} · {g['reason']}")
-        for advisory in r.get('advisories', []):
-            links = ', '.join(f"[{eid}]({state['evidence'][eid]['path']})" for eid in advisory['evidence'])
-            lines.append(f"- 改进建议（不计功能失败）：{advisory['summary']} · {links}")
-        lines.append('')
-    lines += ['## 修复与回归', '']
-    for r in state['repairs']:
-        lines += [f"- {r['scenario']}：{r['summary']}；根因：{r['root_cause']}；文件：{', '.join(r['files'])}",
-                  f"  - 验证：{r.get('before', '-')} → {r.get('after', '-')}；视觉例外：{r.get('visual_reason', '无')}"]
-    lines += ['', '## 历史发现与恢复', '']
-    for h in state['history']:
-        if h.get('scenario') and h.get('result'):
-            old_result = h['result']
-            lines.append(f"- {h['scenario']} · {old_result['status']} · 轮次 {old_result['epoch']}：{old_result['summary']}")
-            for attempt in old_result.get('attempts', []):
-                lines += [f"  - [原始证据 {eid}]({state['evidence'][eid]['path']})" for eid in attempt['evidence']]
-        elif h.get('reason'):
-            lines.append('- ' + h['reason'])
-    lines += ['', '## 执行记录', '', '| ID | 场景 | 阶段 | 命令 | 退出码 | 日志 |', '| --- | --- | --- | --- | --- | --- |']
-    for c in state['commands'].values():
-        e = state['evidence'].get(c.get('evidence'))
-        link = f"[日志]({e['path']})" if e else '未完成'
-        lines.append(f"| {c['id']} | {c['scenario'] or '-'} | {c['phase']} | {cell(' '.join(c['argv']))} | {c['exit_code']} | {link} |")
-    lines += ['', '## 未覆盖与限制', '']
-    lines += ['- ' + x for x in check['errors'] + check['gaps']]
-    lines += [f"- 排除 {e['path']}：{e['reason']}" for e in (state['plan'] or {}).get('exclusions', [])]
-    if state.get('environment'):
-        env = state['environment']
-        lines += ['', '## 被测环境', '', f"- 浏览器：{env['browser']}；URL：{env.get('url', '无')}",
-                  f"- 服务身份依据：{env['identity_proof']}", f"- 测试数据/替身：{env['dataset']}"]
-        lines += [f"- [服务证据]({state['evidence'][e]['path']})" for e in env['proof']]
-    lines += ['', '## 检查边界', '', '工具检查版本、状态和证据关联，不能代替人工判断需求是否正确、范围是否充分。报告不构成自动合并或上线授权。', '']
-    (root / 'report.md').write_text('\n'.join(lines), encoding='utf-8')
-    os.chmod(root / 'report.md', 0o600)
+    public_report = build_report(state, check)
+    save(root / 'report.json', public_report)
+    write_views(public_report, root)
     save(root / 'validation.json', check)
     return check
 
@@ -535,8 +475,8 @@ def main():
                         dest = Path(a.dest).absolute()
                         require(not dest.exists() and not inside(dest, root) and not inside(dest, state['context']['workspace']), 'bundle destination must be new and outside run/worktree')
                         dest.mkdir(parents=True, mode=0o700)
-                        shutil.copyfile(root / 'report.md', dest / 'report.md')
-                        shutil.copyfile(root / 'validation.json', dest / 'validation.json')
+                        for name in ['report.json', 'report.html', 'report.md', 'report.schema.json', 'validation.json']:
+                            shutil.copyfile(root / name, dest / name)
                         (dest / 'artifacts').mkdir()
                         for e in state['evidence'].values():
                             shutil.copyfile(artifact(root, e), dest / e['path'])

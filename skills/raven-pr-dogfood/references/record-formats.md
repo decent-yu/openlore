@@ -135,4 +135,4 @@ before/after 必须是该场景实际执行的 before/after 命令：同一参�
 | INCOMPLETE | 有待测/未验证/跳过、证据缺口、修复证明不足，或尚无当前套件结果 |
 | READY_WITHIN_SCOPE | 声明范围已测、证据完整、无上述缺口，当前套件成功；范围是否充分仍需审查 |
 
-report 总会保留失败与限制并生成 report.md、validation.json。bundle 要求全新的外部目录，复制报告和明确注册的 artifacts，不复制 state、源仓库或默认抓取认证文件。私有 run 是可恢复的完整工作记录；delivery 是便于审阅的交付包。外部发布仍按用户授权处理。
+report 总会保留失败与限制，导出标准 report.json，再生成 report.html、report.md、report.schema.json 与 validation.json。字段与独立渲染见[标准报告格式](report-format.md)。bundle 要求全新的外部目录，复制报告和明确注册的 artifacts，不复制 state、源仓库或默认抓取认证文件。私有 run 是可恢复的完整工作记录；delivery 是便于审阅的交付包。外部发布仍按用户授权处理。

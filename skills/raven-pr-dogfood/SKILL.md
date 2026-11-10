@@ -2,7 +2,7 @@
 name: raven-pr-dogfood
 description: 围绕 PR 或明确的 base/head 代码改动执行完整用户流程测试，交付带复现证据的报告；支持授权后的缺陷修复、前后回归证明和中断恢复。用于 PR 验收、改动回归、合并前 QA，不用于只有网址的全站巡检或单纯静态代码评审。
 metadata:
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Raven PR Dogfood
@@ -90,6 +90,8 @@ python3 "$SKILL_DIR/scripts/qa_run.py" bundle --run "$RUN" --dest "$TASK_DIR/del
 ```
 
 `validate` 只有 `READY_WITHIN_SCOPE` 返回 0；其他结论返回 1，输入/工具错误返回 2。`report` 和 `bundle` 即使发现问题也能正常交付，必须读取输出的 verdict，不能把它们返回 0 当成通过。
+
+对外交付以标准 `report.json` 为唯一内容来源，字段契约见[报告 JSON 与渲染](references/report-format.md)。`report` 同时生成离线 `report.html`、Markdown 和字段 Schema；不要手动分别编写两份结论。需要从外部标准 JSON 单独生成可视化页面时，使用 `report_renderer.py`。
 
 交付包包含报告、检查结果和明确注册的证据，不含完整 state 或默认收集登录状态。分享前检查日志、截图中的业务数据；保留的浏览器认证状态单独存放，不注册为证据。只清理由本轮创建的服务、会话和测试数据；有修复或可恢复状态的工作区保留并告知用户。
 
