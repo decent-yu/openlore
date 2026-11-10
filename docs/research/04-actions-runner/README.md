@@ -24,4 +24,4 @@ Runner 主动连接 GitHub 获取任务，需要出站 HTTPS；平台决定任�
 
 本项目是知识工作流，不需要照搬完整 CI 平台、YAML 生态或 Kubernetes。单实例控制服务的 SQLite 可支持多个外部执行进程；独立发布和故障恢复比先换队列中间件更直接。
 
-**结论：采用云端控制服务 + 独立 Runner 为标准架构，`local` / SSH 为辅助路径。**它已有基本运行实现，待实现部分在[系统架构差距表](../architecture/system-architecture.md#当前实现与设计缺口)明确列出。操作状态建议区分在线、空闲、繁忙与离线，不能只展示一个“连接成功”；这是本项目改进方向，参考 [GitHub Runner 监控](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/monitor-and-troubleshoot)。
+**结论：采用云端控制服务 + 独立 Runner 为标准架构，`local` / SSH 为辅助路径。**它已有基本运行实现，待实现部分在[系统架构差距表](../../architecture/system-architecture.md#当前实现与设计缺口)明确列出。操作状态建议区分在线、空闲、繁忙与离线，不能只展示一个“连接成功”；这是本项目改进方向，参考 [GitHub Runner 监控](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/monitor-and-troubleshoot)。

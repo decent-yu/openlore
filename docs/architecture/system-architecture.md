@@ -4,7 +4,7 @@
 
 ![OpenLore 系统架构：云端控制服务与独立 AI Runner](../product/feature/assets/system-architecture.svg)
 
-[打开 SVG 原图](../product/feature/assets/system-architecture.svg)。实线表示现有 Worker 主链路；图底部单列待实现事项。GitHub Actions 的任务调度与 self-hosted runner 是参考模型，OpenLore 不依赖 GitHub Actions 才能调度。[调研依据](../research/04-actions-runner.md)。
+[打开 SVG 原图](../product/feature/assets/system-architecture.svg)。实线表示现有 Worker 主链路；图底部单列待实现事项。GitHub Actions 的任务调度与 self-hosted runner 是参考模型，OpenLore 不依赖 GitHub Actions 才能调度。[调研依据](../research/04-actions-runner/README.md)。
 
 ## 部署角色
 

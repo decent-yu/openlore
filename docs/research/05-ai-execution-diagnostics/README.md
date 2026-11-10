@@ -152,11 +152,11 @@ P0 优先修复当前浪费和错误状态，P1 改善执行效率与诊断，P2
 
 ## 代码与官方依据
 
-- 材料包装与引用核验：[assessment.ts](../../apps/server/src/modules/processing/assessment.ts)。
-- 初审排队、串行执行与重试：[article-reviews.ts](../../apps/server/src/modules/processing/article-reviews.ts)。
-- 工作区和单次 CLI 生命周期：[workspace_runner.ts](../../apps/server/src/infrastructure/ai/workspace_runner.ts)。
-- 执行器接管：[fallback_runner.ts](../../apps/server/src/infrastructure/ai/fallback_runner.ts)。
-- 请求与结果契约：[execution.ts](../../packages/contracts/src/execution.ts)。
+- 材料包装与引用核验：[assessment.ts](../../../apps/server/src/modules/processing/assessment.ts)。
+- 初审排队、串行执行与重试：[article-reviews.ts](../../../apps/server/src/modules/processing/article-reviews.ts)。
+- 工作区和单次 CLI 生命周期：[workspace_runner.ts](../../../apps/server/src/infrastructure/ai/workspace_runner.ts)。
+- 执行器接管：[fallback_runner.ts](../../../apps/server/src/infrastructure/ai/fallback_runner.ts)。
+- 请求与结果契约：[execution.ts](../../../packages/contracts/src/execution.ts)。
 - [Gemini 会话管理](https://geminicli.com/docs/cli/session-management/)：支持恢复特定会话，并说明会话与项目目录的关联。
 - [Gemini Headless](https://geminicli.com/docs/cli/headless/)：说明流式事件及成功完成事件。
 - [Gemini Policy Engine](https://geminicli.com/docs/reference/policy-engine/)：核查具体工具与路径规则的官方入口。
