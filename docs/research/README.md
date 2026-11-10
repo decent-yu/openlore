@@ -10,5 +10,6 @@
 | [04 Actions / Runner](04-actions-runner.md)                           | 2026-10-17 | 云端编排与独立执行机的架构取舍               |
 | [05 AI 执行耗时与重试核查](05-ai-execution-diagnostics-2026-10-19.md) | 2026-10-19 | 真实 Gemini 对照、任务重试缺陷及统一修复清单 |
 | [06 赛道一 Skills 候选](06-track-one-skill-shortlist-2026-11-10.md) | 2026-11-10 | 测试、算法各 5 个 Skills，功能、热度与加权初评 |
+| [07 测试 Skills 二次筛选](07-testing-skills-advanced-2026-11-10.md) | 2026-11-10 | 探索式 QA、多入口验证、改动回归、移动测试与 fuzz |
 
 调研记录证据、日期、验证范围和判断；当前生效设计进入[系统架构](../architecture/system-architecture.md)，业务规则进入[功能文档](../product/feature/index.md)。旧快照不作为当前安装步骤或功能承诺。
