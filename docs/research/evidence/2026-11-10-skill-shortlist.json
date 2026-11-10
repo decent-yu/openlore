@@ -1,0 +1,81 @@
+{
+  "checked_on": "2026-11-10",
+  "scope": "公开指标查询与 SKILL.md 静态审阅；未安装运行候选 Skills",
+  "github_repositories": [
+    {
+      "repository": "anthropics/skills",
+      "stars": 191093,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/anthropics/skills"
+    },
+    {
+      "repository": "obra/superpowers",
+      "stars": 315196,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/obra/superpowers"
+    },
+    {
+      "repository": "affaan-m/ECC",
+      "stars": 300268,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/affaan-m/ECC"
+    },
+    {
+      "repository": "trailofbits/skills",
+      "stars": 8096,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/trailofbits/skills"
+    },
+    {
+      "repository": "davila7/claude-code-templates",
+      "stars": 33243,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/davila7/claude-code-templates"
+    },
+    {
+      "repository": "huggingface/skills",
+      "stars": 11310,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/huggingface/skills"
+    },
+    {
+      "repository": "K-Dense-AI/scientific-agent-skills",
+      "stars": 56616,
+      "scope": "repository",
+      "source": "https://api.github.com/repos/K-Dense-AI/scientific-agent-skills"
+    }
+  ],
+  "install_signals": [
+    {
+      "name": "webapp-testing",
+      "scope": "individual skill",
+      "display_value": "201.2K installs",
+      "source": "https://skills.sh/anthropics/skills/webapp-testing",
+      "observation": "npx --yes skills find testing 的输出"
+    },
+    {
+      "name": "Superpowers",
+      "scope": "plugin bundle",
+      "installs": 1009371,
+      "source": "https://claude.com/plugins/superpowers"
+    },
+    {
+      "name": "Hugging Face Skills",
+      "scope": "plugin bundle",
+      "installs": 34575,
+      "source": "https://claude.com/plugins/huggingface-skills"
+    }
+  ],
+  "skillhub": {
+    "site": "https://www.skillhub.club",
+    "literature_review": {
+      "source": "https://www.skillhub.club/skills/k-dense-ai-claude-scientific-skills-literature-review",
+      "ai_score": 7.9,
+      "grade": "A",
+      "up_votes": 0,
+      "down_votes": 0,
+      "displayed_repository_stars": "17.0k",
+      "note": "旧仓库快照，未用于数据分；AI 评分不等于用户口碑或执行测试。"
+    }
+  }
+}
