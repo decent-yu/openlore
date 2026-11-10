@@ -1,5 +1,7 @@
 # 标准 JSON 与可视化测试报告
 
+历史归档：包含当时的修复流程；当前版本已收敛为[只测试与报告](09-test-and-report-only.md)。
+
 更新：2026-11-10。Skill 已升级为 1.1.0，报告数据格式为 1.0.0。
 
 **每次运行导出一份 report.json，再从同一份 JSON 生成 HTML 和 Markdown。** 私有 state.json 用于续跑，公共报告字段独立维护。

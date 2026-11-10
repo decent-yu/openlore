@@ -1,5 +1,7 @@
 # raven-pr-dogfood 实现与验证
 
+历史归档：包含当时的修复流程；当前版本已收敛为[只测试与报告](09-test-and-report-only.md)。
+
 1.0 实现与验证记录；当前 1.1 的[标准 JSON、HTML 与新 smoke](08-standard-report-json-html.md)另行归档。
 
 日期：2026-11-10。实现入口：[SKILL.md](../../../skills/raven-pr-dogfood/SKILL.md)。已通过项目内 `.agents/skills/raven-pr-dogfood` 发现入口注册；下轮可使用 `$raven-pr-dogfood` 调用。

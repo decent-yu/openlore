@@ -1,0 +1,1121 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "2.0.0"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "report_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "generated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_id",
+        "title",
+        "generated_at"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "pull_request",
+            "revision_comparison"
+          ]
+        },
+        "repository": {
+          "type": "string"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "head_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "tested_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "merge_base": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "code_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "dirty": {
+          "const": false
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "repository",
+        "pr_number",
+        "url",
+        "base_commit",
+        "head_commit",
+        "tested_commit",
+        "merge_base",
+        "code_fingerprint",
+        "dirty",
+        "epoch",
+        "title",
+        "description",
+        "base_ref",
+        "head_ref"
+      ],
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "INVALID",
+            "NOT_READY",
+            "INCOMPLETE",
+            "READY_WITHIN_SCOPE"
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "status_counts": {
+          "type": "object",
+          "properties": {
+            "pending": {
+              "type": "integer"
+            },
+            "pass": {
+              "type": "integer"
+            },
+            "fail": {
+              "type": "integer"
+            },
+            "flaky": {
+              "type": "integer"
+            },
+            "observed": {
+              "type": "integer"
+            },
+            "blocked": {
+              "type": "integer"
+            },
+            "skipped": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pending",
+            "pass",
+            "fail",
+            "flaky",
+            "observed",
+            "blocked",
+            "skipped"
+          ],
+          "additionalProperties": false
+        },
+        "findings_total": {
+          "type": "integer"
+        },
+        "open_findings": {
+          "type": "integer"
+        },
+        "historical_findings": {
+          "type": "integer"
+        },
+        "severity_counts": {
+          "type": "object",
+          "properties": {
+            "critical": {
+              "type": "integer"
+            },
+            "high": {
+              "type": "integer"
+            },
+            "medium": {
+              "type": "integer"
+            },
+            "low": {
+              "type": "integer"
+            },
+            "unspecified": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "unspecified"
+          ],
+          "additionalProperties": false
+        },
+        "retested_findings": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "verdict",
+        "scope",
+        "total",
+        "status_counts",
+        "findings_total",
+        "open_findings",
+        "historical_findings",
+        "severity_counts",
+        "retested_findings"
+      ],
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "browser": {
+          "enum": [
+            "native",
+            "agent-browser",
+            "none"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "identity_proof": {
+          "type": "string"
+        },
+        "dataset": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string"
+        },
+        "current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "browser",
+        "url",
+        "identity_proof",
+        "dataset",
+        "capabilities",
+        "evidence_ids",
+        "epoch",
+        "environment_id",
+        "recorded_at",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "changed_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unmapped_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "changed_files",
+        "exclusions",
+        "unmapped_files"
+      ],
+      "additionalProperties": false
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/flow"
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/timeline"
+      }
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "suite_command_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "errors",
+        "gaps",
+        "suite_command_id"
+      ],
+      "additionalProperties": false
+    },
+    "retests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/retest"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "metadata",
+    "target",
+    "summary",
+    "environment",
+    "coverage",
+    "flows",
+    "scenarios",
+    "findings",
+    "commands",
+    "evidence",
+    "timeline",
+    "checks",
+    "retests"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:raven:pr-dogfood:report:2.0.0",
+  "title": "Raven PR Dogfood report",
+  "$defs": {
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "actual": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "index",
+        "outcome",
+        "actual",
+        "evidence_ids"
+      ],
+      "additionalProperties": false
+    },
+    "gap": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "screenshot",
+            "video",
+            "log"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "advisory": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "evidence_ids"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "flaky",
+            "observed",
+            "blocked",
+            "skipped"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            null
+          ]
+        },
+        "attribution": {
+          "enum": [
+            "introduced",
+            "preexisting",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recorded_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attempt"
+          }
+        },
+        "evidence_gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/advisory"
+          }
+        },
+        "tested_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cause_hypothesis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recommendation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "severity",
+        "attribution",
+        "reason",
+        "recorded_at",
+        "epoch",
+        "environment_id",
+        "code_fingerprint",
+        "attempts",
+        "evidence_gaps",
+        "advisories",
+        "tested_commit",
+        "cause_hypothesis",
+        "recommendation"
+      ],
+      "additionalProperties": false
+    },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expected_end": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "steps",
+        "expected_end"
+      ],
+      "additionalProperties": false
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flow_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "critical",
+            "high",
+            "normal"
+          ]
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "browser",
+              "api",
+              "cli",
+              "job"
+            ]
+          }
+        },
+        "changed_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expected": {
+          "type": "string"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "required_evidence": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "screenshot",
+              "video",
+              "log"
+            ]
+          }
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "pass",
+            "fail",
+            "flaky",
+            "observed",
+            "blocked",
+            "skipped"
+          ]
+        },
+        "current": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/result"
+        }
+      },
+      "required": [
+        "id",
+        "flow_id",
+        "title",
+        "priority",
+        "surfaces",
+        "changed_files",
+        "preconditions",
+        "steps",
+        "expected",
+        "oracle",
+        "required_evidence",
+        "status",
+        "current",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            null
+          ]
+        },
+        "resolution": {
+          "enum": [
+            "open",
+            "retested_pass",
+            "historical"
+          ]
+        },
+        "status": {
+          "enum": [
+            "fail",
+            "flaky",
+            "observed"
+          ]
+        },
+        "attribution": {
+          "enum": [
+            "introduced",
+            "preexisting",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attempt"
+          }
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retest_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tested_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cause_hypothesis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recommendation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "scenario_id",
+        "title",
+        "severity",
+        "resolution",
+        "status",
+        "attribution",
+        "summary",
+        "expected",
+        "oracle",
+        "preconditions",
+        "steps",
+        "attempts",
+        "epoch",
+        "environment_id",
+        "code_fingerprint",
+        "retest_ids",
+        "tested_commit",
+        "cause_hypothesis",
+        "recommendation"
+      ],
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "check",
+            "suite"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "evidence_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code_fingerprint": {
+          "type": "string"
+        },
+        "workspace_unchanged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "scenario_id",
+        "phase",
+        "argv",
+        "started_at",
+        "finished_at",
+        "exit_code",
+        "evidence_id",
+        "epoch",
+        "environment_id",
+        "code_fingerprint",
+        "workspace_unchanged",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "screenshot",
+            "video",
+            "log"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^artifacts/[A-Za-z0-9_.-]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "scenario_id",
+        "step",
+        "kind",
+        "note",
+        "path",
+        "sha256",
+        "bytes",
+        "captured_at",
+        "epoch",
+        "environment_id",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    "timeline": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "event",
+        "scenario_id",
+        "epoch",
+        "summary",
+        "evidence_ids"
+      ],
+      "additionalProperties": false
+    },
+    "retest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "finding_id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "previous_commit": {
+          "type": "string"
+        },
+        "tested_commit": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "finding_id",
+        "scenario_id",
+        "previous_commit",
+        "tested_commit",
+        "summary",
+        "recorded_at",
+        "evidence_ids"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

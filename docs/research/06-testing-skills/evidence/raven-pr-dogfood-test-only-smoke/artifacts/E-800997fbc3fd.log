@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/private/tmp/raven-pr-dogfood-report-only-20261110/worktree/regression.py", line 8, in <module>
+    assert len(result)==1, f'expected one order, got {len(result)}'
+           ^^^^^^^^^^^^^^
+AssertionError: expected one order, got 2
+Traceback (most recent call last):
+  File "<string>", line 13, in <module>
+    import subprocess,sys; subprocess.run([sys.executable,"-B","regression.py"],check=True)
+                           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/decent/.pyenv/versions/3.14.1/lib/python3.14/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/Users/decent/.pyenv/versions/3.14.1/bin/python3', '-B', 'regression.py']' returned non-zero exit status 1.
+PASS: one submission creates one order
+PASS: distinct carts stay independent
