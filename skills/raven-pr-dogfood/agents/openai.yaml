@@ -1,0 +1,4 @@
+interface:
+  display_name: "Raven PR Dogfood"
+  short_description: "围绕 PR 改动执行真实测试，交付可复现证据、修复回归与版本绑定的验收报告"
+  default_prompt: "使用 $raven-pr-dogfood 测试这个 PR，分析影响范围、验证完整用户流程并交付有证据的报告。"
