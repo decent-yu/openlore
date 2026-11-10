@@ -1,0 +1,15 @@
+{
+  "verdict": "NOT_READY",
+  "code": "26e23c2584ce5cc8f9bd8f4e5af3f1dbcb504690",
+  "epoch": 2,
+  "counts": {
+    "pass": 2,
+    "fail": 1
+  },
+  "errors": [],
+  "gaps": [
+    "no current automated suite execution; absence is not a pass"
+  ],
+  "scope": "declared PR test scope only",
+  "suite": null
+}

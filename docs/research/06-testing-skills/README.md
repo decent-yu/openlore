@@ -2,12 +2,13 @@
 
 更新：2026-11-10。**Vercel 提供探索与证据交付流程，Every 提供按改动回归与修复流程。建议新 Skill 采用 Every 的旅程建模，结合 Vercel 的逐项复现取证。**
 
-已实现 [raven-pr-dogfood](07-raven-pr-dogfood-delivery.md)，包含可执行工具、完整工作流和实际验证记录。
+已实现 [raven-pr-dogfood](07-raven-pr-dogfood-delivery.md)，包含可执行工具、完整工作流和实际验证记录；当前已支持[标准 JSON 与 HTML 报告](08-standard-report-json-html.md)。
 
 ## 阅读顺序
 
 | 文档 | 用途 |
 | --- | --- |
+| [标准 JSON 与可视化报告](08-standard-report-json-html.md) | 当前字段契约、HTML 报告与新 smoke |
 | [实现与验证](07-raven-pr-dogfood-delivery.md) | 当前 Skill 入口、实际能力与测试证据 |
 | [PR 测试 Skill 初步方案](06-pr-dogfood-proposal.md) | 前期评审方案，当前实现见上方入口 |
 | [核心逻辑拆解](03-dogfood-core-logic.md) | 两套执行流程、文件职责、真实实现与脚本验证 |

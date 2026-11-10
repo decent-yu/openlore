@@ -1,0 +1,12 @@
+{
+  "verdict": "READY_WITHIN_SCOPE",
+  "code": "26e23c2584ce5cc8f9bd8f4e5af3f1dbcb504690",
+  "epoch": 3,
+  "counts": {
+    "pass": 3
+  },
+  "errors": [],
+  "gaps": [],
+  "scope": "declared PR test scope only",
+  "suite": "C-23a2aeec6ae2"
+}

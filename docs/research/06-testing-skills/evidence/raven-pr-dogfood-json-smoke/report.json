@@ -1,0 +1,788 @@
+{
+  "schema_version": "1.0.0",
+  "metadata": {
+    "report_id": "RPD-0faacd612791",
+    "title": "Raven PR Dogfood 测试报告",
+    "generated_at": "2026-11-10T09:05:49.845030+00:00",
+    "mode": "repair"
+  },
+  "target": {
+    "kind": "revision_comparison",
+    "repository": "source",
+    "title": null,
+    "description": null,
+    "base_ref": "release",
+    "head_ref": "feature",
+    "pr_number": null,
+    "url": null,
+    "base_commit": "06e8644d61089619696fa0d5af31dfffb587909c",
+    "head_commit": "26e23c2584ce5cc8f9bd8f4e5af3f1dbcb504690",
+    "tested_commit": "26e23c2584ce5cc8f9bd8f4e5af3f1dbcb504690",
+    "merge_base": "06e8644d61089619696fa0d5af31dfffb587909c",
+    "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+    "dirty": true,
+    "epoch": 3
+  },
+  "summary": {
+    "verdict": "READY_WITHIN_SCOPE",
+    "scope": "declared PR test scope only",
+    "total": 3,
+    "status_counts": {
+      "pending": 0,
+      "pass": 3,
+      "fail": 0,
+      "flaky": 0,
+      "observed": 0,
+      "blocked": 0,
+      "skipped": 0
+    },
+    "findings_total": 1,
+    "open_findings": 0,
+    "resolved_findings": 1,
+    "historical_findings": 0,
+    "severity_counts": {
+      "critical": 0,
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "unspecified": 0
+    }
+  },
+  "environment": {
+    "browser": "native",
+    "url": "http://127.0.0.1:38762",
+    "identity_proof": "本轮隔离工作区启动的本地服务，启动日志记录代码指纹；独立无头Chrome执行浏览器操作",
+    "dataset": "每个尝试重置临时内存订单，仅使用本地合成购物车，没有外部系统",
+    "capabilities": [
+      "screenshot",
+      "video",
+      "console"
+    ],
+    "evidence_ids": [
+      "E-f09d90a44e8e"
+    ],
+    "epoch": 3,
+    "environment_id": "ee3b0b962620",
+    "recorded_at": "2026-11-10T09:03:08.206900+00:00",
+    "current": true
+  },
+  "coverage": {
+    "changed_files": [
+      "app.py"
+    ],
+    "exclusions": [],
+    "unmapped_files": []
+  },
+  "flows": [
+    {
+      "id": "F1",
+      "title": "订单提交与重复请求处理",
+      "steps": [
+        "打开订单测试页",
+        "提交一个或多个购物车请求",
+        "检查订单数量与购物车归属"
+      ],
+      "expected_end": "正常提交成功，同购物车不重复，不同购物车不合并"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "S1",
+      "flow_id": "F1",
+      "title": "正常提交创建一张订单",
+      "priority": "high",
+      "surfaces": [
+        "browser",
+        "api"
+      ],
+      "changed_files": [
+        "app.py"
+      ],
+      "preconditions": [
+        "本轮独立内存测试数据，每次尝试先重置，无外部服务"
+      ],
+      "steps": [
+        "重置测试数据后提交一次，检查页面与保存结果"
+      ],
+      "expected": "订单数量为1",
+      "oracle": "测试夹具验收条件及release版本已接受行为：同购物车幂等，不同购物车独立",
+      "required_evidence": [
+        "screenshot",
+        "log"
+      ],
+      "status": "pass",
+      "current": true,
+      "result": {
+        "status": "pass",
+        "summary": "正常提交一张订单，页面和接口均通过",
+        "severity": null,
+        "attribution": "unknown",
+        "reason": null,
+        "recorded_at": "2026-11-10T09:05:48.018892+00:00",
+        "epoch": 3,
+        "environment_id": "ee3b0b962620",
+        "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+        "attempts": [
+          {
+            "index": 1,
+            "outcome": "pass",
+            "actual": "一次提交后订单数量为1",
+            "evidence_ids": [
+              "E-dc9c0ddccfe4",
+              "E-0daa5b75a0ae"
+            ]
+          }
+        ],
+        "evidence_gaps": [],
+        "advisories": []
+      }
+    },
+    {
+      "id": "S2",
+      "flow_id": "F1",
+      "title": "同一购物车重复提交保持幂等",
+      "priority": "critical",
+      "surfaces": [
+        "browser",
+        "api"
+      ],
+      "changed_files": [
+        "app.py"
+      ],
+      "preconditions": [
+        "本轮独立内存测试数据，每次尝试先重置，无外部服务"
+      ],
+      "steps": [
+        "重置后连续两次提交同一购物车，检查页面和保存结果"
+      ],
+      "expected": "订单数量为1",
+      "oracle": "测试夹具验收条件及release版本已接受行为：同购物车幂等，不同购物车独立",
+      "required_evidence": [
+        "screenshot",
+        "video",
+        "log"
+      ],
+      "status": "pass",
+      "current": true,
+      "result": {
+        "status": "pass",
+        "summary": "修复后重复提交保持一张订单",
+        "severity": null,
+        "attribution": "unknown",
+        "reason": null,
+        "recorded_at": "2026-11-10T09:05:48.445499+00:00",
+        "epoch": 3,
+        "environment_id": "ee3b0b962620",
+        "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+        "attempts": [
+          {
+            "index": 1,
+            "outcome": "pass",
+            "actual": "重置后两次提交，实际订单数量为1，符合幂等要求",
+            "evidence_ids": [
+              "E-5c3880ff3e97",
+              "E-abc09358f879",
+              "E-401cbefe5404"
+            ]
+          }
+        ],
+        "evidence_gaps": [],
+        "advisories": []
+      }
+    },
+    {
+      "id": "S3",
+      "flow_id": "F1",
+      "title": "不同购物车分别创建订单",
+      "priority": "high",
+      "surfaces": [
+        "api"
+      ],
+      "changed_files": [
+        "app.py"
+      ],
+      "preconditions": [
+        "本轮独立内存测试数据，每次尝试先重置，无外部服务"
+      ],
+      "steps": [
+        "使用两个不同购物车标识各提交一次，读取订单结果"
+      ],
+      "expected": "两张订单分别属于两个购物车",
+      "oracle": "测试夹具验收条件及release版本已接受行为：同购物车幂等，不同购物车独立",
+      "required_evidence": [
+        "log"
+      ],
+      "status": "pass",
+      "current": true,
+      "result": {
+        "status": "pass",
+        "summary": "不同购物车创建两张独立订单，接口断言通过",
+        "severity": null,
+        "attribution": "unknown",
+        "reason": null,
+        "recorded_at": "2026-11-10T09:05:48.219087+00:00",
+        "epoch": 3,
+        "environment_id": "ee3b0b962620",
+        "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+        "attempts": [
+          {
+            "index": 1,
+            "outcome": "pass",
+            "actual": "两个不同key分别保存，订单数量为2",
+            "evidence_ids": [
+              "E-484010874ab3"
+            ]
+          }
+        ],
+        "evidence_gaps": [],
+        "advisories": []
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-18892a9c9a9a",
+      "scenario_id": "S2",
+      "title": "同一购物车重复提交保持幂等",
+      "severity": "high",
+      "resolution": "resolved",
+      "status": "fail",
+      "attribution": "introduced",
+      "summary": "重复请求产生重复订单",
+      "expected": "订单数量为1",
+      "oracle": "测试夹具验收条件及release版本已接受行为：同购物车幂等，不同购物车独立",
+      "preconditions": [
+        "本轮独立内存测试数据，每次尝试先重置，无外部服务"
+      ],
+      "steps": [
+        "重置后连续两次提交同一购物车，检查页面和保存结果"
+      ],
+      "attempts": [
+        {
+          "index": 1,
+          "outcome": "fail",
+          "actual": "重置后两次提交，实际订单数量为2，违反幂等要求",
+          "evidence_ids": [
+            "E-40d2b8b19881",
+            "E-5dcda21ac27c",
+            "E-e2975b4a3b63"
+          ]
+        },
+        {
+          "index": 2,
+          "outcome": "fail",
+          "actual": "重置后两次提交，实际订单数量为2，违反幂等要求",
+          "evidence_ids": [
+            "E-7aceca3d1473",
+            "E-b33aae4ba8c5",
+            "E-19dee5e790c5"
+          ]
+        }
+      ],
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "code_fingerprint": "d0ac1e05cc53c3e9710f05c235d0baf06f91671ba66e4b32235fda8d6fe2634c",
+      "repair_ids": [
+        "R-5b181eb7e8be"
+      ]
+    }
+  ],
+  "repairs": [
+    {
+      "id": "R-5b181eb7e8be",
+      "scenario_id": "S2",
+      "summary": "恢复购物车标识幂等检查",
+      "root_cause": "PR移除了重复购物车检测，重复请求分别追加订单",
+      "files": [
+        "app.py"
+      ],
+      "before_command_id": "C-0a91183be31b",
+      "after_command_id": "C-9ecf970089b2",
+      "visual_reason": null,
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "recorded_at": "2026-11-10T09:05:48.580094+00:00",
+      "current": true
+    }
+  ],
+  "commands": [
+    {
+      "id": "C-9ae8707cc216",
+      "scenario_id": "S1",
+      "phase": "check",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "-c",
+        "import urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\nresult=post('/orders','single-cart'); assert len(result)==1; print('PASS: one submission creates one order')"
+      ],
+      "started_at": "2026-11-10T08:59:05.178202+00:00",
+      "finished_at": "2026-11-10T08:59:05.358763+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-60c9b30b2b41",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "code_fingerprint": "d0ac1e05cc53c3e9710f05c235d0baf06f91671ba66e4b32235fda8d6fe2634c",
+      "workspace_unchanged": true,
+      "current": false
+    },
+    {
+      "id": "C-0a91183be31b",
+      "scenario_id": "S2",
+      "phase": "before",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "regression.py"
+      ],
+      "started_at": "2026-11-10T08:59:05.453198+00:00",
+      "finished_at": "2026-11-10T08:59:05.627084+00:00",
+      "exit_code": 1,
+      "evidence_id": "E-e2975b4a3b63",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "code_fingerprint": "d0ac1e05cc53c3e9710f05c235d0baf06f91671ba66e4b32235fda8d6fe2634c",
+      "workspace_unchanged": true,
+      "current": false
+    },
+    {
+      "id": "C-9a3355b1871d",
+      "scenario_id": "S2",
+      "phase": "check",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "regression.py"
+      ],
+      "started_at": "2026-11-10T08:59:05.731792+00:00",
+      "finished_at": "2026-11-10T08:59:05.902000+00:00",
+      "exit_code": 1,
+      "evidence_id": "E-19dee5e790c5",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "code_fingerprint": "d0ac1e05cc53c3e9710f05c235d0baf06f91671ba66e4b32235fda8d6fe2634c",
+      "workspace_unchanged": true,
+      "current": false
+    },
+    {
+      "id": "C-e764c4c91b9b",
+      "scenario_id": "S3",
+      "phase": "check",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "-c",
+        "import urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\npost('/orders','first-cart'); result=post('/orders','second-cart'); assert len(result)==2 and {o['key'] for o in result}=={'first-cart','second-cart'}; print('PASS: distinct carts stay independent')"
+      ],
+      "started_at": "2026-11-10T08:59:06.004235+00:00",
+      "finished_at": "2026-11-10T08:59:06.145102+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-69fd3915445b",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "code_fingerprint": "d0ac1e05cc53c3e9710f05c235d0baf06f91671ba66e4b32235fda8d6fe2634c",
+      "workspace_unchanged": true,
+      "current": false
+    },
+    {
+      "id": "C-acdcdba6c431",
+      "scenario_id": "S1",
+      "phase": "check",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "-c",
+        "import urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\nresult=post('/orders','single-cart'); assert len(result)==1; print('PASS: one submission creates one order')"
+      ],
+      "started_at": "2026-11-10T09:03:08.304993+00:00",
+      "finished_at": "2026-11-10T09:03:08.476342+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-0daa5b75a0ae",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+      "workspace_unchanged": true,
+      "current": true
+    },
+    {
+      "id": "C-9ecf970089b2",
+      "scenario_id": "S2",
+      "phase": "after",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "regression.py"
+      ],
+      "started_at": "2026-11-10T09:03:08.570755+00:00",
+      "finished_at": "2026-11-10T09:03:08.709086+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-401cbefe5404",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+      "workspace_unchanged": true,
+      "current": true
+    },
+    {
+      "id": "C-974bb23789e3",
+      "scenario_id": "S3",
+      "phase": "check",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "-c",
+        "import urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\npost('/orders','first-cart'); result=post('/orders','second-cart'); assert len(result)==2 and {o['key'] for o in result}=={'first-cart','second-cart'}; print('PASS: distinct carts stay independent')"
+      ],
+      "started_at": "2026-11-10T09:03:08.803804+00:00",
+      "finished_at": "2026-11-10T09:03:08.938947+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-484010874ab3",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+      "workspace_unchanged": true,
+      "current": true
+    },
+    {
+      "id": "C-23a2aeec6ae2",
+      "scenario_id": null,
+      "phase": "suite",
+      "argv": [
+        "/Users/decent/.pyenv/versions/3.14.1/bin/python3",
+        "-B",
+        "-c",
+        "import urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\nresult=post('/orders','single-cart'); assert len(result)==1; print('PASS: one submission creates one order')\nimport urllib.request,json,os\nurl=os.environ['QA_FIXTURE_URL']\ndef post(path,key):\n return json.load(urllib.request.urlopen(urllib.request.Request(url+path,data=json.dumps({'key':key}).encode(),method='POST')))\npost('/reset','')\npost('/orders','first-cart'); result=post('/orders','second-cart'); assert len(result)==2 and {o['key'] for o in result}=={'first-cart','second-cart'}; print('PASS: distinct carts stay independent')\nimport subprocess,sys; subprocess.run([sys.executable,\"-B\",\"regression.py\"],check=True)"
+      ],
+      "started_at": "2026-11-10T09:05:48.812744+00:00",
+      "finished_at": "2026-11-10T09:05:49.308937+00:00",
+      "exit_code": 0,
+      "evidence_id": "E-05a67ee27bcd",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "code_fingerprint": "e1d7c58237cb8f9a5c63d5bb585e8fbf52a2adf9f7138ab13f5ebb91a1d6a0b6",
+      "workspace_unchanged": true,
+      "current": true
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E-cded54a0c6b3",
+      "scenario_id": null,
+      "step": null,
+      "kind": "log",
+      "note": "实际服务启动日志，包含隔离工作区、提交与指纹",
+      "path": "artifacts/E-cded54a0c6b3.log",
+      "sha256": "96385a77524aac3ac5a15181747bca4006376ae9c7cb11618efb0e8da54a00fa",
+      "bytes": 468,
+      "captured_at": "2026-11-10T08:59:04.978481+00:00",
+      "epoch": 2,
+      "environment_id": null,
+      "current": false
+    },
+    {
+      "id": "E-60c9b30b2b41",
+      "scenario_id": "S1",
+      "step": null,
+      "kind": "log",
+      "note": "command C-9ae8707cc216, exit 0",
+      "path": "artifacts/E-60c9b30b2b41.log",
+      "sha256": "a660a0b063674d14a7ea4e26896a829ffbfa1feaab46964dfd3eb9f600880b74",
+      "bytes": 39,
+      "captured_at": "2026-11-10T08:59:05.256384+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-e2975b4a3b63",
+      "scenario_id": "S2",
+      "step": null,
+      "kind": "log",
+      "note": "command C-0a91183be31b, exit 1",
+      "path": "artifacts/E-e2975b4a3b63.log",
+      "sha256": "ab91fcecc0449be59dcad030420ed58e15e59b6e73625368faef7a371e17a3f1",
+      "bytes": 274,
+      "captured_at": "2026-11-10T08:59:05.527679+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-19dee5e790c5",
+      "scenario_id": "S2",
+      "step": null,
+      "kind": "log",
+      "note": "command C-9a3355b1871d, exit 1",
+      "path": "artifacts/E-19dee5e790c5.log",
+      "sha256": "ab91fcecc0449be59dcad030420ed58e15e59b6e73625368faef7a371e17a3f1",
+      "bytes": 274,
+      "captured_at": "2026-11-10T08:59:05.805650+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-69fd3915445b",
+      "scenario_id": "S3",
+      "step": null,
+      "kind": "log",
+      "note": "command C-e764c4c91b9b, exit 0",
+      "path": "artifacts/E-69fd3915445b.log",
+      "sha256": "ee12aa87ee7fceda38cdb9739e85c8f277b7a9f066d24b15b01a650f571f5f25",
+      "bytes": 38,
+      "captured_at": "2026-11-10T08:59:06.045806+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-b35f722afe09",
+      "scenario_id": "S1",
+      "step": 1,
+      "kind": "screenshot",
+      "note": "实际浏览器一次提交后页面订单数量为1",
+      "path": "artifacts/E-b35f722afe09.png",
+      "sha256": "b06ccb13b8f486b0010117ee4c8ad662bf270262986758e843dd1a052d2ce3f4",
+      "bytes": 25942,
+      "captured_at": "2026-11-10T09:02:24.859071+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-40d2b8b19881",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "screenshot",
+      "note": "重复提交页面显示订单数量2",
+      "path": "artifacts/E-40d2b8b19881.png",
+      "sha256": "1d2739fa85120b5515d677dad5c6036558faebfe87f92ea096fea33af6679710",
+      "bytes": 26752,
+      "captured_at": "2026-11-10T09:02:25.078006+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-5dcda21ac27c",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "video",
+      "note": "实际浏览器重复提交与查看结果全过程",
+      "path": "artifacts/E-5dcda21ac27c.webm",
+      "sha256": "517a6126ddb457eaf5ef5752264bc179bd17c631d0aec488ed43abfdb7ba7ad3",
+      "bytes": 79101,
+      "captured_at": "2026-11-10T09:02:25.078446+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-7aceca3d1473",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "screenshot",
+      "note": "重复提交页面显示订单数量2",
+      "path": "artifacts/E-7aceca3d1473.png",
+      "sha256": "1d2739fa85120b5515d677dad5c6036558faebfe87f92ea096fea33af6679710",
+      "bytes": 26752,
+      "captured_at": "2026-11-10T09:02:25.078630+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-b33aae4ba8c5",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "video",
+      "note": "实际浏览器重复提交与查看结果全过程",
+      "path": "artifacts/E-b33aae4ba8c5.webm",
+      "sha256": "f4bede5005c167323cd38c51fb02e1d4fa502fefcf48eb2d68a28e3db369fb2a",
+      "bytes": 66432,
+      "captured_at": "2026-11-10T09:02:25.078820+00:00",
+      "epoch": 2,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-f09d90a44e8e",
+      "scenario_id": null,
+      "step": null,
+      "kind": "log",
+      "note": "实际服务启动日志，包含隔离工作区、提交与指纹",
+      "path": "artifacts/E-f09d90a44e8e.log",
+      "sha256": "99bd0079c8995e913fbf4478067b31bd78e2b96f16d51ef6b8e4093aa24a56ed",
+      "bytes": 336,
+      "captured_at": "2026-11-10T09:03:08.108067+00:00",
+      "epoch": 3,
+      "environment_id": "90ec2c61e2e0",
+      "current": false
+    },
+    {
+      "id": "E-0daa5b75a0ae",
+      "scenario_id": "S1",
+      "step": null,
+      "kind": "log",
+      "note": "command C-acdcdba6c431, exit 0",
+      "path": "artifacts/E-0daa5b75a0ae.log",
+      "sha256": "a660a0b063674d14a7ea4e26896a829ffbfa1feaab46964dfd3eb9f600880b74",
+      "bytes": 39,
+      "captured_at": "2026-11-10T09:03:08.380304+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-401cbefe5404",
+      "scenario_id": "S2",
+      "step": null,
+      "kind": "log",
+      "note": "command C-9ecf970089b2, exit 0",
+      "path": "artifacts/E-401cbefe5404.log",
+      "sha256": "2a6aec28865904f753e72ec22d0fc91738c4fc1f9e3d0b1500864a9deb1cfffe",
+      "bytes": 53,
+      "captured_at": "2026-11-10T09:03:08.612250+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-484010874ab3",
+      "scenario_id": "S3",
+      "step": null,
+      "kind": "log",
+      "note": "command C-974bb23789e3, exit 0",
+      "path": "artifacts/E-484010874ab3.log",
+      "sha256": "ee12aa87ee7fceda38cdb9739e85c8f277b7a9f066d24b15b01a650f571f5f25",
+      "bytes": 38,
+      "captured_at": "2026-11-10T09:03:08.842154+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-dc9c0ddccfe4",
+      "scenario_id": "S1",
+      "step": 1,
+      "kind": "screenshot",
+      "note": "实际浏览器一次提交后页面订单数量为1",
+      "path": "artifacts/E-dc9c0ddccfe4.png",
+      "sha256": "149a2734d3f7e0250b6823fa32476174de96e74605bc6c6d5bbee3a5c106c680",
+      "bytes": 26561,
+      "captured_at": "2026-11-10T09:05:47.653643+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-5c3880ff3e97",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "screenshot",
+      "note": "重复提交页面显示订单数量1",
+      "path": "artifacts/E-5c3880ff3e97.png",
+      "sha256": "149a2734d3f7e0250b6823fa32476174de96e74605bc6c6d5bbee3a5c106c680",
+      "bytes": 26561,
+      "captured_at": "2026-11-10T09:05:48.220391+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-abc09358f879",
+      "scenario_id": "S2",
+      "step": 1,
+      "kind": "video",
+      "note": "实际浏览器重复提交与查看结果全过程",
+      "path": "artifacts/E-abc09358f879.webm",
+      "sha256": "abb3cdadfc8ca4e106e2276c336b1646ec94ff9bb79702aadbd84c0f52a6566b",
+      "bytes": 65528,
+      "captured_at": "2026-11-10T09:05:48.220670+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    },
+    {
+      "id": "E-05a67ee27bcd",
+      "scenario_id": null,
+      "step": null,
+      "kind": "log",
+      "note": "command C-23a2aeec6ae2, exit 0",
+      "path": "artifacts/E-05a67ee27bcd.log",
+      "sha256": "926d6955f05ce4e6f6d58dc2e2c0299571a4fa6acf13c2c45f5fdc6482fae85f",
+      "bytes": 130,
+      "captured_at": "2026-11-10T09:05:49.054148+00:00",
+      "epoch": 3,
+      "environment_id": "ee3b0b962620",
+      "current": true
+    }
+  ],
+  "timeline": [
+    {
+      "at": "2026-11-10T08:57:00.751477+00:00",
+      "event": "plan replaced",
+      "scenario_id": null,
+      "epoch": 1,
+      "summary": "plan replaced",
+      "evidence_ids": []
+    },
+    {
+      "at": "2026-11-10T09:02:46.454156+00:00",
+      "event": "code refreshed; all results need revalidation",
+      "scenario_id": null,
+      "epoch": 2,
+      "summary": "code refreshed; all results need revalidation",
+      "evidence_ids": []
+    },
+    {
+      "at": "2026-11-10T09:03:08.206865+00:00",
+      "event": "environment replaced",
+      "scenario_id": null,
+      "epoch": null,
+      "summary": "environment replaced",
+      "evidence_ids": []
+    },
+    {
+      "at": "2026-11-10T09:05:48.018842+00:00",
+      "event": "scenario retested",
+      "scenario_id": "S1",
+      "epoch": 2,
+      "summary": "正常提交一张订单，页面和接口均通过",
+      "evidence_ids": [
+        "E-b35f722afe09",
+        "E-60c9b30b2b41"
+      ]
+    },
+    {
+      "at": "2026-11-10T09:05:48.219041+00:00",
+      "event": "scenario retested",
+      "scenario_id": "S3",
+      "epoch": 2,
+      "summary": "不同购物车创建两张独立订单，接口断言通过",
+      "evidence_ids": [
+        "E-69fd3915445b"
+      ]
+    },
+    {
+      "at": "2026-11-10T09:05:48.445458+00:00",
+      "event": "scenario retested",
+      "scenario_id": "S2",
+      "epoch": 2,
+      "summary": "重复请求产生重复订单",
+      "evidence_ids": [
+        "E-40d2b8b19881",
+        "E-5dcda21ac27c",
+        "E-e2975b4a3b63",
+        "E-7aceca3d1473",
+        "E-b33aae4ba8c5",
+        "E-19dee5e790c5"
+      ]
+    }
+  ],
+  "checks": {
+    "errors": [],
+    "gaps": [],
+    "suite_command_id": "C-23a2aeec6ae2"
+  }
+}
