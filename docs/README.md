@@ -12,7 +12,7 @@ OpenLore 的标准部署是 **云端控制服务 + 独立 AI Runner**。使用�
 | 查看业务规则                     | [功能总览](product/feature/index.md)                                                                         |
 | 查看架构决策依据与本次文档核查   | [Actions/Runner 调研](research/04-actions-runner.md) · [文档核查记录](architecture/documentation-audit.md)   |
 
-全部调研见[调研目录](research/README.md)，包含开源参考、AI 采集、原型与 Runner 方案。
+全部调研见[调研目录](research/README.md)，包含开源参考、AI 采集、原型、Runner 方案与[测试 Skills 调研](research/06-testing-skills/README.md)。
 
 ## 文档职责
 

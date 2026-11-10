@@ -1,0 +1,124 @@
+{
+  "checked_on": "2026-11-10",
+  "scope": "7 synthetic local fixture probes; no browser QA, remote git source, application repair or commit execution",
+  "script_sha256": "39c36946cd1a59ca564e60e4e049934831eb4bfb5cfce9de32ab6b4b522ef228",
+  "cases": [
+    {
+      "case": "no-config",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [],
+        "warnings": [],
+        "errors": [],
+        "entries": 0
+      }
+    },
+    {
+      "case": "local-pack",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [
+          {
+            "id": "common",
+            "dir": "<TEMP>/local-pack/packs/team",
+            "nested_rule_shaped": 0
+          }
+        ],
+        "warnings": [],
+        "errors": [],
+        "entries": 1
+      }
+    },
+    {
+      "case": "duplicate-id",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [
+          {
+            "id": "common",
+            "dir": "<TEMP>/duplicate-id/packs/team",
+            "nested_rule_shaped": 0
+          }
+        ],
+        "warnings": [],
+        "errors": [
+          "duplicate pack id `common`: config.local.yaml:2 ignored, config.yaml:2 kept -- rename one with `id:`"
+        ],
+        "entries": 2
+      }
+    },
+    {
+      "case": "malformed-config",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [],
+        "warnings": [],
+        "errors": [
+          "config.yaml:1: `packs:` must be a block list of `- source: ...` entries (got `packs: invalid-inline-value`)"
+        ],
+        "entries": 0
+      }
+    },
+    {
+      "case": "nested-storage",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [
+          {
+            "id": "common",
+            "dir": "<TEMP>/nested-storage/packs/team",
+            "nested_rule_shaped": 1
+          }
+        ],
+        "warnings": [],
+        "errors": [],
+        "entries": 1
+      }
+    },
+    {
+      "case": "escaping-symlink",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "roots": [],
+        "warnings": [],
+        "errors": [
+          "config.yaml:2: pack `common` not published -- `outside.txt` link(s) outside the source"
+        ],
+        "entries": 1
+      }
+    },
+    {
+      "case": "declared-only",
+      "passed": true,
+      "exit_code": 0,
+      "output": {
+        "declared": true,
+        "entries": 1,
+        "errors": []
+      }
+    }
+  ],
+  "method": {
+    "command": "python3 skills-reference/test-dogfood/ce-dogfood/scripts/packs-resolve.py [--declared-only]",
+    "fixture_environment": "Each case uses a separate temporary repository initialized with git init, without commits. No remote pack source is configured.",
+    "rule_frontmatter": {
+      "title": "Test rule",
+      "applies_when": "testing checkout"
+    },
+    "cases": {
+      "no-config": "No config.yaml or config.local.yaml.",
+      "local-pack": "config.yaml declares source packs/team with id common; packs/team/rule.md is a valid rule.",
+      "duplicate-id": "Same as local-pack; config.local.yaml additionally declares packs/personal with the same id common and a valid rule.",
+      "malformed-config": "config.yaml contains packs: invalid-inline-value.",
+      "nested-storage": "Same as local-pack; add packs/team/storage/nested.md with valid rule frontmatter.",
+      "escaping-symlink": "Same as local-pack; add packs/team/outside.txt symlink to a synthetic file outside the repository.",
+      "declared-only": "config.yaml declares source path-not-present; run --declared-only."
+    }
+  }
+}

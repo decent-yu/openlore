@@ -1,0 +1,128 @@
+{
+  "checked_on": "2026-11-10",
+  "local_commit": "2c02305b59f81c19846bb5fcf713d69206bf40c4",
+  "upstream_commit": "not recorded by original download; do not infer from main",
+  "files": [
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/SKILL.md",
+      "sha256": "efb1550fd925f99af105a42573a35d0e6d68c618e2fddd9c1c25fcfc2a555e19",
+      "bytes": 7323,
+      "lines": 60,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/UPSTREAM.md",
+      "sha256": "26d99c6b3139bdc21b5dfcb1897e0585d7dada255dc47518430c24f63e2b98dd",
+      "bytes": 890,
+      "lines": 14,
+      "kind": "local provenance note"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/agents/openai.yaml",
+      "sha256": "a1499d95abd8447558c535fe5554adcc3c9b988a0a39264a6283d430effe1e94",
+      "bytes": 43,
+      "lines": 2,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/references/agent-browser-driver.md",
+      "sha256": "d54798f680d950797cb420e22012e18d12476c0348b8246b808ac65e63efdd92",
+      "bytes": 1780,
+      "lines": 40,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/references/dogfood-report-template.md",
+      "sha256": "2453bf6cb265dff0057af8e2d9ea92472f5fa6b70f2f0241592608dfe66af741",
+      "bytes": 5804,
+      "lines": 97,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/references/phases.md",
+      "sha256": "cb9eea6b5f31e803f23b93fc8d41cd7d1889cd8168b654b68234915579bd8d12",
+      "bytes": 23247,
+      "lines": 159,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/references/test-matrix-taxonomy.md",
+      "sha256": "f7ade1a3101d3768baba02444782d67d760ff587bd0816288f367d5460c62f29",
+      "bytes": 3924,
+      "lines": 62,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/ce-dogfood/scripts/packs-resolve.py",
+      "sha256": "39c36946cd1a59ca564e60e4e049934831eb4bfb5cfce9de32ab6b4b522ef228",
+      "bytes": 31561,
+      "lines": 737,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/dogfood/SKILL.md",
+      "sha256": "83afc0f6ce5598ae56ab06c7e18090d6769ec0a9a2abb3a12df240a81c77ed02",
+      "bytes": 10845,
+      "lines": 224,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/dogfood/UPSTREAM.md",
+      "sha256": "49e50fd3b152a7bbf25c00ea7c842ee1a9b3055b6ea5c930a4d101cb84612ae9",
+      "bytes": 579,
+      "lines": 12,
+      "kind": "local provenance note"
+    },
+    {
+      "path": "skills-reference/test-dogfood/dogfood/references/issue-taxonomy.md",
+      "sha256": "dee7e925f7fe001903de6cc14f9656bcda90d069bbf65a2273f22202efebba09",
+      "bytes": 3626,
+      "lines": 109,
+      "kind": "downloaded upstream file"
+    },
+    {
+      "path": "skills-reference/test-dogfood/dogfood/templates/dogfood-report-template.md",
+      "sha256": "55eef9286e32e595dcfca30db76352e9f1d149a78b60b54644eb701072364f35",
+      "bytes": 1470,
+      "lines": 53,
+      "kind": "downloaded upstream file"
+    }
+  ],
+  "web_sources": [
+    {
+      "url": "https://github.com/vercel-labs/agent-browser/blob/main/skill-data/dogfood/SKILL.md",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://github.com/EveryInc/compound-engineering-plugin/blob/main/skills/ce-dogfood/SKILL.md",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://github.com/EveryInc/compound-engineering-plugin/blob/main/skills/ce-dogfood/references/phases.md",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://github.com/EveryInc/compound-engineering-plugin/blob/main/skills/ce-dogfood/scripts/packs-resolve.py",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://agent-browser.dev/skills",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://agent-browser.dev/snapshots",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    },
+    {
+      "url": "https://agent-browser.dev/recording",
+      "checked_on": "2026-11-10",
+      "method": "primary source page read; not a bytewise upstream comparison"
+    }
+  ]
+}
