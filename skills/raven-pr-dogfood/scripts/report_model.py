@@ -55,7 +55,7 @@ def validate_report(report):
         if len(out)!=len(items):raise ValueError(f'duplicate {label} id')
         return out
     evidence=index(report['evidence'],'evidence');scenarios=index(report['scenarios'],'scenario')
-    flows=index(report['flows'],'flow');commands=index(report['commands'],'command');repairs=index(report['repairs'],'repair')
+    flows=index(report['flows'],'flow');commands=index(report['commands'],'command');retests=index(report['retests'],'retest')
     index(report['findings'],'finding')
     def refs(ids,owner):
         if any(i not in evidence for i in ids):raise ValueError(f'{owner}: dangling evidence reference')
@@ -73,14 +73,24 @@ def validate_report(report):
             for a in c['result']['advisories']:refs(a['evidence_ids'],c['id'])
     for f in report['findings']:
         for a in f['attempts']:refs(a['evidence_ids'],f['id'])
-        if any(i not in repairs for i in f['repair_ids']):raise ValueError('unknown repair reference')
-        if f['resolution']=='resolved' and not any(repairs[i]['current'] and repairs[i]['scenario_id']==f['scenario_id'] for i in f['repair_ids']):
-            raise ValueError('resolved finding has no current repair')
+        if any(i not in retests for i in f['retest_ids']):raise ValueError('unknown retest reference')
+        if f['resolution']=='retested_pass':
+            case=scenarios.get(f['scenario_id'])
+            linked=[retests[i] for i in f['retest_ids']]
+            if not case or not case['current'] or case['status']!='pass' or not linked:
+                raise ValueError('retest needs a current successful scenario')
+            if case['expected']!=f['expected'] or case['oracle']!=f['oracle']:
+                raise ValueError('changed expectations cannot prove the old finding passed')
+            if not any(t['finding_id']==f['id'] and t['scenario_id']==f['scenario_id'] and
+                       t['previous_commit']==f['tested_commit'] and t['tested_commit']==report['target']['tested_commit'] and
+                       t['tested_commit']!=t['previous_commit'] for t in linked):
+                raise ValueError('retest must refer to a different submitted revision')
     for c in commands.values():
         if c['evidence_id']:refs([c['evidence_id']],c['id'])
-    for r in repairs.values():
-        for k in ['before_command_id','after_command_id']:
-            if r[k] and r[k] not in commands:raise ValueError('unknown regression command')
+    for t in retests.values():
+        refs(t['evidence_ids'],t['id'])
+        if not t['evidence_ids'] or any(not evidence[e]['current'] or evidence[e]['scenario_id']!=t['scenario_id'] for e in t['evidence_ids']):
+            raise ValueError('retest evidence must be current and scenario-bound')
     if report['environment']:refs(report['environment']['evidence_ids'],'environment')
     for event in report['timeline']:refs(event['evidence_ids'],'timeline')
     if report['checks']['suite_command_id'] and report['checks']['suite_command_id'] not in commands:
@@ -93,7 +103,7 @@ def validate_report(report):
     expected={s:counts[s] for s in STATUSES}
     if summary['total']!=len(scenarios) or summary['status_counts']!=expected:raise ValueError('scenario totals disagree')
     finding_counts=Counter(f['resolution'] for f in report['findings'])
-    for k,status in [('open_findings','open'),('resolved_findings','resolved'),('historical_findings','historical')]:
+    for k,status in [('open_findings','open'),('retested_findings','retested_pass'),('historical_findings','historical')]:
         if summary[k]!=finding_counts[status]:raise ValueError('finding totals disagree')
     severity=Counter(f['severity'] or 'unspecified' for f in report['findings'])
     if summary['findings_total']!=len(report['findings']) or summary['severity_counts']!={s:severity[s] for s in SEVERITIES}:
@@ -118,7 +128,8 @@ def build_report(state, check):
         if not r:return None
         return {'status':r['status'],'summary':r['summary'],'severity':r.get('severity'),'attribution':r.get('attribution','unknown'),
                 'reason':r.get('reason'),'recorded_at':r.get('recorded_at'),'epoch':r['epoch'],'environment_id':r.get('environment'),
-                'code_fingerprint':r.get('code_fingerprint'),'attempts':[{'index':i,'outcome':a['outcome'],'actual':a['actual'],'evidence_ids':a['evidence']} for i,a in enumerate(r.get('attempts',[]),1)],
+                'code_fingerprint':r.get('code_fingerprint'),'tested_commit':r.get('tested_commit'),
+                'cause_hypothesis':r.get('cause_hypothesis'),'recommendation':r.get('recommendation'),'attempts':[{'index':i,'outcome':a['outcome'],'actual':a['actual'],'evidence_ids':a['evidence']} for i,a in enumerate(r.get('attempts',[]),1)],
                 'evidence_gaps':r.get('evidence_gaps',[]),'advisories':[{'summary':a['summary'],'evidence_ids':a['evidence']} for a in r.get('advisories',[])]}
     plan=state.get('plan') or {};current_specs={s['id']:s for s in plan.get('scenarios',[])}
     specs=dict(current_specs)
@@ -137,9 +148,7 @@ def build_report(state, check):
                'finished_at':c.get('finished_at'),'exit_code':c['exit_code'],'evidence_id':c.get('evidence'),'epoch':c['epoch'],
                'environment_id':c.get('environment'),'code_fingerprint':c['code']['fingerprint'],
                'workspace_unchanged':c.get('workspace_unchanged'),'current':fresh(c)} for c in state['commands'].values()]
-    repairs=[{'id':r['id'],'scenario_id':r['scenario'],'summary':r['summary'],'root_cause':r['root_cause'],'files':r['files'],
-              'before_command_id':r.get('before'),'after_command_id':r.get('after'),'visual_reason':r.get('visual_reason'),
-              'epoch':r['epoch'],'environment_id':r.get('environment'),'recorded_at':r['recorded_at'],'current':fresh(r)} for r in state['repairs']]
+    retests=[]
     # Collapse cumulative updates in one epoch/environment into one finding, keeping its latest failure.
     candidates=[(h['scenario'],h['result']) for h in state['history'] if h.get('scenario') and h.get('result')]
     candidates+=list(state['results'].items())
@@ -149,16 +158,27 @@ def build_report(state, check):
     findings=[]
     for (ident,old_epoch,environment),r in groups.items():
         s=r.get('scenario_snapshot') or specs.get(ident,{})
-        linked=[p['id'] for p in repairs if p['scenario_id']==ident and p['current']]
         current_result=state['results'].get(ident)
-        resolved=bool(linked and current_result and fresh(current_result) and current_result['status']=='pass')
+        current_spec=current_specs.get(ident,{})
+        passed_new=bool(current_result and fresh(current_result) and current_result['status']=='pass' and
+                        r.get('tested_commit') and r['tested_commit']!=state['code']['head'] and
+                        current_spec.get('expected')==s.get('expected') and current_spec.get('oracle')==s.get('oracle'))
         f_id='F-'+hashlib.sha256(json.dumps([ident,old_epoch,environment]).encode()).hexdigest()[:12]
+        linked=[]
+        if passed_new:
+            retest_id='T-'+hashlib.sha256((f_id+state['code']['head']).encode()).hexdigest()[:12]
+            linked=[retest_id]
+            retests.append({'id':retest_id,'finding_id':f_id,'scenario_id':ident,
+                'previous_commit':r['tested_commit'],'tested_commit':state['code']['head'],
+                'summary':current_result['summary'],'recorded_at':current_result['recorded_at'],
+                'evidence_ids':list(dict.fromkeys(e for a in current_result['attempts'] for e in a['evidence']))})
         findings.append({'id':f_id,'scenario_id':ident,'title':s.get('title',ident),'severity':r.get('severity'),
-                         'resolution':'resolved' if resolved else 'open' if fresh(r) else 'historical','status':r['status'],
+                         'resolution':'retested_pass' if passed_new else 'open' if fresh(r) else 'historical','status':r['status'],
                          'attribution':r.get('attribution','unknown'),'summary':r['summary'],'expected':s.get('expected',''),
                          'oracle':s.get('oracle',''),'preconditions':s.get('preconditions',[]),'steps':s.get('steps',[]),
                          'attempts':result(r)['attempts'],'epoch':old_epoch,'environment_id':environment,
-                         'code_fingerprint':r.get('code_fingerprint'),'repair_ids':linked if resolved else []})
+                         'code_fingerprint':r.get('code_fingerprint'),'tested_commit':r.get('tested_commit'),
+                         'cause_hypothesis':r.get('cause_hypothesis'),'recommendation':r.get('recommendation'),'retest_ids':linked})
     timeline=[]
     for h in state['history']:
         r=h.get('result')
@@ -171,8 +191,8 @@ def build_report(state, check):
     public_env=None if not env else {'browser':env['browser'],'url':env.get('url'),'identity_proof':env['identity_proof'],
               'dataset':env['dataset'],'capabilities':env['capabilities'],'evidence_ids':env['proof'],'epoch':env['epoch'],
               'environment_id':env['id'],'recorded_at':env['recorded_at'],'current':env['epoch']==epoch}
-    report={'schema_version':'1.0.0','metadata':{'report_id':'RPD-'+rid,'title':'Raven PR Dogfood 测试报告',
-              'generated_at':datetime.now(timezone.utc).isoformat(),'mode':state['mode']},
+    report={'schema_version':'2.0.0','metadata':{'report_id':'RPD-'+rid,'title':'Raven PR Dogfood 测试报告',
+              'generated_at':datetime.now(timezone.utc).isoformat()},
             'target':{'kind':'pull_request' if identity.get('pr') else 'revision_comparison',
               'repository':identity.get('repository') or Path(identity.get('local_repository','local')).name,
               'title':ctx.get('request',{}).get('title'),'description':ctx.get('request',{}).get('body'),
@@ -183,10 +203,10 @@ def build_report(state, check):
               'dirty':state['code']['dirty'],'epoch':epoch},
             'summary':{'verdict':check['verdict'],'scope':check['scope'],'total':len(scenarios),
               'status_counts':{s:counts[s] for s in STATUSES},'findings_total':len(findings),'open_findings':resolutions['open'],
-              'resolved_findings':resolutions['resolved'],'historical_findings':resolutions['historical'],
+              'retested_findings':resolutions['retested_pass'],'historical_findings':resolutions['historical'],
               'severity_counts':{s:severity[s] for s in SEVERITIES}},
             'environment':public_env,'coverage':{'changed_files':ctx['changed_files'],'exclusions':plan.get('exclusions',[]),
               'unmapped_files':sorted(set(ctx['changed_files'])-mapped)},'flows':plan.get('flows',[]),'scenarios':scenarios,
-            'findings':findings,'repairs':repairs,'commands':commands,'evidence':evidence,'timeline':timeline,
+            'findings':findings,'retests':retests,'commands':commands,'evidence':evidence,'timeline':timeline,
             'checks':{'errors':check['errors'],'gaps':check['gaps'],'suite_command_id':check['suite']}}
     return validate_report(report)

@@ -87,27 +87,41 @@ class Reporting(unittest.TestCase):
         bad=deepcopy(data);bad['summary']['verdict']='READY_WITHIN_SCOPE'
         with self.assertRaises(ValueError):validate_report(bad)
 
-    def test_resolved_findings_and_original_evidence_survive_json_export(self):
-        # Use a fresh run epoch so previous pass evidence is not overwritten.
+    def test_developer_new_revision_retest_keeps_original_evidence(self):
         with qa.ledger(self.case.run) as (r,s):qa.refresh(r,s)
         self.case.environment()
-        before=self.case.command('import calc; assert calc.total() == 1','before')
+        first=self.case.command('import calc; assert calc.total() == 1')
         second=self.case.command('import calc; assert calc.total() == 1')
-        self.case.result('fail',[before,second],severity='high')
-        (self.case.work/'calc.py').write_text('def total():\n    return 1\n')
-        with qa.ledger(self.case.run) as (r,s):qa.refresh(r,s)
-        self.case.environment()
-        after=self.case.command('import calc; assert calc.total() == 1','after');self.case.result('pass',[after])
-        with qa.ledger(self.case.run) as (r,s):
-            qa.repair(r,s,'S1',{'summary':'fix','root_cause':'wrong return','files':['calc.py'],'before':before['id'],'after':after['id']})
+        self.case.result('fail',[first,second],severity='high',cause_hypothesis='return value may not match the requirement',recommendation='ask the author to inspect the calculation')
+        old_work=self.case.work;old_bytes=(old_work/'calc.py').read_bytes()
+        self.case.developer_revision('def total():\n    return 1 # developer commit\n')
+        current=self.case.command('import calc; assert calc.total() == 1');self.case.result('pass',[current])
         self.case.command(phase='suite');data=self.model()
-        self.assertEqual(data['summary']['resolved_findings'],1)
-        self.assertEqual(data['summary']['findings_total'],1)
+        self.assertEqual((old_work/'calc.py').read_bytes(),old_bytes)
+        self.assertEqual(data['summary']['retested_findings'],1)
         f=data['findings'][0]
-        self.assertEqual(f['resolution'],'resolved')
+        self.assertEqual(f['resolution'],'retested_pass')
         self.assertEqual(len(f['attempts']),2)
-        self.assertIn(before['evidence'],[e for a in f['attempts'] for e in a['evidence_ids']])
-        self.assertTrue(f['repair_ids'])
+        self.assertIn(first['evidence'],[e for a in f['attempts'] for e in a['evidence_ids']])
+        self.assertTrue(f['retest_ids'])
+        self.assertNotIn('repairs',data)
+        self.assertNotIn('mode',data['metadata'])
+        self.assertNotEqual(data['retests'][0]['previous_commit'],data['retests'][0]['tested_commit'])
+        invalid=deepcopy(data);invalid['retests'][0]['previous_commit']=invalid['retests'][0]['tested_commit']
+        with self.assertRaises(ValueError):validate_report(invalid)
+        changed_expectation=deepcopy(data);changed_expectation['scenarios'][0]['expected']='a different requirement'
+        with self.assertRaises(ValueError):validate_report(changed_expectation)
+
+    def test_same_revision_environment_retry_is_not_a_new_version_pass(self):
+        self.case.environment()
+        first=self.case.command('raise SystemExit(1)')
+        self.case.result('observed',[first],severity='high')
+        self.case.environment()
+        self.case.result('pass',[self.case.command()]);self.case.command(phase='suite')
+        data=self.model()
+        self.assertEqual(data['summary']['retested_findings'],0)
+        self.assertEqual(data['findings'][0]['resolution'],'historical')
+        self.assertFalse(data['retests'])
 
     def test_standalone_json_renderer_needs_no_git_or_run_state(self):
         data=self.model();folder=self.case.root/'standalone';folder.mkdir()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Durable PR QA ledger, evidence, command capture, repair proofs and reports (Python 3.10+, POSIX)."""
+"""Durable PR QA ledger, evidence, command capture, revision retests and reports (Python 3.10+, POSIX)."""
 import argparse
 from copy import deepcopy
 from contextlib import contextmanager
@@ -80,7 +80,7 @@ def ledger(run_dir):
         except BlockingIOError:
             raise QAError('another command owns this run; wait for it to finish')
         state = read_json(root / 'state.json')
-        require(state.get('schema_version') == 1, 'unsupported run schema')
+        require(state.get('schema_version') == 2, 'unsupported run schema')
         yield root, state
 
 
@@ -92,7 +92,7 @@ def persist(root, state):
 def current(state):
     code = snapshot(state['context']['workspace'])
     require(code['fingerprint'] == state['code']['fingerprint'],
-            'code changed: run refresh, re-attest environment, and re-test stale scenarios')
+            'code changed: prepare a clean updated PR context, then refresh and re-test')
     return code
 
 
@@ -154,7 +154,7 @@ def add_evidence(root, state, source, kind, note, scenario_id=None, step=None):
     return item
 
 
-def init_run(context_file, run_dir, mode):
+def init_run(context_file, run_dir):
     context = read_json(context_file)
     require(context.get('schema_version') == 1 and context.get('changed_files'), 'invalid PR context')
     code = snapshot(context['workspace'])
@@ -164,11 +164,11 @@ def init_run(context_file, run_dir, mode):
     require(not inside(root, context['workspace']), 'keep run artifacts outside the tested worktree')
     root.mkdir(parents=True, mode=0o700)
     (root / 'artifacts').mkdir(mode=0o700)
-    state = {'schema_version': 1, 'mode': mode, 'context': context, 'code': code, 'epoch': 1,
+    state = {'schema_version': 2, 'context': context, 'code': code, 'epoch': 1,
              'created_at': now(), 'plan': None, 'environment': None, 'history': [],
-             'results': {}, 'evidence': {}, 'commands': {}, 'repairs': []}
+             'results': {}, 'evidence': {}, 'commands': {}}
     persist(root, state)
-    return {'run': str(root), 'mode': mode, 'head': code['head']}
+    return {'run': str(root), 'head': code['head']}
 
 
 def set_plan(root, state, plan):
@@ -255,6 +255,8 @@ def record_result(root, state, ident, result):
     require(status not in {'blocked', 'skipped'} or text(result.get('reason')), 'blocked/skipped require a reason')
     require(status not in {'fail', 'flaky', 'observed'} or result.get('severity') in {'critical', 'high', 'medium', 'low'}, 'finding severity required')
     require(result.get('attribution', 'unknown') in {'introduced', 'preexisting', 'unknown'}, 'invalid finding attribution')
+    for field in ['cause_hypothesis', 'recommendation']:
+        require(result.get(field) is None or text(result[field]), f'{field} must be a nonempty string or null')
     gaps = result.get('evidence_gaps', [])
     require(isinstance(gaps, list) and all(g.get('kind') in KINDS and text(g.get('reason')) for g in gaps), 'invalid evidence gaps')
     for advisory in result.get('advisories', []):
@@ -269,7 +271,7 @@ def record_result(root, state, ident, result):
     previous = state['results'].get(ident)
     if previous:
         state['history'].append({'at': now(), 'reason': 'scenario retested', 'scenario': ident, 'result': previous})
-    state['results'][ident] = {**result, 'scenario_snapshot': deepcopy(s), 'code_fingerprint': state['code']['fingerprint'], 'recorded_at': now(), **stamp(state)}
+    state['results'][ident] = {**result, 'scenario_snapshot': deepcopy(s), 'tested_commit': state['code']['head'], 'code_fingerprint': state['code']['fingerprint'], 'recorded_at': now(), **stamp(state)}
     persist(root, state)
 
 
@@ -283,12 +285,8 @@ def refresh(root, state, context=None):
         state['context'] = context
     else:
         code = snapshot(old['workspace'])
-        require(state['mode'] == 'repair' or code['fingerprint'] == state['code']['fingerprint'],
-                'report mode does not accept source edits; prepare an updated PR context instead')
-        # Include repairs and new tests in coverage, not just the original PR file list.
-        changed = subprocess.check_output(['git', '-C', old['workspace'], 'diff', '--name-only', '--no-renames', '-z', old['merge_base'], '--'])
-        untracked = subprocess.check_output(['git', '-C', old['workspace'], 'ls-files', '--others', '--exclude-standard', '-z'])
-        state['context']['changed_files'] = sorted(set(old['changed_files']) | {os.fsdecode(p) for p in (changed + untracked).split(b'\0') if p})
+        require(code['fingerprint'] == state['code']['fingerprint'],
+                'source edits are not accepted; prepare a clean updated PR context to retest')
     state['history'].append({'at': now(), 'reason': 'code refreshed; all results need revalidation',
                              'epoch': state['epoch'], 'code': state['code'], 'context': old.copy()})
     state['code'] = code; state['epoch'] += 1
@@ -306,6 +304,7 @@ def redact(value):
 def execute(root, state, argv, ident, phase, timeout):
     current(state); valid_environment(state)
     require(argv and timeout > 0, 'command and positive timeout required')
+    require(phase in {'check', 'suite'}, 'only check and suite execution phases are supported')
     if ident:
         scenario(state, ident)
     require(phase == 'suite' or ident, 'non-suite commands require a scenario')
@@ -338,34 +337,6 @@ def execute(root, state, argv, ident, phase, timeout):
     return entry
 
 
-def repair(root, state, ident, proof):
-    current(state); valid_environment(state); scenario(state, ident)
-    require(state['mode'] == 'repair', 'repair proof requires repair mode authorized by the user')
-    require(text(proof.get('root_cause')) and text(proof.get('summary')) and strings(proof.get('files')), 'repair root cause, summary and files required')
-    history = [state['results'].get(ident)] + [h.get('result') for h in state['history'] if h.get('scenario') == ident]
-    require(any(r and r['status'] in {'fail', 'observed', 'flaky'} for r in history), 'record the original finding before a repair')
-    before = state['commands'].get(proof.get('before'))
-    after = state['commands'].get(proof.get('after'))
-    visual = proof.get('visual_reason')
-    if visual:
-        require(text(visual), 'explain why an automated regression is not meaningful')
-        require(not before and not after, 'choose an automated proof or a documented visual exception')
-    else:
-        require(before and after and before['scenario'] == after['scenario'] == ident, 'regression commands must belong to the repaired scenario')
-        require(before['phase'] == 'before' and after['phase'] == 'after' and before['exit_code'] not in (None, 0, 124, 130) and after['exit_code'] == 0,
-                'regression needs an actual failure before and success after; timeouts are not regression failures')
-        require(before['argv_sha256'] == after['argv_sha256'] and before['code']['fingerprint'] != after['code']['fingerprint'],
-                'use the same regression command against different code states')
-        require(before['workspace_unchanged'] and after['workspace_unchanged'] and fresh(after, state), 'regression commands must not modify code and after must be current')
-        require(before['finished_at'] <= after['started_at'], 'regression execution order is invalid')
-        artifact(root, state['evidence'][before['evidence']]); artifact(root, state['evidence'][after['evidence']])
-    result = state['results'].get(ident)
-    require(result and fresh(result, state) and result['status'] == 'pass', 'repair also needs a current successful scenario replay')
-    require(set(proof['files']) <= set(state['context']['changed_files']), 'repair files must be in the current coverage list')
-    state['repairs'].append({'id': 'R-' + sid(), 'scenario': ident, **proof, 'recorded_at': now(), **stamp(state)})
-    persist(root, state)
-
-
 def validate(root, state):
     errors, gaps, counts = [], [], {}
     try:
@@ -390,11 +361,6 @@ def validate(root, state):
         counts[status] = counts.get(status, 0) + 1
         if status not in STATUSES | {'pending'}:
             errors.append(f"{s['id']}: invalid result status")
-        if status == 'pass' and state['mode'] == 'repair':
-            findings = [h['result'] for h in state['history'] if h.get('scenario') == s['id'] and h.get('result', {}).get('status') in {'fail', 'flaky', 'observed'}]
-            changed_finding = any(f.get('code_fingerprint') != state['code']['fingerprint'] for f in findings)
-            if changed_finding and not any(p['scenario'] == s['id'] and fresh(p, state) for p in state['repairs']):
-                gaps.append(f"{s['id']}: repaired finding lacks a current regression proof")
         if status in {'pending', 'blocked', 'skipped', 'observed'}:
             gaps.append(f"{s['id']}: {status}" + (': ' + r.get('reason', '') if r else ''))
         if r and fresh(r, state) and r.get('evidence_gaps'):
@@ -409,8 +375,16 @@ def validate(root, state):
     suite = suites[-1] if suites else None
     if not suite:
         gaps.append('no current automated suite execution; absence is not a pass')
-    elif any(c['exit_code'] != 0 or not c.get('workspace_unchanged') for c in suites):
-        gaps.append('automated suite failed, was interrupted, or changed code')
+    else:
+        for c in suites:
+            if c['exit_code'] is None:
+                gaps.append(f"automated suite {c['id']} has not completed")
+            elif c['exit_code'] in (124, 130):
+                gaps.append(f"automated suite {c['id']} timed out or was interrupted (exit {c['exit_code']})")
+            elif c['exit_code'] != 0:
+                gaps.append(f"automated suite {c['id']} failed (exit {c['exit_code']})")
+            if c.get('workspace_unchanged') is False:
+                gaps.append(f"automated suite {c['id']} changed the source workspace")
     failed = bool(counts.get('fail') or counts.get('flaky') or any(c['exit_code'] not in (None, 0) for c in suites))
     verdict = 'INVALID' if errors else 'NOT_READY' if failed else 'INCOMPLETE' if gaps else 'READY_WITHIN_SCOPE'
     return {'verdict': verdict, 'code': state['code']['head'], 'epoch': state['epoch'],
@@ -429,13 +403,13 @@ def render(root, state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
-    p = sub.add_parser('init'); p.add_argument('--context', required=True); p.add_argument('--run', required=True); p.add_argument('--mode', choices=['report', 'repair'], default='report')
-    for name in ['plan', 'environment', 'result', 'repair']:
+    p = sub.add_parser('init'); p.add_argument('--context', required=True); p.add_argument('--run', required=True)
+    for name in ['plan', 'environment', 'result']:
         p = sub.add_parser(name); p.add_argument('--run', required=True); p.add_argument('--file', required=True)
-        if name in ['result', 'repair']:p.add_argument('--scenario', required=True)
+        if name == 'result':p.add_argument('--scenario', required=True)
     p = sub.add_parser('evidence'); p.add_argument('--run', required=True); p.add_argument('--file', required=True); p.add_argument('--kind', choices=sorted(KINDS), required=True); p.add_argument('--note', required=True); p.add_argument('--scenario'); p.add_argument('--step', type=int)
     p = sub.add_parser('refresh'); p.add_argument('--run', required=True); p.add_argument('--context')
-    p = sub.add_parser('exec'); p.add_argument('--run', required=True); p.add_argument('--scenario'); p.add_argument('--phase', choices=['check', 'before', 'after', 'suite'], default='check'); p.add_argument('--timeout', type=float, default=120); p.add_argument('command', nargs=argparse.REMAINDER)
+    p = sub.add_parser('exec'); p.add_argument('--run', required=True); p.add_argument('--scenario'); p.add_argument('--phase', choices=['check', 'suite'], default='check'); p.add_argument('--timeout', type=float, default=120); p.add_argument('command', nargs=argparse.REMAINDER)
     p = sub.add_parser('interrupt-command'); p.add_argument('--run', required=True); p.add_argument('--id', required=True); p.add_argument('--reason', required=True)
     for name in ['status', 'validate', 'report']:
         p = sub.add_parser(name); p.add_argument('--run', required=True)
@@ -443,14 +417,13 @@ def main():
     a = parser.parse_args()
     try:
         if a.action == 'init':
-            output = init_run(a.context, a.run, a.mode)
+            output = init_run(a.context, a.run)
         else:
             with ledger(a.run) as (root, state):
                 output = {'action': a.action}
                 if a.action == 'plan':set_plan(root, state, read_json(a.file))
                 elif a.action == 'environment':set_environment(root, state, read_json(a.file))
                 elif a.action == 'result':record_result(root, state, a.scenario, read_json(a.file))
-                elif a.action == 'repair':repair(root, state, a.scenario, read_json(a.file))
                 elif a.action == 'refresh':refresh(root, state, read_json(a.context) if a.context else None)
                 elif a.action == 'evidence':
                     current(state)
@@ -464,7 +437,7 @@ def main():
                     require(c and c['exit_code'] is None and text(a.reason), 'only incomplete commands can be closed, with a reason')
                     c.update({'exit_code': 130, 'finished_at': now(), 'interruption_reason': a.reason, 'workspace_unchanged': False}); persist(root, state)
                 elif a.action == 'status':
-                    output = {'validation': validate(root, state), 'context': state['context'], 'mode': state['mode'],
+                    output = {'validation': validate(root, state), 'context': state['context'],
                               'plan': state['plan'], 'environment': state['environment'], 'results': state['results']}
                 elif a.action == 'validate':
                     output = validate(root, state)

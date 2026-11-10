@@ -36,7 +36,7 @@ class Workflow(unittest.TestCase):
         self.ctx = workspace.prepare(self.repo, self.work, 'release', 'feature')
         self.context = self.root / 'context.json'; qa.save(self.context, self.ctx)
         self.run = self.root / 'run'
-        qa.init_run(self.context, self.run, 'repair')
+        qa.init_run(self.context, self.run)
         self.plan = {'flows': [{'id': 'F1', 'title': 'Calculate total', 'steps': ['calculate'], 'expected_end': 'correct total'}],
                      'scenarios': [{'id': 'S1', 'flow_id': 'F1', 'title': 'total', 'priority': 'critical', 'changed_files': ['calc.py'],
                                     'steps': ['run total'], 'expected': 'total is 1', 'oracle': 'fixture requirement',
@@ -48,6 +48,17 @@ class Workflow(unittest.TestCase):
         return subprocess.check_output(['git', '-C', str(self.repo), *args], stderr=subprocess.DEVNULL).decode().strip()
 
     def state(self):return qa.read_json(self.run / 'state.json')
+
+    def developer_revision(self, contents):
+        # Simulate an independent developer submitting code in the source repository.
+        # The QA worktree is never edited by this helper.
+        (self.repo / 'calc.py').write_text(contents)
+        self.git('commit', '-qam', 'developer submitted a new revision')
+        ctx = workspace.prepare(self.repo, self.root / ('revision-' + qa.sid()), 'release', 'feature')
+        with qa.ledger(self.run) as (r, state):qa.refresh(r, state, ctx)
+        self.work = Path(ctx['workspace']); self.ctx = ctx
+        self.environment()
+        return ctx
 
     def environment(self):
         log = self.root / 'service.log'; log.write_text('local fixture served from prepared workspace')
@@ -105,22 +116,21 @@ class Workflow(unittest.TestCase):
         self.command(phase='suite')
         self.assertEqual(self.verdict()['verdict'], 'NOT_READY')
 
-    def test_dirty_worktree_and_plan_refresh_invalidate_old_passes(self):
+    def test_dirty_worktree_is_rejected_and_new_commit_invalidates_old_passes(self):
         self.result('pass', [self.command()]); self.command(phase='suite')
         (self.work / 'calc.py').write_text('def total():\n    return 3\n')
         self.assertEqual(self.verdict()['verdict'], 'INVALID')
-        with qa.ledger(self.run) as (r, s):qa.refresh(r, s)
+        with qa.ledger(self.run) as (r, state):
+            with self.assertRaises(qa.QAError):qa.refresh(r, state)
+        self.developer_revision('def total():\n    return 3 # new submitted behavior\n')
         self.assertEqual(self.verdict()['counts']['pending'], 1)
-        self.assertEqual(self.verdict()['verdict'], 'INCOMPLETE')
-        self.environment()
         self.result('pass', [self.command()]); self.command(phase='suite')
         self.assertEqual(self.verdict()['verdict'], 'READY_WITHIN_SCOPE')
 
-    def test_report_mode_rejects_accepting_source_edits(self):
-        with qa.ledger(self.run) as (r, s):s['mode'] = 'report'; qa.persist(r, s)
+    def test_source_edits_cannot_be_accepted(self):
         (self.work / 'calc.py').write_text('changed\n')
-        with qa.ledger(self.run) as (r, s):
-            with self.assertRaises(qa.QAError):qa.refresh(r, s)
+        with qa.ledger(self.run) as (r, state):
+            with self.assertRaises(qa.QAError):qa.refresh(r, state)
 
     def test_evidence_cannot_be_missing_tampered_or_cross_scenario(self):
         command = self.command()
@@ -167,24 +177,13 @@ class Workflow(unittest.TestCase):
         content = (self.run / data['path']).read_text()
         self.assertIn('[REDACTED]', content); self.assertNotIn(os.environ['QA_TEST_SECRET'], content)
 
-    def test_actual_repair_requires_same_regression_and_current_replay(self):
-        code = 'import calc; assert calc.total() == 1'
-        before = self.command(code, 'before'); again = self.command(code)
-        self.result('fail', [before, again], severity='high')
-        (self.work / 'calc.py').write_text('def total():\n    return 1\n')
-        with qa.ledger(self.run) as (r, s):qa.refresh(r, s)
-        self.environment()
-        after = self.command(code, 'after'); self.result('pass', [after])
-        proof = {'summary': 'correct total', 'root_cause': 'wrong return value', 'files': ['calc.py'], 'before': before['id'], 'after': after['id']}
-        self.assertTrue(any('regression proof' in g for g in self.verdict()['gaps']))
-        with qa.ledger(self.run) as (r, s):qa.repair(r, s, 'S1', proof)
-        self.command(phase='suite')
-        self.assertEqual(len(self.state()['repairs']), 1)
-        self.assertEqual(self.verdict()['verdict'], 'READY_WITHIN_SCOPE')
-        mismatch = self.command('print("different test")', 'after')
-        proof['after'] = mismatch['id']
-        with qa.ledger(self.run) as (r, s):
-            with self.assertRaises(qa.QAError):qa.repair(r, s, 'S1', proof)
+    def test_only_testing_commands_are_exposed(self):
+        original = (self.work / 'calc.py').read_bytes()
+        p = subprocess.run([sys.executable, str(SCRIPTS / 'qa_run.py'), 'repair', '--run', str(self.run)], capture_output=True)
+        self.assertEqual(p.returncode, 2)
+        with qa.ledger(self.run) as (r, state):
+            with self.assertRaises(qa.QAError):qa.execute(r, state, [sys.executable, '-c', 'raise SystemExit(0)'], 'S1', 'before', 5)
+        self.assertEqual((self.work / 'calc.py').read_bytes(), original)
 
     def test_environment_change_invalidates_results(self):
         self.result('pass', [self.command()]); self.command(phase='suite')
@@ -235,7 +234,8 @@ class Workflow(unittest.TestCase):
         c = self.command('from pathlib import Path; Path("calc.py").write_text("edited")')
         self.assertFalse(c['workspace_unchanged'])
         self.assertEqual(self.verdict()['verdict'], 'INVALID')
-        with qa.ledger(self.run) as (r, s):qa.refresh(r, s)
+        ctx = workspace.prepare(self.repo, self.root / 'clean-retry', 'release', 'feature')
+        with qa.ledger(self.run) as (r, s):qa.refresh(r, s, ctx)
         self.environment()
         with qa.ledger(self.run) as (r, s):
             with self.assertRaises(OSError):qa.execute(r, s, ['/missing/qa-executable'], 'S1', 'check', 5)

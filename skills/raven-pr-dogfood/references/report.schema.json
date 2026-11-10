@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "2.0.0"
     },
     "metadata": {
       "type": "object",
@@ -15,19 +15,12 @@
         },
         "generated_at": {
           "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "report",
-            "repair"
-          ]
         }
       },
       "required": [
         "report_id",
         "title",
-        "generated_at",
-        "mode"
+        "generated_at"
       ],
       "additionalProperties": false
     },
@@ -76,7 +69,7 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "dirty": {
-          "type": "boolean"
+          "const": false
         },
         "epoch": {
           "type": "integer",
@@ -185,9 +178,6 @@
         "open_findings": {
           "type": "integer"
         },
-        "resolved_findings": {
-          "type": "integer"
-        },
         "historical_findings": {
           "type": "integer"
         },
@@ -218,6 +208,9 @@
             "unspecified"
           ],
           "additionalProperties": false
+        },
+        "retested_findings": {
+          "type": "integer"
         }
       },
       "required": [
@@ -227,9 +220,9 @@
         "status_counts",
         "findings_total",
         "open_findings",
-        "resolved_findings",
         "historical_findings",
-        "severity_counts"
+        "severity_counts",
+        "retested_findings"
       ],
       "additionalProperties": false
     },
@@ -357,12 +350,6 @@
         "$ref": "#/$defs/finding"
       }
     },
-    "repairs": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/repair"
-      }
-    },
     "commands": {
       "type": "array",
       "items": {
@@ -409,6 +396,12 @@
         "suite_command_id"
       ],
       "additionalProperties": false
+    },
+    "retests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/retest"
+      }
     }
   },
   "required": [
@@ -421,15 +414,15 @@
     "flows",
     "scenarios",
     "findings",
-    "repairs",
     "commands",
     "evidence",
     "timeline",
-    "checks"
+    "checks",
+    "retests"
   ],
   "additionalProperties": false,
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:raven:pr-dogfood:report:1.0.0",
+  "$id": "urn:raven:pr-dogfood:report:2.0.0",
   "title": "Raven PR Dogfood report",
   "$defs": {
     "attempt": {
@@ -582,6 +575,24 @@
           "items": {
             "$ref": "#/$defs/advisory"
           }
+        },
+        "tested_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cause_hypothesis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recommendation": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -596,7 +607,10 @@
         "code_fingerprint",
         "attempts",
         "evidence_gaps",
-        "advisories"
+        "advisories",
+        "tested_commit",
+        "cause_hypothesis",
+        "recommendation"
       ],
       "additionalProperties": false
     },
@@ -754,7 +768,7 @@
         "resolution": {
           "enum": [
             "open",
-            "resolved",
+            "retested_pass",
             "historical"
           ]
         },
@@ -814,11 +828,29 @@
             "null"
           ]
         },
-        "repair_ids": {
+        "retest_ids": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "tested_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cause_hypothesis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recommendation": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -838,78 +870,10 @@
         "epoch",
         "environment_id",
         "code_fingerprint",
-        "repair_ids"
-      ],
-      "additionalProperties": false
-    },
-    "repair": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "scenario_id": {
-          "type": "string"
-        },
-        "summary": {
-          "type": "string"
-        },
-        "root_cause": {
-          "type": "string"
-        },
-        "files": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "before_command_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "after_command_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "visual_reason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "epoch": {
-          "type": "integer"
-        },
-        "environment_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "recorded_at": {
-          "type": "string"
-        },
-        "current": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "scenario_id",
-        "summary",
-        "root_cause",
-        "files",
-        "before_command_id",
-        "after_command_id",
-        "visual_reason",
-        "epoch",
-        "environment_id",
-        "recorded_at",
-        "current"
+        "retest_ids",
+        "tested_commit",
+        "cause_hypothesis",
+        "recommendation"
       ],
       "additionalProperties": false
     },
@@ -928,8 +892,6 @@
         "phase": {
           "enum": [
             "check",
-            "before",
-            "after",
             "suite"
           ]
         },
@@ -1108,6 +1070,49 @@
         "scenario_id",
         "epoch",
         "summary",
+        "evidence_ids"
+      ],
+      "additionalProperties": false
+    },
+    "retest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "finding_id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "previous_commit": {
+          "type": "string"
+        },
+        "tested_commit": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "finding_id",
+        "scenario_id",
+        "previous_commit",
+        "tested_commit",
+        "summary",
+        "recorded_at",
         "evidence_ids"
       ],
       "additionalProperties": false

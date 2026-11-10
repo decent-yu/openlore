@@ -40,7 +40,7 @@ def markdown(data):
            f"目标：{md(target['repository'])} · {md(target['url'] or '本地 base/head 比较')}",
            f"代码：`{target['tested_commit']}` · 指纹：`{target['code_fingerprint']}` · 轮次：{target['epoch']}",
            f"比较：`{target['base_commit']}` → `{target['head_commit']}`；范围：{md(summary['scope'])}",
-           f"场景：{summary['total']} · 当前通过：{summary['status_counts']['pass']} · 发现：{summary['findings_total']} · 已修复：{summary['resolved_findings']}",
+           f"场景：{summary['total']} · 当前通过：{summary['status_counts']['pass']} · 发现：{summary['findings_total']} · 待处理问题：{summary['open_findings']}",
            '', '## 用户旅程','']
     for flow in data['flows']:
         lines += ['### '+md(flow['id']+' · '+flow['title']),'',*[f'{i}. {md(s)}' for i,s in enumerate(flow['steps'],1)],'', '终态：'+md(flow['expected_end']),'']
@@ -60,13 +60,15 @@ def markdown(data):
                 lines += [f"尝试 {a['index']} · {a['outcome']}：{md(a['actual'])}",'',*links(a['evidence_ids']),'']
             for g in r['evidence_gaps']:lines.append('- 证据缺口：'+md(g['kind']+' · '+g['reason']))
             for a in r['advisories']:lines+=['- 改进建议（不计功能失败）：'+md(a['summary']),*links(a['evidence_ids'])]
-    lines+=['','## 问题与修复','']
+    lines+=['','## 问题与复测','']
     for f in data['findings']:
         lines+=['### '+md(f['scenario_id']+' · '+f['title']),'',f"状态：{f['resolution']} · 严重度：{f['severity'] or '未分级'} · 归属：{f['attribution']}",md(f['summary']),'']
         for a in f['attempts']:lines += [f"尝试 {a['index']}：{md(a['actual'])}",*links(a['evidence_ids'],'原始证据'),'']
-    for r in data['repairs']:
-        lines += [f"- {r['scenario_id']}：{md(r['summary'])}",'- 根因：'+md(r['root_cause']),'- 文件：'+md(', '.join(r['files'])),
-                  f"- 回归：{r['before_command_id'] or '-'} → {r['after_command_id'] or '-'}；视觉例外：{md(r['visual_reason'] or '无')}",'']
+        if f['cause_hypothesis']:lines.append('- 排查线索（待验证）：'+md(f['cause_hypothesis']))
+        if f['recommendation']:lines.append('- 处理建议：'+md(f['recommendation']))
+    for r in data['retests']:
+        lines += [f"- {r['scenario_id']} 新版复测：{md(r['summary'])}",
+                  f"- 版本：`{r['previous_commit']}` → `{r['tested_commit']}`",*links(r['evidence_ids'],'复测证据'),'']
     lines+=['## 执行记录','','| ID | 场景 | 阶段 | 命令 | 退出码 | 日志 |','| --- | --- | --- | --- | --- | --- |']
     for c in data['commands']:
         link=f"[日志]({evidence[c['evidence_id']]['path']})" if c['evidence_id'] else '未完成'

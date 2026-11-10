@@ -71,7 +71,7 @@ python3 "$SKILL_DIR/scripts/qa_run.py" exec --run "$RUN" --phase suite \
   --timeout 600 -- npm test
 ```
 
-phase：check / before / after / suite。suite 可不关联场景；其他阶段要指定 scenario。返回的 C-ID 关联执行记录，其 evidence 是自动注册的真实日志 E-ID。返回码沿用被执行命令；超时124、中断130，工具输入错误2；命令运行失败本身也可能返回2，要结合 JSON 的 C-ID 与 exit_code 区分。
+phase：check / suite。suite 可不关联场景；其他阶段要指定 scenario。返回的 C-ID 关联执行记录，其 evidence 是自动注册的真实日志 E-ID。返回码沿用被执行命令；超时124、中断130，工具输入错误2；命令运行失败本身也可能返回2，要结合 JSON 的 C-ID 与 exit_code 区分。
 
 ## result
 
@@ -92,6 +92,8 @@ phase：check / before / after / suite。suite 可不关联场景；其他阶段
 
 status：pass / fail / flaky / observed / blocked / skipped。每个实际尝试都有 outcome、actual、至少一个对应场景且属于当前轮次/环境的 E-ID。fail 至少两次失败、无成功；flaky 同时有失败与成功；observed 至少一次失败。pass 至少一次成功且不含失败。重新记录同一环境结果必须保留之前尝试的证据 ID。
 
+可选 cause_hypothesis 和 recommendation 分别记录待验证的排查线索、处理建议，不表示执行过修复。
+
 blocked / skipped 必须有 reason；可无 attempts。severity 在 fail/flaky/observed 时必填。attribution 取 introduced / preexisting / unknown，默认 unknown。没有录屏等能力时可附：
 
 ```json
@@ -100,28 +102,10 @@ blocked / skipped 必须有 reason；可无 attempts。severity 在 fail/flaky/o
 
 缺口必须解释缺失的 required_evidence，且最终结论不能是无保留的 READY_WITHIN_SCOPE。
 
-## repair
-
-`repair --run "$RUN" --scenario S1 --file repair.json`：
-
-```json
-{
-  "summary": "为重复提交增加幂等判断",
-  "root_cause": "同一购物车提交未关联幂等标识，连续请求分别写入",
-  "files": ["src/orders.ts", "tests/orders.test.ts"],
-  "before": "C-failing-regression-id",
-  "after": "C-passing-regression-id"
-}
-```
-
-before/after 必须是该场景实际执行的 before/after 命令：同一参数列表、不同代码指纹、前者非零且不是超时/中断、后者为0，命令自身没有修改源代码，且 after 属于当前轮次/环境。同时必须已有当前场景的成功复查结果。新增测试路径先纳入 plan，不能只改生产代码覆盖而漏掉回归。
-
-确实不适合自动化的纯视觉修复可用 visual_reason 替代 before/after，保留 files、根因、实际成功截图与场景复查；报告明确它是人工可读的视觉复查例外。
-
 ## status / refresh / interrupt-command
 
 - `status --run "$RUN"`：查看完整计划、当前上下文、结果与检查摘要，不改进度。
-- `refresh --run "$RUN"`：repair 模式接受本地代码变动，增加轮次，使旧结果失效；原始改动文件仍须覆盖。
+- `refresh --run "$RUN"`：只在代码指纹未变时重置测试轮次；不接受本地代码编辑。
 - `refresh --run "$RUN" --context next-context.json`：目标 PR 更新后使用新解析的隔离工作区；身份必须仍为同一 PR/本地比较。
 - 修改 plan 也增加轮次，需要重建当前环境并重测。
 - 中断的命令由工具保留为未完成。确认进程已终止、检查其修改/数据副作用后，运行 `interrupt-command --run "$RUN" --id C-id --reason "已确认进程退出，已检查本轮测试数据"`；它不能把命令改成成功。
@@ -132,7 +116,7 @@ before/after 必须是该场景实际执行的 before/after 命令：同一参�
 | --- | --- |
 | INVALID | 代码不匹配、证据丢失/被改，或记录不合法 |
 | NOT_READY | 当前场景有稳定/偶发失败，或自动化套件失败 |
-| INCOMPLETE | 有待测/未验证/跳过、证据缺口、修复证明不足，或尚无当前套件结果 |
+| INCOMPLETE | 有待测/未验证/跳过、证据缺口、或尚无当前套件结果 |
 | READY_WITHIN_SCOPE | 声明范围已测、证据完整、无上述缺口，当前套件成功；范围是否充分仍需审查 |
 
 report 总会保留失败与限制，导出标准 report.json，再生成 report.html、report.md、report.schema.json 与 validation.json。字段与独立渲染见[标准报告格式](report-format.md)。bundle 要求全新的外部目录，复制报告和明确注册的 artifacts，不复制 state、源仓库或默认抓取认证文件。私有 run 是可恢复的完整工作记录；delivery 是便于审阅的交付包。外部发布仍按用户授权处理。

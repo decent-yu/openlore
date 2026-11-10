@@ -62,7 +62,7 @@ def setup(root):
     (repo/'app.py').write_text(broken);git('commit','-qam','seed duplicate-order regression')
     ctx=pr_workspace.prepare(repo,root/'worktree','release','feature')
     qa_run.save(root/'context.json',ctx)
-    qa_run.init_run(root/'context.json',root/'run','repair')
+    qa_run.init_run(root/'context.json',root/'run')
     plan={'flows':[{'id':'F1','title':'重复提交购物车','steps':['打开结算','重复提交同一购物车','核对订单数'],'expected_end':'一张订单'}],
           'scenarios':[{'id':'S1','flow_id':'F1','title':'提交幂等','priority':'critical','changed_files':['app.py'],
                         'steps':['连续两次提交同一购物车并查看订单数'],'expected':'订单数量为1','oracle':'fixture要求：同一购物车只产生一张订单',
