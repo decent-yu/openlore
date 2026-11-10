@@ -1,0 +1,77 @@
+{
+  "verified_on": "2026-11-10",
+  "scope": "A disposable local Git base/head comparison and real headless browser; not a live hosted PR or production app.",
+  "unit_tests": {
+    "command": "python3 -B -m unittest discover -s skills/raven-pr-dogfood/tests -v",
+    "passed": 21
+  },
+  "skill_format_validation": "passed using skill-creator quick_validate.py in an isolated dependency environment",
+  "browser_smoke": {
+    "browser": "isolated headless Chrome through Playwright CLI",
+    "initial_observation": "two independent reset/submit-twice runs produced 2 orders instead of 1",
+    "initial_verdict": "NOT_READY",
+    "code_refresh": "old observations invalidated; environment required re-attestation",
+    "after_repair": "actual browser replay produced 1 order; exact original regression argv returned 0",
+    "final_verdict": "READY_WITHIN_SCOPE",
+    "regression_proofs": [
+      {
+        "before": 1,
+        "after": 0,
+        "same_command": true
+      }
+    ],
+    "proof_files": 13
+  },
+  "limits": [
+    "GitHub PR metadata integration was tested with a fixture response and real local Git objects; live GitHub authentication/fetch was not exercised.",
+    "The browser test used a known seeded regression and is a workflow smoke test, not an independent defect-discovery benchmark.",
+    "Record integrity checks do not establish that product expectations or test scope are sufficient."
+  ],
+  "package_files": [
+    {
+      "path": ".gitignore",
+      "sha256": "6feaded4e28ea86e001a6751b4e3d960e8b7c31b9616ff9936b79297086e809b"
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "3e18ddec68e1d787f65ea54bb99bc37ce2ff0b2dedba52d4c56454e4a7926225"
+    },
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "6241bbc6447a4dc0ee1cc275d7c9bcc4ffa200943c0e50ff35871e763c729f31"
+    },
+    {
+      "path": "references/pr-and-environment.md",
+      "sha256": "af43d3cd853f471a03b03874aa20757b81c3494245778e7d8994527b66f65055"
+    },
+    {
+      "path": "references/record-formats.md",
+      "sha256": "42c51d98379a18e8cd989842f8a5cf68170d09e6a6023396bbec5326b4ca3d02"
+    },
+    {
+      "path": "references/repair-and-resume.md",
+      "sha256": "5da6f301c76f273e459bf1c043787e9ca46c2ee91eb7ad4cea9f9fcce3a93dc1"
+    },
+    {
+      "path": "references/testing-and-evidence.md",
+      "sha256": "e3d1cff9bdea7e40eb73a5f45d120bf875941aa71c33e364c7cec25edc0ea6e3"
+    },
+    {
+      "path": "scripts/pr_workspace.py",
+      "sha256": "c20b9af547010bdd7ccd720aa3c7e7854bcdbeac2605079fd06f602793087d46"
+    },
+    {
+      "path": "scripts/qa_run.py",
+      "sha256": "70721b413219a721e014a08892c2e8c6e8ad583300cf4eb774e5b736bc398d68"
+    },
+    {
+      "path": "tests/browser_fixture.py",
+      "sha256": "8923343a39de08d32b433c9fc6538ba3cc921d0079d76c06dd5d2f44d7d230d9"
+    },
+    {
+      "path": "tests/test_workflow.py",
+      "sha256": "ad7a8bc37f619c26c5730b9c7667e94f8cc754cb95e8d989f4381d363e4a936c"
+    }
+  ],
+  "implementation_commit": "d89c74bc81b1c1e27049e72e894e8d487eb07e20"
+}

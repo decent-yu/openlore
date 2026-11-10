@@ -1,0 +1,3 @@
+{"url": "http://127.0.0.1:38761", "workspace": "/tmp/raven-pr-dogfood-browser-20261110/worktree", "code": {"head": "fe3748b2bcb7b64ac156f03606662990c8d9f404", "fingerprint": "2ac10ddf0ecf549daa49d5830e419303352c8ce973ad3a7d8fd773f89add7597", "dirty": false, "workspace": "/private/tmp/raven-pr-dogfood-browser-20261110/worktree"}}
+127.0.0.1 - - [10/Nov/2026 16:21:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [10/Nov/2026 16:21:25] "GET /favicon.ico HTTP/1.1" 200 -

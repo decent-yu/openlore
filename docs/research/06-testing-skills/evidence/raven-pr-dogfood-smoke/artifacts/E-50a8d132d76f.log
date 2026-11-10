@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/private/tmp/raven-pr-dogfood-browser-20261110/worktree/regression.py", line 8, in <module>
+    assert len(result)==1, f'expected one order, got {len(result)}'
+           ^^^^^^^^^^^^^^
+AssertionError: expected one order, got 2
