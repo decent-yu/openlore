@@ -422,8 +422,8 @@
   ],
   "additionalProperties": false,
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:raven:pr-dogfood:report:2.0.0",
-  "title": "Raven PR Dogfood report",
+  "$id": "urn:pr-dogfood-test:report:2.0.0",
+  "title": "PR Dogfood Test report",
   "$defs": {
     "attempt": {
       "type": "object",

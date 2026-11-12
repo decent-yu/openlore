@@ -188,7 +188,7 @@ def build_report(state, check):
     public_env=None if not env else {'browser':env['browser'],'url':env['url'],'identity_proof':env['identity_proof'],
               'dataset':env['dataset'],'capabilities':env['capabilities'],'evidence_ids':env['proof'],'epoch':env['epoch'],
               'environment_id':env['id'],'recorded_at':env['recorded_at'],'current':env['epoch']==epoch}
-    report={'schema_version':'2.0.0','metadata':{'report_id':'RPD-'+rid,'title':'Raven PR Dogfood 测试报告',
+    report={'schema_version':'2.0.0','metadata':{'report_id':'PDT-'+rid,'title':'PR 测试报告',
               'generated_at':datetime.now(timezone.utc).isoformat()},
             'target':{'kind':'pull_request' if identity.get('pr') else 'revision_comparison',
               'repository':identity['repository'] if 'pr' in identity else Path(identity['local_repository']).name,

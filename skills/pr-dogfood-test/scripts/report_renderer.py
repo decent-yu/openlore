@@ -90,7 +90,7 @@ def html_report(data):
     validate_report(data)
     # JSON in a script data block must not be able to close that block.
     payload=json.dumps(data,ensure_ascii=False).replace('&','\\u0026').replace('<','\\u003c').replace('>','\\u003e').replace('\u2028','\\u2028').replace('\u2029','\\u2029')
-    return TEMPLATE.read_text().replace('__RAVEN_REPORT_JSON__',payload,1)
+    return TEMPLATE.read_text().replace('__PR_DOGFOOD_TEST_REPORT_JSON__',payload,1)
 
 
 def write_views(data, root):

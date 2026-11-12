@@ -2,7 +2,7 @@
 
 更新：2026-11-10。**Vercel 提供探索与证据交付流程，Every 提供按改动回归与修复流程。建议新 Skill 采用 Every 的旅程建模，结合 Vercel 的逐项复现取证。**
 
-当前实现为 [raven-pr-dogfood 2.0](09-test-and-report-only.md)：聚焦固定 PR 版本的测试、复现取证与标准 JSON / HTML 报告，不执行自动修复。
+当前实现为 [pr-dogfood-test 2.0](09-test-and-report-only.md)：聚焦固定 PR 版本的测试、复现取证与标准 JSON / HTML 报告，不执行自动修复。
 
 ## 阅读顺序
 

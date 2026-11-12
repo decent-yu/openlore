@@ -4,7 +4,7 @@
 
 1.0 实现与验证记录；当前 1.1 的[标准 JSON、HTML 与新 smoke](08-standard-report-json-html.md)另行归档。
 
-日期：2026-11-10。实现入口：[SKILL.md](../../../skills/raven-pr-dogfood/SKILL.md)。已通过项目内 `.agents/skills/raven-pr-dogfood` 发现入口注册；下轮可使用 `$raven-pr-dogfood` 调用。
+日期：2026-11-10。实现入口：[SKILL.md](../../../skills/pr-dogfood-test/SKILL.md)。已通过项目内 `.agents/skills/pr-dogfood-test` 发现入口注册；下轮可使用 `$pr-dogfood-test` 调用。
 
 ## 已实现
 
@@ -35,10 +35,10 @@
 ## 使用
 
 ```text
-使用 $raven-pr-dogfood 测试这个 PR：具体 PR 链接。
+使用 $pr-dogfood-test 测试这个 PR：具体 PR 链接。
 发现范围内明确的小问题后修复，保留前后回归证据。
 ```
 
 只要求测试时默认 report；要求测试并修复时使用 repair。commit、推送、评论和合并遵循已有用户授权，Skill 不自行发布。
 
-维护检查：`python3 -B -m unittest discover -s skills/raven-pr-dogfood/tests -v`。浏览器夹具生成器为 `tests/browser_fixture.py`，只在新建的临时目录运行；其代码与数据不属于用户产品。
+维护检查：`python3 -B -m unittest discover -s skills/pr-dogfood-test/tests -v`。浏览器夹具生成器为 `tests/browser_fixture.py`，只在新建的临时目录运行；其代码与数据不属于用户产品。

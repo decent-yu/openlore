@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Dogfood Test"
+  short_description: "追踪 PR 改动影响，动态设计测试用例，通过真实操作发现问题并交付证据报告"
+  default_prompt: "使用 $pr-dogfood-test 测试这个 PR，分析影响范围、动态设计测试用例，根据运行反馈补充场景并交付有证据的报告。"

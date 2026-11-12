@@ -12,7 +12,7 @@
 - [标准 JSON 数据](evidence/raven-pr-dogfood-json-smoke/report.json)
 - [Markdown 报告](evidence/raven-pr-dogfood-json-smoke/report.md)
 - [修复前的 HTML](evidence/raven-pr-dogfood-json-smoke/before/report.html)
-- [字段 Schema](../../../skills/raven-pr-dogfood/references/report.schema.json) · [字段说明](../../../skills/raven-pr-dogfood/references/report-format.md)
+- [字段 Schema](../../../skills/pr-dogfood-test/references/report.schema.json) · [字段说明](../../../skills/pr-dogfood-test/references/report-format.md)
 
 HTML 内嵌数据、样式和交互，无 CDN 依赖；截图和视频通过同目录 artifacts/ 加载，分享时携带整个目录。实际页面验证使用本地 HTTP 预览。
 
@@ -49,7 +49,7 @@ HTML 内嵌数据、样式和交互，无 CDN 依赖；截图和视频通过同�
 ## 只给 JSON 也能生成
 
 ```bash
-python3 skills/raven-pr-dogfood/scripts/report_renderer.py \
+python3 skills/pr-dogfood-test/scripts/report_renderer.py \
   --input delivery/report.json --output delivery/report.html \
   --markdown delivery/report.md
 ```
