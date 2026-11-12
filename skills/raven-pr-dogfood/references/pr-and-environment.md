@@ -6,7 +6,7 @@
 
 - 源工作区不会被 checkout、stash 或清理。目标 worktree 必须是不存在、且位于源工作区之外的新路径。
 - 浅克隆缺少历史、取不到准确提交或 PR 在取元数据后更新时，不用其他版本冒充；补齐历史或重新解析本轮目标。
-- fork PR 保留所属仓库和编号，不能只根据同名分支推断版本。
+- fork PR 保留所属仓库和编号，不能只根据同名分支推断版本。拉取只使用元数据中固定的提交；失败就报告实际错误，不切到可移动的 PR 分支重试。
 - 离线命令：`python3 "$SKILL_DIR/scripts/pr_workspace.py" --repo "$SOURCE" --base release --head feature --worktree "$TASK_DIR/worktree" --output "$TASK_DIR/context.json"`。
 - 不自动初始化 submodule 或 LFS。需要它们的项目按项目规范准备后再开始；脚本要求子模块初始化且干净，不声称指纹能代表未捕获的子模块改动。
 

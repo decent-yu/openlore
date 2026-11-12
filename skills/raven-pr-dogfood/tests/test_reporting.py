@@ -123,6 +123,32 @@ class Reporting(unittest.TestCase):
         self.assertEqual(data['findings'][0]['resolution'],'historical')
         self.assertFalse(data['retests'])
 
+    def test_missing_internal_snapshot_is_not_reconstructed_from_current_plan(self):
+        self.case.environment()
+        first=self.case.command('raise SystemExit(1)')
+        self.case.result('observed',[first],severity='high')
+        with qa.ledger(self.case.run) as (root,state):
+            del state['results']['S1']['scenario_snapshot']
+            with self.assertRaises(KeyError):build_report(state,qa.validate(root,state))
+
+    def test_missing_internal_commit_cannot_become_an_unspecified_finding(self):
+        self.case.environment()
+        first=self.case.command('raise SystemExit(1)')
+        self.case.result('observed',[first],severity='high')
+        with qa.ledger(self.case.run) as (root,state):
+            del state['results']['S1']['tested_commit']
+            with self.assertRaises(KeyError):build_report(state,qa.validate(root,state))
+
+    def test_run_without_plan_exports_incomplete_instead_of_a_fake_pass(self):
+        with qa.ledger(self.case.run) as (root,state):
+            state['plan']=None
+            state['results']={}
+            report=build_report(state,qa.validate(root,state))
+        self.assertEqual(report['summary']['verdict'],'INCOMPLETE')
+        self.assertEqual(report['scenarios'],[])
+        self.assertEqual(report['flows'],[])
+        self.assertEqual(report['coverage']['unmapped_files'],['calc.py'])
+
     def test_standalone_json_renderer_needs_no_git_or_run_state(self):
         data=self.model();folder=self.case.root/'standalone';folder.mkdir()
         source=folder/'input.json';source.write_text(json.dumps(data))

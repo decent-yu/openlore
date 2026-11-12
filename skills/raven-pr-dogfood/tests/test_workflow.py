@@ -205,7 +205,7 @@ class Workflow(unittest.TestCase):
     def test_pr_metadata_uses_actual_base_and_keeps_pr_identity(self):
         metadata = {'number': 42, 'url': 'https://github.com/example/project/pull/42',
                     'title': 'fork feature', 'body': 'test requirement', 'state': 'OPEN',
-                    'baseRefName': 'release', 'baseRefOid': self.ctx['base'], 'headRefOid': self.ctx['head']}
+                    'baseRefName': 'release', 'headRefName': 'feature', 'baseRefOid': self.ctx['base'], 'headRefOid': self.ctx['head']}
         original = workspace.run
         def fake_gh(argv, *args, **kwargs):
             return json.dumps(metadata).encode() if argv[0] == 'gh' else original(argv, *args, **kwargs)

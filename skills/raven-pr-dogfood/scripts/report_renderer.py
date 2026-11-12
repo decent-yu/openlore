@@ -111,7 +111,7 @@ def main():
         write(output,html_report(data))
         if a.markdown:write(a.markdown,markdown(data))
         print(json.dumps({'html':str(output),'report_id':data['metadata']['report_id'],'verdict':data['summary']['verdict']}));return 0
-    except (ValueError,KeyError,TypeError,OSError) as e:
+    except (ValueError,OSError) as e:
         print(json.dumps({'error':str(e)},ensure_ascii=False),file=sys.stderr);return 2
 
 

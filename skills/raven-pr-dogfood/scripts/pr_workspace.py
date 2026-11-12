@@ -93,7 +93,7 @@ def prepare(repo, worktree, base=None, head=None, pr=None, repository=None):
         if not re.fullmatch(r'[1-9][0-9]*', number):
             raise QAError('PR must be a positive number or a matching github.com PR URL')
         metadata = json.loads(run(['gh', 'pr', 'view', number, '--repo', repository, '--json',
-                                   'number,url,title,body,baseRefName,baseRefOid,headRefOid,state']))
+                                   'number,url,title,body,baseRefName,headRefName,baseRefOid,headRefOid,state']))
         remote = f'https://github.com/{repository}.git'
         # Fetch by immutable oid. A moving branch cannot silently change the revision being tested.
         for oid in [metadata['baseRefOid'], metadata['headRefOid']]:
@@ -102,25 +102,17 @@ def prepare(repo, worktree, base=None, head=None, pr=None, repository=None):
             try:
                 commit(repo, oid)
             except QAError:
-                try:
-                    git(repo, 'fetch', '--no-tags', '--no-recurse-submodules', remote, oid)
-                except QAError:
-                    if oid != metadata['headRefOid']:
-                        raise
-                    # Some hosts disallow fetching a fork's unadvertised oid. Fetch its PR ref,
-                    # then verify FETCH_HEAD; a concurrent PR update is an explicit blocker.
-                    git(repo, 'fetch', '--no-tags', '--no-recurse-submodules', remote, f'refs/pull/{number}/head')
-                    if commit(repo, 'FETCH_HEAD') != oid.lower():
-                        raise QAError('PR changed while fetching; resolve a fresh PR context')
+                git(repo, 'fetch', '--no-tags', '--no-recurse-submodules', remote, oid)
             if commit(repo, oid) != oid.lower():
                 raise QAError('fetched revision does not match PR metadata')
         context = describe(repo, metadata['baseRefOid'], metadata['headRefOid'],
                            {'repository': repository, 'pr': int(number), 'url': metadata['url']})
-        context['request'] = {k: metadata[k] for k in ['title', 'body', 'state', 'baseRefName']}
+        context['request'] = {k: metadata[k] for k in ['title', 'body', 'state', 'baseRefName', 'headRefName']}
     else:
         if not base or not head:
             raise QAError('provide --pr/--repository or both --base and --head')
         context = describe(repo, base, head, {'local_repository': str(repo), 'base_ref': base, 'head_ref': head})
+        context['request'] = {'title': None, 'body': None, 'baseRefName': base, 'headRefName': head}
     git(repo, 'worktree', 'add', '--detach', str(dest), context['head'])
     context['workspace'] = str(dest.resolve())
     context['code'] = snapshot(dest)
@@ -149,7 +141,7 @@ def main():
         os.chmod(output, 0o600)
         print(json.dumps({'context': str(output), 'workspace': context['workspace'], 'head': context['head']}))
         return 0
-    except (QAError, OSError, subprocess.TimeoutExpired, KeyError, json.JSONDecodeError) as e:
+    except (QAError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         print(json.dumps({'error': str(e)}, ensure_ascii=False), file=sys.stderr)
         return 2
 

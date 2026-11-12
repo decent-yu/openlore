@@ -204,6 +204,9 @@ def set_plan(root, state, plan):
             state['history'].append({'at': now(), 'reason': 'scenario retired by plan update', 'scenario': ident, 'result': result})
         state['results'] = {}
         state['epoch'] += 1
+    for item in scenarios:
+        item.setdefault('preconditions', [])
+    plan.setdefault('exclusions', [])
     state['plan'] = plan
     persist(root, state)
 
@@ -222,6 +225,7 @@ def set_environment(root, state, env):
         artifact(root, e)
     if state['environment']:
         state['history'].append({'at': now(), 'reason': 'environment replaced', 'environment': state['environment']})
+    env.setdefault('url', None)
     state['environment'] = {**env, 'id': sid(), 'epoch': state['epoch'], 'recorded_at': now()}
     persist(root, state)
 
@@ -271,7 +275,10 @@ def record_result(root, state, ident, result):
     previous = state['results'].get(ident)
     if previous:
         state['history'].append({'at': now(), 'reason': 'scenario retested', 'scenario': ident, 'result': previous})
-    state['results'][ident] = {**result, 'scenario_snapshot': deepcopy(s), 'tested_commit': state['code']['head'], 'code_fingerprint': state['code']['fingerprint'], 'recorded_at': now(), **stamp(state)}
+    normalized = {'severity': None, 'attribution': 'unknown', 'reason': None,
+                  'attempts': [], 'evidence_gaps': [], 'advisories': [],
+                  'cause_hypothesis': None, 'recommendation': None, **result}
+    state['results'][ident] = {**normalized, 'scenario_snapshot': deepcopy(s), 'tested_commit': state['code']['head'], 'code_fingerprint': state['code']['fingerprint'], 'recorded_at': now(), **stamp(state)}
     persist(root, state)
 
 
@@ -309,7 +316,7 @@ def execute(root, state, argv, ident, phase, timeout):
         scenario(state, ident)
     require(phase == 'suite' or ident, 'non-suite commands require a scenario')
     entry = {'id': 'C-' + sid(), 'scenario': ident, 'phase': phase, 'argv': [redact(x) for x in argv],
-             'argv_sha256': hashlib.sha256(json.dumps(argv).encode()).hexdigest(), 'started_at': now(),
+             'started_at': now(), 'finished_at': None, 'evidence': None, 'workspace_unchanged': None,
              'code': state['code'].copy(), 'exit_code': None, **stamp(state)}
     state['commands'][entry['id']] = entry
     persist(root, state)  # Interrupted commands remain visible as incomplete, never a pass.
@@ -362,7 +369,7 @@ def validate(root, state):
         if status not in STATUSES | {'pending'}:
             errors.append(f"{s['id']}: invalid result status")
         if status in {'pending', 'blocked', 'skipped', 'observed'}:
-            gaps.append(f"{s['id']}: {status}" + (': ' + r.get('reason', '') if r else ''))
+            gaps.append(f"{s['id']}: {status}" + (': ' + r['reason'] if r and fresh(r, state) and r['reason'] else ''))
         if r and fresh(r, state) and r.get('evidence_gaps'):
             gaps.append(f"{s['id']}: evidence capability gaps")
     mapped.update(e['path'] for e in (state['plan'] or {}).get('exclusions', []))
@@ -455,7 +462,7 @@ def main():
                             shutil.copyfile(artifact(root, e), dest / e['path'])
                         output['bundle'] = str(dest)
         print(json.dumps(output, ensure_ascii=False)); return 0
-    except (ValueError, AttributeError, OSError, KeyError, TypeError, subprocess.SubprocessError) as e:
+    except (ValueError, OSError, subprocess.SubprocessError) as e:
         print(json.dumps({'error': str(e)}, ensure_ascii=False), file=sys.stderr); return 2
 
 
